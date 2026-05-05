@@ -1,13 +1,13 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const dotenv = require('dotenv');
-dotenv.config();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-app.use('/api/auth', require('./routes/auth.routes'));
+app.use('/api/auth',        require('./routes/auth.routes'));
+app.use('/api/supervisors', require('./routes/supervisor.routes'));
 
 app.get('/api/health', (req, res) => res.json({ status: 'IAMS API running ✅' }));
 
