@@ -1,8 +1,13 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+const rawBaseUrl = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5000/api';
+const normalizedBaseUrl = rawBaseUrl.endsWith('/api')
+  ? rawBaseUrl
+  : `${rawBaseUrl.replace(/\/$/, '')}/api`;
+
 const api = axios.create({
-  baseURL: 'http://192.168.100.95:5000/api',
+  baseURL: normalizedBaseUrl,
 });
 
 api.interceptors.request.use(async (config) => {

@@ -23,12 +23,15 @@ export default function LoginScreen({ navigation }) {
       // Navigate based on role
       if (user.role === 'student') navigation.replace('StudentDashboard');
       else if (user.role === 'supervisor') navigation.replace('SupervisorDashboard');
+      else if (user.role === 'host_org') navigation.replace('HostDashboard');
       else if (user.role === 'admin') navigation.replace('AdminDashboard');
-    } catch (err) {
-      Alert.alert('Login Failed', err.response?.data?.message || 'Something went wrong');
-    } finally {
-      setLoading(false);
-    }
+    }  catch (err) {
+  if (err.response?.data?.requiresVerification) {
+    navigation.navigate('Verify', { email });
+  } else {
+    Alert.alert('Login Failed', err.response?.data?.message || 'Something went wrong');
+  }
+}
   };
 
   return (

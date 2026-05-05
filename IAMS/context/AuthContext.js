@@ -34,10 +34,20 @@ export const AuthProvider = ({ children }) => {
 
   const register = async (formData) => {
     const { data } = await api.post('/auth/register', formData);
+    return data;
+  };
+
+  const verifyEmail = async (email, code) => {
+    const { data } = await api.post('/auth/verify', { email, code });
     await AsyncStorage.setItem('iams_token', data.token);
     const me = await api.get('/auth/me');
     setUser(me.data);
-    return me.data;
+    return { ...data, user: me.data };
+  };
+
+  const resendVerificationCode = async (email) => {
+    const { data } = await api.post('/auth/resend-code', { email });
+    return data;
   };
 
   const logout = async () => {
@@ -46,7 +56,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, verifyEmail, resendVerificationCode, logout }}>
       {children}
     </AuthContext.Provider>
   );
