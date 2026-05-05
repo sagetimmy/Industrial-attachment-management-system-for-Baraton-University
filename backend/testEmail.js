@@ -2,18 +2,21 @@ require('dotenv').config();
 const nodemailer = require('nodemailer');
 
 const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST,
-  port: Number(process.env.EMAIL_PORT),
+  host: 'smtp.gmail.com',
+  port: 587,
   secure: false,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
+  tls: {
+    rejectUnauthorized: false,
+  },
 });
 
 transporter.sendMail({
   from: process.env.EMAIL_FROM,
-  to: 'kiplangatn7996@gmail.com',
+  to: process.env.EMAIL_USER,
   subject: 'IAMS Test Email',
   text: 'If you see this, email is working! ✅',
 }).then(() => {

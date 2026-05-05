@@ -2,11 +2,24 @@ const nodemailer = require('nodemailer');
 require('dotenv').config();
 
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: 'smtp.gmail.com',
+  port: 587,
+  secure: false,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
+  tls: {
+    rejectUnauthorized: false,
+  },
+});
+
+transporter.verify((error) => {
+  if (error) {
+    console.error('❌ Email error:', error.message);
+  } else {
+    console.log('✅ Email server ready');
+  }
 });
 
 const sendVerificationEmail = async (email, name, code) => {
@@ -23,7 +36,7 @@ const sendVerificationEmail = async (email, name, code) => {
         </div>
         <div style="background-color: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px;">
           <h2 style="color: #1E3A5F;">Hello, ${name}! 👋</h2>
-          <p style="color: #444;">Thank you for registering on IAMS. Use the code below to verify your email address:</p>
+          <p style="color: #444;">Use the code below to verify your email address:</p>
           <div style="text-align: center; margin: 30px 0;">
             <span style="
               font-size: 42px;

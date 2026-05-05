@@ -26,7 +26,7 @@ const register = async (req, res) => {
 
     const hashed = await bcrypt.hash(password, 10);
     const code = generateCode();
-    const expires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    const expires = new Date(Date.now() + 10 * 60 * 1000);
 
     const [result] = await db.query(
       'INSERT INTO users (email, password, role, verify_code, verify_code_expires) VALUES (?, ?, ?, ?, ?)',
@@ -34,7 +34,6 @@ const register = async (req, res) => {
     );
     const userId = result.insertId;
 
-    // Insert into role-specific table
     if (!role || role === 'student') {
       await db.query(
         'INSERT INTO students (user_id, reg_number, full_name, phone, department, year_of_study) VALUES (?,?,?,?,?,?)',
@@ -52,22 +51,15 @@ const register = async (req, res) => {
       );
     }
 
-    // Send verification email
-await sendVerificationEmail(email, full_name, code);
+    await sendVerificationEmail(email, full_name, code);
 
-res.status(201).json({
-  message: 'Registration successful! Check your email for verification code.',
-  email,
-  requiresVerification: true,
-});
-const [user] = await db.query('SELECT * FROM users WHERE email = ?', [email]);
-
-res.status(201).json({
-  message: 'Registration successful!',
-  token: generateToken(user[0]),
-  role: user[0].role,
-});
+    res.status(201).json({
+      message: 'Registration successful! Check your email for verification code.',
+      email,
+      requiresVerification: true,
+    });
   } catch (err) {
+    console.error('Register error:', err.message);
     res.status(500).json({ message: err.message });
   }
 };
