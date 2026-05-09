@@ -3,11 +3,12 @@ import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, Alert, ActivityIndicator
 } from 'react-native';
-import { COLORS } from '../../constants/colors';
+import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 
 export default function VerifyScreen({ navigation, route }) {
   const { verifyEmail, resendVerificationCode } = useAuth();
+  const { theme } = useTheme();
   const { email } = route.params;
   const [code, setCode] = useState(['', '', '', '', '', '']);
   const [loading, setLoading] = useState(false);
@@ -43,17 +44,9 @@ export default function VerifyScreen({ navigation, route }) {
     }
     setLoading(true);
     try {
-      const data = await verifyEmail(email, fullCode);
+      await verifyEmail(email, fullCode);
       Alert.alert('Success! 🎉', 'Your email has been verified!', [
-        {
-          text: 'Continue',
-          onPress: () => {
-            if (data.user.role === 'student') navigation.replace('StudentDashboard');
-            else if (data.user.role === 'supervisor') navigation.replace('SupervisorDashboard');
-            else if (data.user.role === 'host_org') navigation.replace('HostDashboard');
-            else if (data.user.role === 'admin') navigation.replace('AdminDashboard');
-          }
-        }
+        { text: 'Continue' }
       ]);
     } catch (err) {
       Alert.alert('Error', err.response?.data?.message || 'Invalid code');
@@ -78,18 +71,18 @@ export default function VerifyScreen({ navigation, route }) {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+      <View style={[styles.header, { backgroundColor: theme.secondary }]}>
         <Text style={styles.icon}>📧</Text>
-        <Text style={styles.title}>Verify Your Email</Text>
-        <Text style={styles.subtitle}>
+        <Text style={[styles.title, { color: theme.white }]}>Verify Your Email</Text>
+        <Text style={[styles.subtitle, { color: theme.gray }]}>
           We sent a 6-digit code to:
         </Text>
-        <Text style={styles.email}>{email}</Text>
+        <Text style={[styles.email, { color: theme.primary }]}>{email}</Text>
       </View>
 
       <View style={styles.body}>
-        <Text style={styles.label}>Enter Verification Code</Text>
+        <Text style={[styles.label, { color: theme.text }]}>Enter Verification Code</Text>
 
         {/* Code Input Boxes */}
         <View style={styles.codeContainer}>
@@ -97,7 +90,14 @@ export default function VerifyScreen({ navigation, route }) {
             <TextInput
               key={index}
               ref={(ref) => (inputs.current[index] = ref)}
-              style={[styles.codeInput, digit && styles.codeInputFilled]}
+              style={[
+                styles.codeInput,
+                {
+                  borderColor: digit ? theme.primary : theme.gray,
+                  backgroundColor: digit ? `${theme.primary}15` : theme.surface,
+                  color: theme.text,
+                }
+              ]}
               value={digit}
               onChangeText={(text) => handleChange(text.slice(-1), index)}
               onKeyPress={(e) => handleBackspace(e, index)}
@@ -109,12 +109,12 @@ export default function VerifyScreen({ navigation, route }) {
         </View>
 
         <TouchableOpacity
-          style={styles.button}
+          style={[styles.button, { backgroundColor: theme.primary }]}
           onPress={handleVerify}
           disabled={loading}
         >
           {loading
-            ? <ActivityIndicator color={COLORS.white} />
+            ? <ActivityIndicator color={theme.white} />
             : <Text style={styles.buttonText}>Verify Email ✓</Text>
           }
         </TouchableOpacity>
@@ -126,8 +126,8 @@ export default function VerifyScreen({ navigation, route }) {
           disabled={countdown > 0 || resending}
         >
           {resending
-            ? <ActivityIndicator color={COLORS.primary} size="small" />
-            : <Text style={[styles.resendText, countdown > 0 && styles.resendTextDisabled]}>
+            ? <ActivityIndicator color={theme.primary} size="small" />
+            : <Text style={[styles.resendText, countdown > 0 && { color: theme.textSecondary }]}>
                 {countdown > 0
                   ? `Resend code in ${countdown}s`
                   : 'Resend Code'
@@ -137,7 +137,7 @@ export default function VerifyScreen({ navigation, route }) {
         </TouchableOpacity>
 
         <TouchableOpacity onPress={() => navigation.navigate('Login')}>
-          <Text style={styles.backText}>← Back to Login</Text>
+          <Text style={[styles.backText, { color: theme.secondary }]}>← Back to Login</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -145,45 +145,36 @@ export default function VerifyScreen({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.white },
+  container: { flex: 1 },
   header: {
-    backgroundColor: COLORS.secondary,
     paddingTop: 70, paddingBottom: 40,
     alignItems: 'center',
     borderBottomLeftRadius: 30,
     borderBottomRightRadius: 30,
   },
   icon: { fontSize: 50, marginBottom: 10 },
-  title: { fontSize: 24, fontWeight: 'bold', color: COLORS.white },
-  subtitle: { color: COLORS.gray, fontSize: 14, marginTop: 8 },
-  email: { color: COLORS.primary, fontWeight: '700', fontSize: 15, marginTop: 4 },
+  title: { fontSize: 24, fontWeight: 'bold' },
+  subtitle: { fontSize: 14, marginTop: 8 },
+  email: { fontWeight: '700', fontSize: 15, marginTop: 4 },
   body: { padding: 28, alignItems: 'center', marginTop: 20 },
-  label: { fontSize: 15, color: COLORS.darkGray, fontWeight: '600', marginBottom: 20 },
+  label: { fontSize: 15, fontWeight: '600', marginBottom: 20 },
   codeContainer: { flexDirection: 'row', justifyContent: 'center', gap: 10, marginBottom: 30 },
   codeInput: {
     width: 48, height: 58,
-    borderWidth: 2, borderColor: COLORS.gray,
+    borderWidth: 2,
     borderRadius: 12, fontSize: 24,
-    fontWeight: 'bold', color: COLORS.darkGray,
-    backgroundColor: COLORS.lightGray,
-  },
-  codeInputFilled: {
-    borderColor: COLORS.primary,
-    backgroundColor: '#FFF3E0',
-    color: COLORS.primary,
+    fontWeight: 'bold',
   },
   button: {
-    backgroundColor: COLORS.primary,
     paddingVertical: 15,
     paddingHorizontal: 60,
     borderRadius: 12,
     width: '100%',
     alignItems: 'center',
   },
-  buttonText: { color: COLORS.white, fontSize: 16, fontWeight: 'bold' },
+  buttonText: { color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' },
   resendBtn: { marginTop: 20, padding: 10 },
   resendDisabled: { opacity: 0.5 },
-  resendText: { color: COLORS.primary, fontSize: 14, fontWeight: '600' },
-  resendTextDisabled: { color: COLORS.gray },
-  backText: { color: COLORS.secondary, fontSize: 14, marginTop: 16 },
+  resendText: { fontSize: 14, fontWeight: '600' },
+  backText: { fontSize: 14, marginTop: 16 },
 });

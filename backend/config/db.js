@@ -16,6 +16,10 @@ pool.getConnection()
     console.log('✅ MySQL connected');
     conn.release();
   })
-  .catch(err => console.error('❌ MySQL error:', err.message));
+  .catch(err => {
+    console.error('❌ MySQL error:', err.message);
+    console.error('⚠️  Server cannot start without database connection');
+    process.exit(1);
+  });
 
 module.exports = pool;

@@ -15,8 +15,10 @@ export const AuthProvider = ({ children }) => {
         try {
           const res = await api.get('/auth/me');
           setUser(res.data);
-        } catch {
+        } catch (err) {
+          console.error('❌ Auth check failed:', err.message || 'Unknown error');
           await AsyncStorage.removeItem('iams_token');
+          setUser(null);
         }
       }
       setLoading(false);
@@ -27,9 +29,20 @@ export const AuthProvider = ({ children }) => {
   const login = async (email, password) => {
     const { data } = await api.post('/auth/login', { email, password });
     await AsyncStorage.setItem('iams_token', data.token);
-    const me = await api.get('/auth/me');
-    setUser(me.data);
-    return me.data;
+
+    try {
+      const me = await api.get('/auth/me');
+      setUser(me.data);
+      return me.data;
+    } catch (err) {
+      console.error('❌ Login succeeded but /auth/me failed:', err.response?.data || err.message);
+      const fallbackUser = {
+        email,
+        role: data.role,
+      };
+      setUser(fallbackUser);
+      return fallbackUser;
+    }
   };
 
   const register = async (formData) => {
@@ -50,16 +63,44 @@ export const AuthProvider = ({ children }) => {
     return data;
   };
 
+  const forgotPassword = async (email) => {
+    const { data } = await api.post('/auth/forgot-password', { email });
+    return data;
+  };
+
+  const resetPassword = async (email, code, password) => {
+    const { data } = await api.post('/auth/reset-password', { email, code, password });
+    return data;
+  };
+
   const logout = async () => {
     await AsyncStorage.removeItem('iams_token');
     setUser(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, verifyEmail, resendVerificationCode, logout }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        loading,
+        login,
+        register,
+        verifyEmail,
+        resendVerificationCode,
+        forgotPassword,
+        resetPassword,
+        logout,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
 };
 
-export const useAuth = () => useContext(AuthContext);
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+};

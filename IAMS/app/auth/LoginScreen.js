@@ -1,13 +1,15 @@
 import { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
-  StyleSheet, Alert, ActivityIndicator, Image
+  StyleSheet, Alert, ActivityIndicator
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
-import { COLORS } from '../../constants/colors';
+import { useTheme } from '../../context/ThemeContext';
+import { API_BASE_URL } from '../../api/axios';
 
 export default function LoginScreen({ navigation }) {
   const { login } = useAuth();
+  const { theme } = useTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -19,64 +21,71 @@ export default function LoginScreen({ navigation }) {
     }
     setLoading(true);
     try {
-      const user = await login(email, password);
-      // Navigate based on role
-      if (user.role === 'student') navigation.replace('StudentDashboard');
-      else if (user.role === 'supervisor') navigation.replace('SupervisorDashboard');
-      else if (user.role === 'host_org') navigation.replace('HostDashboard');
-      else if (user.role === 'admin') navigation.replace('AdminDashboard');
-    }  catch (err) {
-  if (err.response?.data?.requiresVerification) {
-    navigation.navigate('Verify', { email });
-  } else {
-    Alert.alert('Login Failed', err.response?.data?.message || 'Something went wrong');
-  }
-}
+      await login(email, password);
+      return;
+    } catch (err) {
+      if (err.response?.data?.requiresVerification) {
+        navigation.navigate('Verify', { email });
+      } else {
+        const message = err.response?.data?.message
+          || (err.request
+            ? `Cannot reach the server at ${API_BASE_URL}. Make sure the backend is running and your phone is on the same Wi-Fi.`
+            : err.message || 'Something went wrong');
+        Alert.alert('Login Failed', message);
+      }
+    }
+    setLoading(false);
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
       {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.title}>IAMS</Text>
-        <Text style={styles.subtitle}>Industrial Attachment Management System</Text>
-        <Text style={styles.university}>University of Eastern Africa, Baraton</Text>
+      <View style={[styles.header, { backgroundColor: theme.secondary }]}>
+        <Text style={[styles.title, { color: theme.primary }]}>IAMS</Text>
+        <Text style={[styles.subtitle, { color: theme.white }]}>Industrial Attachment Management System</Text>
+        <Text style={[styles.university, { color: theme.gray }]}>University of Eastern Africa, Baraton</Text>
       </View>
 
       {/* Form */}
       <View style={styles.form}>
-        <Text style={styles.label}>Email Address</Text>
+        <Text style={[styles.label, { color: theme.text }]}>Email Address</Text>
         <TextInput
-          style={styles.input}
+          style={[styles.input, { borderColor: theme.gray, backgroundColor: theme.surface, color: theme.text }]}
           placeholder="Enter your email"
+          placeholderTextColor={theme.textSecondary}
           value={email}
           onChangeText={setEmail}
           keyboardType="email-address"
           autoCapitalize="none"
         />
 
-        <Text style={styles.label}>Password</Text>
+        <Text style={[styles.label, { color: theme.text }]}>Password</Text>
         <TextInput
-          style={styles.input}
+          style={[styles.input, { borderColor: theme.gray, backgroundColor: theme.surface, color: theme.text }]}
           placeholder="Enter your password"
+          placeholderTextColor={theme.textSecondary}
           value={password}
           onChangeText={setPassword}
           secureTextEntry
         />
 
         <TouchableOpacity
-          style={styles.button}
+          style={[styles.button, { backgroundColor: theme.primary }]}
           onPress={handleLogin}
           disabled={loading}
         >
           {loading
-            ? <ActivityIndicator color={COLORS.white} />
+            ? <ActivityIndicator color={theme.white} />
             : <Text style={styles.buttonText}>Login</Text>
           }
         </TouchableOpacity>
 
+        <TouchableOpacity onPress={() => navigation.navigate('ForgotPassword')}>
+          <Text style={[styles.link, { color: theme.secondary }]}>Forgot password?</Text>
+        </TouchableOpacity>
+
         <TouchableOpacity onPress={() => navigation.navigate('Register')}>
-          <Text style={styles.link}>Don't have an account? Register</Text>
+          <Text style={[styles.linkSecondary, { color: theme.secondary }]}>Don't have an account? Register</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -84,31 +93,29 @@ export default function LoginScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.white },
+  container: { flex: 1 },
   header: {
-    backgroundColor: COLORS.secondary,
     paddingTop: 80,
     paddingBottom: 40,
     alignItems: 'center',
     borderBottomLeftRadius: 30,
     borderBottomRightRadius: 30,
   },
-  title: { fontSize: 42, fontWeight: 'bold', color: COLORS.primary },
-  subtitle: { fontSize: 13, color: COLORS.white, marginTop: 6, textAlign: 'center', paddingHorizontal: 20 },
-  university: { fontSize: 11, color: COLORS.gray, marginTop: 4 },
+  title: { fontSize: 42, fontWeight: 'bold' },
+  subtitle: { fontSize: 13, marginTop: 6, textAlign: 'center', paddingHorizontal: 20 },
+  university: { fontSize: 11, marginTop: 4 },
   form: { padding: 24, marginTop: 20 },
-  label: { fontSize: 14, fontWeight: '600', color: COLORS.darkGray, marginBottom: 6 },
+  label: { fontSize: 14, fontWeight: '600', marginBottom: 6 },
   input: {
-    borderWidth: 1, borderColor: COLORS.gray,
+    borderWidth: 1,
     borderRadius: 10, padding: 12,
     fontSize: 15, marginBottom: 16,
-    backgroundColor: COLORS.lightGray,
   },
   button: {
-    backgroundColor: COLORS.primary,
     padding: 15, borderRadius: 10,
     alignItems: 'center', marginTop: 8,
   },
-  buttonText: { color: COLORS.white, fontSize: 16, fontWeight: 'bold' },
-  link: { textAlign: 'center', marginTop: 20, color: COLORS.secondary, fontSize: 14 },
+  buttonText: { color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' },
+  link: { textAlign: 'center', marginTop: 20, fontSize: 14 },
+  linkSecondary: { textAlign: 'center', marginTop: 10, fontSize: 14 },
 });
