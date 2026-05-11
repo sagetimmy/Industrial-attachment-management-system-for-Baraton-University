@@ -1,10 +1,12 @@
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useNotifications } from '../../hooks/useNotifications';
 
 export default function StudentDashboard({ navigation }) {
   const { user, logout } = useAuth();
   const { theme } = useTheme();
+  const { unreadCount } = useNotifications();
 
   const handleLogout = async () => {
     Alert.alert('Logout', 'Are you sure you want to logout?', [
@@ -18,7 +20,7 @@ export default function StudentDashboard({ navigation }) {
     { title: 'My Logbook', icon: '📖', screen: 'Logbook', color: '#C87941' },
     { title: 'My Profile', icon: '👤', screen: 'Profile', color: '#2E7D32' },
     { title: 'Feedback & Grades', icon: '⭐', screen: 'Feedback', color: '#2E7D32', desc: 'View supervisor evaluations' },
-    { title: 'Notifications', icon: '🔔', screen: 'Notifications', color: '#6A1B9A' },
+    { title: 'Notifications', icon: '🔔', screen: 'Notifications', color: '#6A1B9A',desc: unreadCount > 0 ? `${unreadCount} unread` : 'No new notifications',badge: unreadCount,},
   ];
 
   return (
@@ -43,6 +45,12 @@ export default function StudentDashboard({ navigation }) {
         </View>
         <Text style={[styles.statusHint, { color: theme.textSecondary }]}>Apply for placement to get started</Text>
       </View>
+
+      {item.badge > 0 && (
+  <View style={styles.badge}>
+    <Text style={styles.badgeText}>{item.badge}</Text>
+  </View>
+)}
 
       {/* Menu Grid */}
       <Text style={[styles.sectionTitle, { color: theme.text }]}>Quick Actions</Text>
@@ -129,4 +137,15 @@ const styles = StyleSheet.create({
   },
   infoTitle: { fontWeight: '700', fontSize: 15, marginBottom: 8 },
   infoText: { fontSize: 13, lineHeight: 20 },
+
+  badge: {
+  position: 'absolute',
+  top: -5, right: -5,
+  backgroundColor: '#C62828',
+  width: 20, height: 20,
+  borderRadius: 10,
+  justifyContent: 'center',
+  alignItems: 'center',
+},
+badgeText: { color: COLORS.white, fontSize: 11, fontWeight: 'bold' },
 });

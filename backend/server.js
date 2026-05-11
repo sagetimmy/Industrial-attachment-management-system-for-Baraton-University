@@ -13,6 +13,7 @@ app.use('/api/students',     require('./routes/student.routes'));
 app.use('/api/supervisors', require('./routes/supervisor.routes'));
 app.use('/api/admin',       require('./routes/admin.routes'));
 app.use('/api/host-orgs',   require('./routes/hostOrg.routes'));
+app.use('/api/notifications', require('./routes/notifications.routes'));
 
 app.get('/', (req, res) => {
   res.json({
@@ -39,4 +40,5 @@ app.get('/api', (req, res) => {
 app.get('/api/health', (req, res) => res.json({ status: 'IAMS API running ✅' }));
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+const HOST = process.env.HOST || '0.0.0.0';
+app.listen(PORT, HOST, () => console.log(`Server running on http://${HOST}:${PORT}`));

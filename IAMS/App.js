@@ -13,13 +13,17 @@ import ForgotPasswordScreen from './app/auth/ForgotPasswordScreen';
 import LogbookScreen from './app/student/LogbookScreen';
 import FeedbackScreen from './app/student/FeedbackScreen';
 import ProfileScreen from './app/student/ProfileScreen';
-
+import NotificationsScreen from './app/shared/NotificationsScreen';
 // Student screens
 import StudentDashboard from './app/student/StudentDashboard';
 import ApplyScreen from './app/student/ApplyScreen';
 
 // Supervisor screens
 import SupervisorDashboard from './app/supervisor/SupervisorDashboard';
+import MyStudentsScreen from './app/supervisor/MyStudentsScreen';
+import ReviewLogbooksScreen from './app/supervisor/ReviewLogbooksScreen';
+import SiteVisitsScreen from './app/supervisor/SiteVisitsScreen';
+import EvaluationsScreen from './app/supervisor/EvaluationsScreen';
 
 // Admin screens
 import ManageUsersScreen from './app/admin/ManageUsersScreen';
@@ -79,7 +83,7 @@ function RootNavigator() {
         <Stack.Screen name="Apply" component={ApplyScreen} />
         <Stack.Screen name="Logbook" component={LogbookScreen} />
         <Stack.Screen name="Profile" component={ProfileScreen} />
-        <Stack.Screen name="Notifications" component={PlaceholderScreen} />
+        <Stack.Screen name="Notifications" component={NotificationsScreen} />
         <Stack.Screen name="Feedback" component={FeedbackScreen} />
       </Stack.Navigator>
     );
@@ -89,11 +93,12 @@ function RootNavigator() {
     return (
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         <Stack.Screen name="SupervisorDashboard" component={SupervisorDashboard} />
-        <Stack.Screen name="MyStudents" component={PlaceholderScreen} />
-        <Stack.Screen name="ReviewLogbooks" component={PlaceholderScreen} />
-        <Stack.Screen name="SiteVisits" component={PlaceholderScreen} />
-        <Stack.Screen name="Evaluations" component={PlaceholderScreen} />
+        <Stack.Screen name="MyStudents" component={MyStudentsScreen} />
+        <Stack.Screen name="ReviewLogbooks" component={ReviewLogbooksScreen} />
+        <Stack.Screen name="SiteVisits" component={SiteVisitsScreen} />
+        <Stack.Screen name="Evaluations" component={EvaluationsScreen} />
         <Stack.Screen name="StudentDetail" component={PlaceholderScreen} />
+        <Stack.Screen name="Notifications" component={NotificationsScreen} />
       </Stack.Navigator>
     );
   }
@@ -105,7 +110,7 @@ function RootNavigator() {
         <Stack.Screen name="HostProfile" component={HostProfile} />
         <Stack.Screen name="HostSlots" component={HostSlots} />
         <Stack.Screen name="HostEvaluation" component={HostEvaluation} />
-        <Stack.Screen name="Notifications" component={PlaceholderScreen} />
+        <Stack.Screen name="Notifications" component={NotificationsScreen} />
       </Stack.Navigator>
     );
   }
@@ -118,6 +123,7 @@ function RootNavigator() {
       <Stack.Screen name="AssignSupervisors" component={AssignSupervisorsScreen} />
       <Stack.Screen name="Reports" component={Reports} />
       <Stack.Screen name="OrgDetails" component={OrgDetailsScreen} />
+      <Stack.Screen name="Notifications" component={NotificationsScreen} />
     </Stack.Navigator>
   );
 }
