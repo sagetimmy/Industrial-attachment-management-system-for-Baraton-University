@@ -1,0 +1,40 @@
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background Circle -->
+  <circle cx="100" cy="100" r="100" fill="#0D7A6B"/>
+  
+  <!-- Outer Ring -->
+  <circle cx="100" cy="100" r="95" fill="none" stroke="#FFFFFF" stroke-width="2"/>
+  
+  <!-- Graduation Cap -->
+  <g transform="translate(100, 70)">
+    <!-- Cap Top -->
+    <polygon points="0,-25 -30,-5 30,-5" fill="#FFFFFF"/>
+    <!-- Cap Base -->
+    <ellipse cx="0" cy="0" rx="32" ry="8" fill="#FFFFFF"/>
+    <!-- Cap Tassel -->
+    <line x1="0" y1="-25" x2="0" y2="25" stroke="#F97316" stroke-width="3"/>
+    <circle cx="0" cy="30" r="5" fill="#F97316"/>
+  </g>
+  
+  <!-- Briefcase/Management Element -->
+  <g transform="translate(100, 120)">
+    <!-- Main Case Body -->
+    <rect x="-28" y="-10" width="56" height="28" rx="4" fill="none" stroke="#FFFFFF" stroke-width="2.5"/>
+    <!-- Handle -->
+    <path d="M -20,-10 Q 0,-25 20,-10" fill="none" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round"/>
+    <!-- Papers/Checklist -->
+    <line x1="-10" y1="0" x2="10" y2="0" stroke="#F97316" stroke-width="1.5"/>
+    <line x1="-10" y1="6" x2="10" y2="6" stroke="#F97316" stroke-width="1.5"/>
+    <line x1="-10" y1="12" x2="10" y2="12" stroke="#F97316" stroke-width="1.5"/>
+  </g>
+  
+  <!-- Text Arc (optional - can be removed for simpler icon) -->
+  <defs>
+    <path id="textPath" d="M 30,100 A 70,70 0 0,1 170,100" fill="none"/>
+  </defs>
+  <text font-size="12" font-weight="bold" letter-spacing="3" fill="#FFFFFF" font-family="Arial, sans-serif">
+    <textPath href="#textPath" startOffset="50%" text-anchor="middle">
+      IAMS
+    </textPath>
+  </text>
+</svg>
