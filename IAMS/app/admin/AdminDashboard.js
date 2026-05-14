@@ -1,36 +1,126 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, Alert, ActivityIndicator, RefreshControl
+  ScrollView, Alert, ActivityIndicator,
+  RefreshControl, StatusBar, Dimensions,
+  Modal, FlatList,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import Svg, { Path } from 'react-native-svg';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
-import { COLORS } from '../../constants/colors';
 import api from '../../api/axios';
+
+const NAVY      = '#0D1B2E';
+const NAVY_CARD = '#162338';
+const TEAL      = '#2EC4A0';
+const TEAL_DIM  = 'rgba(46,196,160,0.15)';
+const GREEN     = '#2EC4A0';
+const RED       = '#FF5252';
+const WHITE     = '#FFFFFF';
+const GRAY      = '#8899AA';
+const LIGHT_BG  = '#F7F8FA';
+const DARK      = '#111827';
+const BORDER    = '#E5E7EB';
+
+const { width } = Dimensions.get('window');
+
+function Sparkline({ up }) {
+  const color = up ? 'rgba(46,196,160,0.4)' : 'rgba(255,82,82,0.4)';
+  const d = up
+    ? 'M0 30 C20 28, 35 15, 50 18 C65 21, 75 8, 90 5 C105 2, 115 10, 130 8'
+    : 'M0 8 C20 10, 35 5, 50 12 C65 19, 75 22, 90 20 C105 18, 115 26, 130 30';
+  return (
+    <Svg width={130} height={36} style={styles.sparkline}>
+      <Path d={d} stroke={color} strokeWidth={2} fill="none" strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+function ActionIcon({ name }) {
+  const icons = {
+    'Review Pending':    { name: 'clipboard-edit-outline' },
+    'Assign Supervisor': { name: 'account-arrow-right-outline' },
+    'System Reports':    { name: 'chart-bar' },
+    'Manage Users':      { name: 'account-group-outline' },
+    'Manage Orgs':       { name: 'office-building-outline' },
+    'Settings':          { name: 'cog-outline' },
+  };
+  const icon = icons[name] || { name: 'dots-horizontal' };
+  return <MaterialCommunityIcons name={icon.name} size={28} color={TEAL} />;
+}
+
+// ── Notification Panel ──────────────────────────────────────────────────────
+function NotificationPanel({ visible, notifications, unreadCount, onClose, onMarkAllRead, onMarkRead }) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
+        <TouchableOpacity activeOpacity={1} style={styles.notifPanel}>
+          {/* Panel header */}
+          <View style={styles.notifHeader}>
+            <Text style={styles.notifTitle}>Notifications</Text>
+            {unreadCount > 0 && (
+              <TouchableOpacity onPress={onMarkAllRead}>
+                <Text style={styles.markAllText}>Mark all read</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {notifications.length === 0 ? (
+            <View style={styles.notifEmpty}>
+              <Ionicons name="notifications-off-outline" size={40} color={GRAY} />
+              <Text style={styles.notifEmptyText}>No notifications</Text>
+            </View>
+          ) : (
+            <FlatList
+              data={notifications}
+              keyExtractor={(item) => String(item.notif_id)}
+              showsVerticalScrollIndicator={false}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[styles.notifItem, !item.is_read && styles.notifItemUnread]}
+                  onPress={() => onMarkRead(item.notif_id)}
+                >
+                  <View style={styles.notifItemLeft}>
+                    <View style={[styles.notifDot, item.is_read && styles.notifDotRead]} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.notifMessage, !item.is_read && styles.notifMessageUnread]}>
+                        {item.message}
+                      </Text>
+                      <Text style={styles.notifTime}>{timeAgo(item.created_at)}</Text>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              )}
+              ItemSeparatorComponent={() => <View style={styles.notifDivider} />}
+            />
+          )}
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
 
 export default function AdminDashboard({ navigation }) {
   const { user, logout } = useAuth();
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [form, setForm] = useState({
-    full_name: '', reg_number: '', email: '',
-    password: '', department: '', year_of_study: '',
-    phone: '',
-    // Host org fields
-    org_name: '', industry: '', location: '',
-    official_email: '', website: '', description: '',
-    contact_person: '', contact_position: '',
-    department_offering: '', roles_tasks: '',
-    required_skills: '', available_slots: '',
-    attachment_duration: '', work_mode: 'onsite',
-    internal_supervisor: '', supervisor_position: '',
-    allowance: '', resources_provided: '',
-  });
+  const [data, setData]               = useState(null);
+  const [loading, setLoading]         = useState(true);
+  const [refreshing, setRefreshing]   = useState(false);
+  const [unassigned, setUnassigned]   = useState([]);
+
+  // ── Notification state ──
+  const [notifications, setNotifications]   = useState([]);
+  const [unreadCount, setUnreadCount]       = useState(0);
+  const [notifVisible, setNotifVisible]     = useState(false);
 
   const fetchDashboard = async () => {
     try {
-      const res = await api.get('/admin/dashboard');
-      setData(res.data);
+      const [dashRes, unassignedRes] = await Promise.all([
+        api.get('/admin/dashboard'),
+        api.get('/admin/unassigned-attachments'),
+      ]);
+      setData(dashRes.data);
+      setUnassigned(unassignedRes.data || []);
     } catch (err) {
       Alert.alert('Error', err.response?.data?.message || 'Failed to load dashboard');
     } finally {
@@ -39,10 +129,56 @@ export default function AdminDashboard({ navigation }) {
     }
   };
 
-  useEffect(() => { fetchDashboard(); }, []);
+  const fetchNotifications = async () => {
+    try {
+      const [notifRes, countRes] = await Promise.all([
+        api.get('/notifications'),
+        api.get('/notifications/unread-count'),
+      ]);
+      setNotifications(notifRes.data || []);
+      setUnreadCount(countRes.data?.count || 0);
+    } catch (err) {
+      console.error('Failed to fetch notifications:', err.message);
+    }
+  };
+
+  useEffect(() => {
+    fetchDashboard();
+    fetchNotifications();
+    // Poll for new notifications every 30 seconds
+    const interval = setInterval(fetchNotifications, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleBellPress = () => {
+    setNotifVisible(true);
+    fetchNotifications(); // refresh on open
+  };
+
+  const handleMarkAllRead = async () => {
+    try {
+      await api.put('/notifications/read-all');
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+      setUnreadCount(0);
+    } catch {
+      Alert.alert('Error', 'Failed to mark notifications as read');
+    }
+  };
+
+  const handleMarkRead = async (notifId) => {
+    try {
+      await api.put(`/notifications/${notifId}/read`);
+      setNotifications(prev =>
+        prev.map(n => n.notif_id === notifId ? { ...n, is_read: true } : n)
+      );
+      setUnreadCount(prev => Math.max(prev - 1, 0));
+    } catch {
+      console.error('Failed to mark notification as read');
+    }
+  };
 
   const handleLogout = () => {
-    Alert.alert('Logout', 'Are you sure you want to logout?', [
+    Alert.alert('Logout', 'Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Logout', style: 'destructive', onPress: logout },
     ]);
@@ -56,382 +192,478 @@ export default function AdminDashboard({ navigation }) {
         onPress: async () => {
           try {
             await api.put(`/admin/approve-org/${orgId}`);
-            Alert.alert('Success!', `${orgName} has been approved.`);
+            Alert.alert('Success!', `${orgName} approved.`);
             fetchDashboard();
-          } catch (err) {
+          } catch {
             Alert.alert('Error', 'Failed to approve organization');
           }
-        }
-      }
+        },
+      },
     ]);
   };
 
-  const onRefresh = () => {
-    setRefreshing(true);
-    fetchDashboard();
-  };
+  const onRefresh = () => { setRefreshing(true); fetchDashboard(); fetchNotifications(); };
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+        <ActivityIndicator size="large" color={TEAL} />
         <Text style={styles.loadingText}>Loading dashboard...</Text>
       </View>
     );
   }
 
   const statCards = [
-    { label: 'Students', value: data?.stats?.totalStudents || 0, icon: '🎓', color: COLORS.secondary },
-    { label: 'Supervisors', value: data?.stats?.totalSupervisors || 0, icon: '👨‍🏫', color: '#2E7D32' },
-    { label: 'Host Orgs', value: data?.stats?.totalOrgs || 0, icon: '🏢', color: '#6A1B9A' },
-    { label: 'Active', value: data?.stats?.activeAttachments || 0, icon: '📋', color: COLORS.primary },
-    { label: 'Pending Orgs', value: data?.stats?.pendingOrgs || 0, icon: '⏳', color: '#C62828' },
-    { label: 'Attachments', value: data?.stats?.totalAttachments || 0, icon: '📊', color: '#00695C' },
+    { label: 'TOTAL STUDENTS', value: data?.stats?.totalStudents    || 0, change: '+12%', up: true,  icon: 'people-outline' },
+    { label: 'ACTIVE',         value: data?.stats?.activeAttachments|| 0, change: '+5%',  up: true,  icon: 'person-outline' },
+    { label: 'PENDING',        value: data?.stats?.pendingOrgs      || 0, change: '+18%', up: true,  icon: 'time-outline' },
+    { label: 'HOST ORGS',      value: data?.stats?.totalOrgs        || 0, change: '-2%',  up: false, icon: 'business-outline' },
   ];
 
-  const menuItems = [
-    { label: 'Manage Users', icon: '👥', screen: 'ManageUsers', color: COLORS.secondary },
-    { label: 'Attachments', icon: '📋', screen: 'ManageAttachments', color: COLORS.primary },
-    { label: 'Assign Supervisors', icon: '👨‍🏫', screen: 'AssignSupervisors', color: '#2E7D32' },
-    { label: 'Reports', icon: '📊', screen: 'Reports', color: '#6A1B9A' },
+  const quickActions = [
+    { label: 'Review\nPending',     screen: 'ManageAttachments' },
+    { label: 'Assign\nSupervisor',  screen: 'AssignSupervisor' },
+    { label: 'System\nReports',     screen: 'Reports' },
+    { label: 'Manage\nUsers',       screen: 'ManageUsers' },
+    { label: 'Manage\nOrgs',        screen: 'ManageOrgs' },
+    { label: 'Settings',            screen: 'Settings' },
+  ];
+
+  const recentActivity = [
+    ...(data?.recentAttachments || []).map((att) => ({
+      id: `att-${att.attachment_id || att.student_name}`,
+      type: 'attachment',
+      name: att.student_name,
+      time: att.created_at ? timeAgo(att.created_at) : '',
+      desc: 'Submitted a new internship application for',
+      highlight: att.org_name,
+      initials: att.student_name?.charAt(0).toUpperCase() || '?',
+      avatarBg: '#1A4A6E',
+      online: att.status === 'ongoing',
+      showApprove: att.status === 'pending',
+      showAssign: !att.supervisor_name,
+      itemId: att.attachment_id,
+      orgName: att.org_name,
+    })),
+    ...(data?.recentUsers || []).map((u) => ({
+      id: `user-${u.email}`,
+      type: 'user',
+      name: u.name || 'Unknown',
+      time: u.created_at ? timeAgo(u.created_at) : '',
+      desc: `Registered as a new ${u.role}`,
+      highlight: '',
+      initials: u.name?.charAt(0).toUpperCase() || '?',
+      avatarBg: u.role === 'student' ? '#1A3A6E' : u.role === 'supervisor' ? '#1A4A3A' : '#3A1A6E',
+      online: false,
+      showApprove: false,
+      showAssign: false,
+    })),
+    ...(data?.pendingOrgList || []).map((org) => ({
+      id: `org-${org.org_id}`,
+      type: 'org',
+      name: 'New Organization',
+      time: org.created_at ? timeAgo(org.created_at) : '',
+      desc: '',
+      highlight: org.org_name,
+      extra: 'joined as a Host Organization.',
+      initials: '🏢',
+      avatarBg: '#2A2A1A',
+      isOrg: true,
+      online: false,
+      showApprove: true,
+      showAssign: false,
+      badge: 'PENDING VERIFICATION',
+      itemId: org.org_id,
+      orgName: org.org_name,
+    })),
+  ];
+
+  const tabs = [
+    { label: 'Home',        icon: 'home',             active: true,  screen: null },
+    { label: 'Students',    icon: 'people-outline',   active: false, screen: 'ManageUsers' },
+    { label: 'Supervisors', icon: 'ribbon-outline',   active: false, screen: 'ManageSupervisors' },
+    { label: 'Orgs',        icon: 'business-outline', active: false, screen: 'ManageOrgs' },
+    { label: 'Manage Users',icon: 'person-outline',   active: false, screen: 'ManageUsers' },
   ];
 
   return (
-    <ScrollView
-      style={styles.container}
-      showsVerticalScrollIndicator={false}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-    >
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerTop}>
-          <View>
-            <Text style={styles.greeting}>Admin Panel 🛡️</Text>
-            <Text style={styles.name}>{user?.full_name || 'Administrator'}</Text>
-            <Text style={styles.email}>{user?.email}</Text>
-          </View>
-          <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
-            <Text style={styles.logoutText}>Logout</Text>
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <StatusBar barStyle="light-content" backgroundColor={NAVY} />
+
+      <NotificationPanel
+        visible={notifVisible}
+        notifications={notifications}
+        unreadCount={unreadCount}
+        onClose={() => setNotifVisible(false)}
+        onMarkAllRead={handleMarkAllRead}
+        onMarkRead={handleMarkRead}
+      />
+
+      {/* ── DARK NAVY TOP SECTION ── */}
+      <View style={styles.navySection}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={handleLogout} hitSlop={{ top:10, bottom:10, left:10, right:10 }}>
+            <Ionicons name="menu" size={26} color={WHITE} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Admin Dashboard</Text>
+
+          {/* Bell with live unread count badge */}
+          <TouchableOpacity style={styles.bellWrap} onPress={handleBellPress}>
+            <Ionicons name="notifications-outline" size={24} color={WHITE} />
+            {unreadCount > 0 && (
+              <View style={styles.bellBadge}>
+                <Text style={styles.bellBadgeText}>
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
 
-        {/* Alert if pending orgs */}
-        {data?.stats?.pendingOrgs > 0 && (
-          <View style={styles.alertBanner}>
-            <Text style={styles.alertText}>
-              ⚠️ {data.stats.pendingOrgs} organization(s) pending approval
-            </Text>
-          </View>
-        )}
-      </View>
-
-      {/* Stats Grid */}
-      <Text style={styles.sectionTitle}>System Overview</Text>
-      <View style={styles.statsGrid}>
-        {statCards.map((stat, index) => (
-          <View key={index} style={[styles.statCard, { borderLeftColor: stat.color }]}>
-            <Text style={styles.statIcon}>{stat.icon}</Text>
-            <Text style={[styles.statValue, { color: stat.color }]}>{stat.value}</Text>
-            <Text style={styles.statLabel}>{stat.label}</Text>
-          </View>
-        ))}
-      </View>
-
-      {/* Quick Actions */}
-      <Text style={styles.sectionTitle}>Quick Actions</Text>
-      <View style={styles.menuGrid}>
-        {menuItems.map((item) => (
-          <TouchableOpacity
-            key={item.screen}
-            style={styles.menuCard}
-            onPress={() => navigation.navigate(item.screen)}
-          >
-            <View style={[styles.menuIcon, { backgroundColor: item.color }]}>
-              <Text style={{ fontSize: 24 }}>{item.icon}</Text>
-            </View>
-            <Text style={styles.menuLabel}>{item.label}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      {/* Pending Organizations */}
-      {data?.pendingOrgList?.length > 0 && (
-        <>
-          <Text style={styles.sectionTitle}>⏳ Pending Organization Approvals</Text>
-          {data.pendingOrgList.map((org, index) => (
-            <View key={index} style={styles.orgCard}>
-              <View style={styles.orgInfo}>
-                <Text style={styles.orgName}>{org.org_name}</Text>
-                <Text style={styles.orgDetail}>📍 {org.location}</Text>
-                <Text style={styles.orgDetail}>👤 {org.contact_person}</Text>
-                <Text style={styles.orgDetail}>📧 {org.email}</Text>
+        <View style={styles.statsGrid}>
+          {statCards.map((s, i) => (
+            <View key={i} style={styles.statCard}>
+              <View style={styles.statTopRow}>
+                <View style={styles.statIconCircle}>
+                  <Ionicons name={s.icon} size={18} color={TEAL} />
+                </View>
+                <Text style={styles.statLabel}>{s.label}</Text>
               </View>
-              <TouchableOpacity
-                style={styles.reviewBtn}
-                onPress={() => navigation.navigate('OrgDetails', {
-                  orgId: org.org_id,
-                  orgName: org.org_name
-                })}
-              >
-                <Text style={styles.reviewBtnText}>Review →</Text>
-              </TouchableOpacity>
+              <Text style={styles.statValue}>{Number(s.value).toLocaleString()}</Text>
+              <View style={styles.statBottom}>
+                <View style={styles.statChangeRow}>
+                  <Ionicons name={s.up ? 'trending-up' : 'trending-down'} size={14} color={s.up ? GREEN : RED} />
+                  <Text style={[styles.statChange, { color: s.up ? GREEN : RED }]}>{' '}{s.change}</Text>
+                </View>
+                <Sparkline up={s.up} />
+              </View>
             </View>
           ))}
-        </>
-      )}
-
-      {/* Recent Users */}
-      <Text style={styles.sectionTitle}>Recent Registrations</Text>
-      {data?.recentUsers?.length === 0 ? (
-        <View style={styles.emptyCard}>
-          <Text style={styles.emptyText}>No users registered yet</Text>
         </View>
-      ) : (
-        data?.recentUsers?.map((u, index) => (
-          <TouchableOpacity
-            key={index}
-            style={styles.userCard}
-            onPress={() => navigation.navigate('ManageUsers')}
-            activeOpacity={0.7}
-          >
-            <View style={[styles.userAvatar, { backgroundColor: 
-              u.role === 'student' ? COLORS.secondary :
-              u.role === 'supervisor' ? '#2E7D32' : '#6A1B9A'
-            }]}>
-              <Text style={styles.avatarText}>
-                {u.name?.charAt(0).toUpperCase() || '?'}
-              </Text>
+      </View>
+
+      {/* ── WHITE BOTTOM SECTION ── */}
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={{ paddingBottom: 30 }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={TEAL} />}
+      >
+        {/* Quick Actions */}
+        <Text style={styles.sectionTitle}>Quick Actions</Text>
+        <View style={styles.actionsGrid}>
+          {quickActions.map((a, i) => (
+            <TouchableOpacity
+              key={i}
+              style={styles.actionCard}
+              onPress={() => navigation.navigate(a.screen)}
+            >
+              <ActionIcon name={a.label.replace('\n', ' ')} />
+              <Text style={styles.actionLabel}>{a.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Needs Supervisor */}
+        {unassigned.length > 0 && (
+          <>
+            <View style={styles.sectionRow}>
+              <Text style={styles.sectionTitle}>Needs Supervisor</Text>
+              <TouchableOpacity style={styles.viewAllBtn} onPress={() => navigation.navigate('AssignSupervisor')}>
+                <Text style={styles.viewAllText}>View All</Text>
+                <Ionicons name="chevron-forward" size={14} color={GRAY} />
+              </TouchableOpacity>
             </View>
-            <View style={styles.userInfo}>
-              <Text style={styles.userName}>{u.name || 'Unknown'}</Text>
-              <Text style={styles.userEmail}>{u.email}</Text>
-              <Text style={styles.userDate}>
-                {new Date(u.created_at).toLocaleDateString()}
-              </Text>
-            </View>
-            <View style={[styles.roleBadge, {
-              backgroundColor:
-                u.role === 'student' ? '#E3F2FD' :
-                u.role === 'supervisor' ? '#E8F5E9' : '#F3E5F5'
-            }]}>
-              <Text style={[styles.roleText, {
-                color:
-                  u.role === 'student' ? COLORS.secondary :
-                  u.role === 'supervisor' ? '#2E7D32' : '#6A1B9A'
-              }]}>
-                {u.role}
-              </Text>
-            </View>
+            {unassigned.slice(0, 3).map((att) => (
+              <View key={att.attachment_id} style={styles.activityCard}>
+                <View style={styles.activityRow}>
+                  <View style={[styles.avatar, { backgroundColor: '#1A3A6E', marginRight: 14 }]}>
+                    <Text style={styles.avatarText}>{att.student_name?.charAt(0).toUpperCase() || '?'}</Text>
+                  </View>
+                  <View style={styles.activityContent}>
+                    <View style={styles.activityNameRow}>
+                      <Text style={styles.activityName}>{att.student_name}</Text>
+                      <View style={styles.unassignedBadge}>
+                        <Text style={styles.unassignedBadgeText}>NO SUPERVISOR</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.activityDesc}>
+                      {att.department} · <Text style={styles.activityHighlight}>{att.org_name}</Text>
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.activityActions}>
+                  <TouchableOpacity
+                    style={styles.approveBtn}
+                    onPress={() => navigation.navigate('AssignSupervisor', { attachmentId: att.attachment_id, studentName: att.student_name })}
+                  >
+                    <Text style={styles.approveBtnText}>Assign</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.detailsBtn}
+                    onPress={() => navigation.navigate('ManageAttachments', { attachmentId: att.attachment_id })}
+                  >
+                    <Text style={styles.detailsBtnText}>Details</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))}
+          </>
+        )}
+
+        {/* Recent Activity */}
+        <View style={styles.sectionRow}>
+          <Text style={styles.sectionTitle}>Recent Activity</Text>
+          <TouchableOpacity style={styles.viewAllBtn} onPress={() => navigation.navigate('ManageUsers')}>
+            <Text style={styles.viewAllText}>View All</Text>
+            <Ionicons name="chevron-forward" size={14} color={GRAY} />
           </TouchableOpacity>
-        ))
-      )}
-
-      {/* Recent Attachments */}
-      <Text style={styles.sectionTitle}>Recent Attachments</Text>
-      {data?.recentAttachments?.length === 0 ? (
-        <View style={styles.emptyCard}>
-          <Text style={styles.emptyText}>No attachments yet</Text>
         </View>
-      ) : (
-        data?.recentAttachments?.map((att, index) => (
-          <TouchableOpacity
-            key={index}
-            style={styles.attachCard}
-            onPress={() => navigation.navigate('ManageAttachments')}
-            activeOpacity={0.7}
-          >
-            <View style={styles.attachLeft}>
-              <Text style={styles.attachStudent}>{att.student_name}</Text>
-              <Text style={styles.attachReg}>{att.reg_number}</Text>
-              <Text style={styles.attachOrg}>🏢 {att.org_name}</Text>
-              {att.supervisor_name && (
-                <Text style={styles.attachSupervisor}>👨‍🏫 {att.supervisor_name}</Text>
+
+        {recentActivity.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyText}>No recent activity</Text>
+          </View>
+        ) : (
+          recentActivity.map((a) => (
+            <View key={a.id} style={styles.activityCard}>
+              <View style={styles.activityRow}>
+                <View style={styles.avatarWrap}>
+                  <View style={[styles.avatar, { backgroundColor: a.avatarBg }]}>
+                    <Text style={styles.avatarText}>{a.isOrg ? '🏢' : a.initials}</Text>
+                  </View>
+                  {a.online && <View style={styles.onlineDot} />}
+                </View>
+                <View style={styles.activityContent}>
+                  <View style={styles.activityNameRow}>
+                    <Text style={styles.activityName}>{a.name}</Text>
+                    <Text style={styles.activityTime}>{a.time}</Text>
+                  </View>
+                  <Text style={styles.activityDesc}>
+                    {a.desc}
+                    {a.highlight ? <Text style={styles.activityHighlight}> {a.highlight}</Text> : null}
+                    {a.extra ? <Text style={styles.activityDescNormal}> {a.extra}</Text> : null}
+                  </Text>
+                  {a.badge && (
+                    <View style={styles.pendingBadge}>
+                      <Text style={styles.pendingBadgeText}>{a.badge}</Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+
+              {(a.showApprove || a.showAssign) && (
+                <View style={styles.activityActions}>
+                  {a.showApprove && (
+                    <TouchableOpacity style={styles.approveBtn} onPress={() => handleApproveOrg(a.itemId, a.orgName)}>
+                      <Text style={styles.approveBtnText}>Approve</Text>
+                    </TouchableOpacity>
+                  )}
+                  {a.showAssign && (
+                    <TouchableOpacity
+                      style={styles.approveBtn}
+                      onPress={() => navigation.navigate('AssignSupervisor', { attachmentId: a.itemId, studentName: a.name })}
+                    >
+                      <Text style={styles.approveBtnText}>Assign</Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity
+                    style={styles.detailsBtn}
+                    onPress={() =>
+                      navigation.navigate(
+                        a.type === 'org' ? 'OrgDetails' : 'ManageAttachments',
+                        a.type === 'org' ? { orgId: a.itemId, orgName: a.orgName } : undefined
+                      )
+                    }
+                  >
+                    <Text style={styles.detailsBtnText}>Details</Text>
+                  </TouchableOpacity>
+                </View>
               )}
             </View>
-            <View style={[styles.attachStatus, {
-              backgroundColor:
-                att.status === 'ongoing' ? '#E8F5E9' :
-                att.status === 'pending' ? '#FFF3E0' :
-                att.status === 'completed' ? '#E3F2FD' : '#FFEBEE'
-            }]}>
-              <Text style={[styles.attachStatusText, {
-                color:
-                  att.status === 'ongoing' ? '#2E7D32' :
-                  att.status === 'pending' ? COLORS.primary :
-                  att.status === 'completed' ? COLORS.secondary : '#C62828'
-              }]}>
-                {att.status}
-              </Text>
-            </View>
-          </TouchableOpacity>
-        ))
-      )}
+          ))
+        )}
+      </ScrollView>
 
-      <View style={{ height: 40 }} />
-    </ScrollView>
+      {/* Bottom Tab Bar */}
+      <View style={styles.tabBar}>
+        {tabs.map((t, i) => (
+          <TouchableOpacity
+            key={i}
+            style={styles.tabItem}
+            onPress={() => t.screen && navigation.navigate(t.screen)}
+          >
+            <Ionicons
+              name={t.active ? t.icon.replace('-outline', '') : t.icon}
+              size={22}
+              color={t.active ? TEAL : GRAY}
+            />
+            <Text style={[styles.tabLabel, t.active && styles.tabLabelActive]}>{t.label}</Text>
+            {t.active && <View style={styles.tabUnderline} />}
+          </TouchableOpacity>
+        ))}
+      </View>
+    </SafeAreaView>
   );
 }
 
+function timeAgo(dateStr) {
+  const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000);
+  if (diff < 60)    return `${diff}s ago`;
+  if (diff < 3600)  return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
+const CARD_W    = (width - 48) / 2;
+const ACTION_W  = (width - 56) / 3;
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F4F4F4' },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { marginTop: 10, color: COLORS.gray },
+  safe: { flex: 1, backgroundColor: NAVY },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: LIGHT_BG },
+  loadingText: { marginTop: 12, color: GRAY, fontSize: 14 },
+
+  navySection: {
+    backgroundColor: NAVY, paddingHorizontal: 16, paddingBottom: 24,
+    borderBottomLeftRadius: 28, borderBottomRightRadius: 28,
+  },
   header: {
-    backgroundColor: COLORS.secondary,
-    paddingTop: 55,
-    paddingHorizontal: 20,
-    paddingBottom: 25,
-    borderBottomLeftRadius: 25,
-    borderBottomRightRadius: 25,
-  },
-  headerTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  greeting: { color: '#8899AA', fontSize: 13 },
-  name: { color: COLORS.white, fontSize: 22, fontWeight: 'bold', marginTop: 2 },
-  email: { color: COLORS.primary, fontSize: 12, marginTop: 3 },
-  logoutBtn: {
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
-  },
-  logoutText: { color: COLORS.white, fontSize: 13 },
-  alertBanner: {
-    backgroundColor: '#FFF3E0',
-    borderRadius: 10,
-    padding: 10,
-    marginTop: 15,
-    borderLeftWidth: 4,
-    borderLeftColor: COLORS.primary,
-  },
-  alertText: { color: COLORS.primary, fontWeight: '600', fontSize: 13 },
-  sectionTitle: {
-    fontSize: 16, fontWeight: '700',
-    color: COLORS.darkGray,
-    marginLeft: 16, marginTop: 20, marginBottom: 10,
-  },
-  statsGrid: {
-    flexDirection: 'row', flexWrap: 'wrap',
-    paddingHorizontal: 10,
-  },
-  statCard: {
-    backgroundColor: COLORS.white,
-    width: '30%', margin: '1.5%',
-    padding: 14, borderRadius: 14,
-    alignItems: 'center',
-    borderLeftWidth: 4,
-    elevation: 2,
-  },
-  statIcon: { fontSize: 24, marginBottom: 6 },
-  statValue: { fontSize: 22, fontWeight: 'bold' },
-  statLabel: { fontSize: 10, color: COLORS.gray, marginTop: 3, textAlign: 'center' },
-  menuGrid: {
-    flexDirection: 'row', flexWrap: 'wrap',
-    paddingHorizontal: 10,
-  },
-  menuCard: {
-    backgroundColor: COLORS.white,
-    width: '46%', margin: '2%',
-    padding: 16, borderRadius: 16,
-    alignItems: 'center', elevation: 2,
-  },
-  menuIcon: {
-    width: 50, height: 50,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  menuLabel: { fontSize: 12, fontWeight: '700', color: COLORS.darkGray, textAlign: 'center' },
-  orgCard: {
-    backgroundColor: COLORS.white,
-    marginHorizontal: 16, marginBottom: 10,
-    padding: 14, borderRadius: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    elevation: 2,
-    borderLeftWidth: 4,
-    borderLeftColor: '#C62828',
-  },
-  orgInfo: { flex: 1 },
-  orgName: { fontSize: 14, fontWeight: '700', color: COLORS.darkGray },
-  orgDetail: { fontSize: 12, color: COLORS.gray, marginTop: 2 },
-  approveBtn: {
-    backgroundColor: '#2E7D32',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 10,
-    marginLeft: 10,
-  },
-  approveBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 12 },
-  reviewBtn: {
-    backgroundColor: COLORS.secondary,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 10,
-    marginLeft: 10,
-  },
-  reviewBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 12 },
-  emptyCard: {
-    backgroundColor: COLORS.white,
-    margin: 16, padding: 20,
-    borderRadius: 16, alignItems: 'center',
-  },
-  emptyText: { color: COLORS.gray, fontSize: 14 },
-  userCard: {
-    backgroundColor: COLORS.white,
-    marginHorizontal: 16, marginBottom: 10,
-    padding: 14, borderRadius: 16,
     flexDirection: 'row', alignItems: 'center',
-    elevation: 2,
+    justifyContent: 'space-between', paddingTop: 8, paddingBottom: 20,
   },
-  userAvatar: {
-    width: 44, height: 44,
-    borderRadius: 22,
-    justifyContent: 'center', alignItems: 'center',
-    marginRight: 12,
+  headerTitle: { fontSize: 18, fontWeight: '700', color: WHITE },
+
+  // Bell with count badge
+  bellWrap: { position: 'relative', padding: 4 },
+  bellBadge: {
+    position: 'absolute', top: 0, right: 0,
+    backgroundColor: RED, borderRadius: 10,
+    minWidth: 18, height: 18,
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 4, borderWidth: 1.5, borderColor: NAVY,
   },
-  avatarText: { color: COLORS.white, fontSize: 18, fontWeight: 'bold' },
-  userInfo: { flex: 1 },
-  userName: { fontSize: 14, fontWeight: '700', color: COLORS.darkGray },
-  userEmail: { fontSize: 12, color: COLORS.gray, marginTop: 2 },
-  userDate: { fontSize: 11, color: COLORS.gray, marginTop: 1 },
-  roleBadge: {
-    paddingHorizontal: 10, paddingVertical: 5,
-    borderRadius: 10,
+  bellBadgeText: { color: WHITE, fontSize: 10, fontWeight: '800' },
+
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 12 },
+  statCard: {
+    width: CARD_W, backgroundColor: NAVY_CARD,
+    borderRadius: 16, padding: 16,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)', overflow: 'hidden',
   },
-  roleText: { fontSize: 11, fontWeight: '700', textTransform: 'capitalize' },
-  attachCard: {
-    backgroundColor: COLORS.white,
-    marginHorizontal: 16, marginBottom: 10,
-    padding: 14, borderRadius: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    elevation: 2,
+  statTopRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  statIconCircle: {
+    width: 34, height: 34, borderRadius: 17,
+    backgroundColor: TEAL_DIM, alignItems: 'center', justifyContent: 'center', marginRight: 8,
   },
-  attachLeft: { flex: 1 },
-  attachStudent: { fontSize: 14, fontWeight: '700', color: COLORS.darkGray },
-  attachReg: { fontSize: 12, color: COLORS.gray, marginTop: 2 },
-  attachOrg: { fontSize: 12, color: COLORS.primary, marginTop: 2 },
-  attachSupervisor: { fontSize: 12, color: '#2E7D32', marginTop: 2 },
-  attachStatus: {
-    paddingHorizontal: 10, paddingVertical: 6,
-    borderRadius: 10, marginLeft: 10,
+  statLabel: { fontSize: 11, color: GRAY, fontWeight: '600', letterSpacing: 0.5, flex: 1 },
+  statValue: { fontSize: 32, fontWeight: '800', color: WHITE, marginBottom: 6 },
+  statBottom: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
+  statChangeRow: { flexDirection: 'row', alignItems: 'center' },
+  statChange: { fontSize: 13, fontWeight: '600' },
+  sparkline: { position: 'absolute', bottom: -4, right: -8, opacity: 0.8 },
+
+  scroll: { flex: 1, backgroundColor: LIGHT_BG, paddingHorizontal: 16 },
+  sectionTitle: { fontSize: 17, fontWeight: '700', color: DARK, marginTop: 20, marginBottom: 14 },
+  sectionRow: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'center', marginTop: 20, marginBottom: 14,
   },
-  attachStatusText: { fontSize: 11, fontWeight: '700', textTransform: 'capitalize' },
-  workModeRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
-  workModeBtn: {
-    flex: 1, padding: 10, borderRadius: 10,
-    borderWidth: 2, borderColor: COLORS.gray,
-    alignItems: 'center', backgroundColor: COLORS.lightGray,
+  viewAllBtn: { flexDirection: 'row', alignItems: 'center' },
+  viewAllText: { fontSize: 14, color: GRAY, marginRight: 2 },
+
+  actionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  actionCard: {
+    width: ACTION_W, backgroundColor: WHITE, borderRadius: 14,
+    paddingVertical: 18, alignItems: 'center', justifyContent: 'center',
+    elevation: 1, borderWidth: 1, borderColor: BORDER,
   },
-  workModeBtnActive: { borderColor: COLORS.primary, backgroundColor: '#FFF3E0' },
-  workModeBtnText: { fontSize: 13, fontWeight: '600', color: COLORS.darkGray },
-  workModeBtnTextActive: { color: COLORS.primary },
+  actionLabel: { fontSize: 11, fontWeight: '500', color: DARK, textAlign: 'center', marginTop: 8, lineHeight: 16 },
+
+  emptyCard: {
+    backgroundColor: WHITE, borderRadius: 14,
+    padding: 24, alignItems: 'center', borderWidth: 1, borderColor: BORDER,
+  },
+  emptyText: { color: GRAY, fontSize: 14 },
+  activityCard: {
+    backgroundColor: WHITE, borderRadius: 16, padding: 16, marginBottom: 12,
+    borderWidth: 1, borderColor: BORDER, elevation: 1,
+  },
+  activityRow: { flexDirection: 'row' },
+  avatarWrap: { position: 'relative', marginRight: 14 },
+  avatar: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { color: WHITE, fontSize: 20, fontWeight: '700' },
+  onlineDot: {
+    position: 'absolute', bottom: 2, right: 2,
+    width: 13, height: 13, borderRadius: 7,
+    backgroundColor: GREEN, borderWidth: 2, borderColor: WHITE,
+  },
+  activityContent: { flex: 1 },
+  activityNameRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  activityName: { fontSize: 15, fontWeight: '700', color: DARK },
+  activityTime: { fontSize: 12, color: GRAY },
+  activityDesc: { fontSize: 13, color: '#555', lineHeight: 20 },
+  activityDescNormal: { color: '#555' },
+  activityHighlight: { color: TEAL, fontWeight: '600' },
+  pendingBadge: {
+    alignSelf: 'flex-start', marginTop: 8,
+    backgroundColor: '#FFF3E0', borderRadius: 4,
+    paddingHorizontal: 8, paddingVertical: 3,
+  },
+  pendingBadgeText: { fontSize: 10, fontWeight: '700', color: '#E65100', letterSpacing: 0.6 },
+  unassignedBadge: {
+    backgroundColor: '#EDE9FE', borderRadius: 4,
+    paddingHorizontal: 8, paddingVertical: 3,
+  },
+  unassignedBadgeText: { fontSize: 10, fontWeight: '700', color: '#6D28D9', letterSpacing: 0.6 },
+  activityActions: { flexDirection: 'row', gap: 10, marginTop: 14, marginLeft: 66 },
+  approveBtn: { backgroundColor: TEAL, borderRadius: 8, paddingHorizontal: 22, paddingVertical: 9 },
+  approveBtnText: { color: WHITE, fontSize: 13, fontWeight: '700' },
+  detailsBtn: {
+    borderWidth: 1.5, borderColor: '#D1D5DB', borderRadius: 8,
+    paddingHorizontal: 22, paddingVertical: 9,
+  },
+  detailsBtnText: { color: DARK, fontSize: 13, fontWeight: '600' },
+
+  // Notification panel
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-start', alignItems: 'flex-end',
+  },
+  notifPanel: {
+    backgroundColor: WHITE, borderRadius: 16,
+    width: width * 0.88, maxHeight: 480,
+    marginTop: 60, marginRight: 12,
+    elevation: 8, overflow: 'hidden',
+  },
+  notifHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 16, paddingVertical: 14,
+    borderBottomWidth: 1, borderBottomColor: BORDER,
+  },
+  notifTitle: { fontSize: 16, fontWeight: '700', color: DARK },
+  markAllText: { fontSize: 13, color: TEAL, fontWeight: '600' },
+  notifEmpty: { alignItems: 'center', paddingVertical: 40, gap: 12 },
+  notifEmptyText: { color: GRAY, fontSize: 14 },
+  notifItem: { paddingHorizontal: 16, paddingVertical: 14 },
+  notifItemUnread: { backgroundColor: '#F0FDF9' },
+  notifItemLeft: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  notifDot: {
+    width: 8, height: 8, borderRadius: 4,
+    backgroundColor: TEAL, marginTop: 5, flexShrink: 0,
+  },
+  notifDotRead: { backgroundColor: 'transparent' },
+  notifMessage: { fontSize: 13, color: '#444', lineHeight: 20 },
+  notifMessageUnread: { color: DARK, fontWeight: '600' },
+  notifTime: { fontSize: 11, color: GRAY, marginTop: 4 },
+  notifDivider: { height: 1, backgroundColor: BORDER, marginHorizontal: 16 },
+
+  tabBar: {
+    flexDirection: 'row', backgroundColor: WHITE,
+    borderTopWidth: 1, borderTopColor: BORDER,
+    paddingTop: 10, paddingBottom: 6,
+  },
+  tabItem: { flex: 1, alignItems: 'center', paddingBottom: 2 },
+  tabLabel: { fontSize: 10, color: GRAY, marginTop: 3 },
+  tabLabelActive: { color: TEAL, fontWeight: '700' },
+  tabUnderline: { width: 24, height: 3, borderRadius: 2, backgroundColor: TEAL, marginTop: 4 },
 });

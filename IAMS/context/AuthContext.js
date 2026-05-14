@@ -16,7 +16,6 @@ export const AuthProvider = ({ children }) => {
           const res = await api.get('/auth/me');
           setUser(res.data);
         } catch (err) {
-          console.error('❌ Auth check failed:', err.message || 'Unknown error');
           await AsyncStorage.removeItem('iams_token');
           setUser(null);
         }
@@ -35,7 +34,6 @@ export const AuthProvider = ({ children }) => {
       setUser(me.data);
       return me.data;
     } catch (err) {
-      console.error('❌ Login succeeded but /auth/me failed:', err.response?.data || err.message);
       const fallbackUser = {
         email,
         role: data.role,

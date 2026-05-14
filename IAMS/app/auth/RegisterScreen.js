@@ -1,29 +1,42 @@
 import { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
-  StyleSheet, Alert, ActivityIndicator, ScrollView
+  StyleSheet, Alert, ActivityIndicator, ScrollView,
+  Dimensions
 } from 'react-native';
-import { useTheme } from '../../context/ThemeContext';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import api from '../../api/axios';
 
+const { height } = Dimensions.get('window');
+
+// Educational theme colors
+const NAVY   = '#0D1B3E';
+const BLUE   = '#1A56DB';
+const GOLD   = '#D4A017';
+const WHITE  = '#FFFFFF';
+const GRAY   = '#9CA3AF';
+const INPUT_BG = '#F3F6FB';
+const BORDER   = '#D1D9E6';
+
 export default function RegisterScreen({ navigation }) {
-  const { theme } = useTheme();
   const [role, setRole] = useState('student');
+  const [showRoleDropdown, setShowRoleDropdown] = useState(false);
   const [form, setForm] = useState({
-  full_name: '', reg_number: '', email: '',
-  password: '', department: '', year_of_study: '',
-  phone: '',
-  // Host org fields
-  org_name: '', industry: '', location: '',
-  official_email: '', website: '', description: '',
-  contact_person: '', contact_position: '',
-  department_offering: '', roles_tasks: '',
-  required_skills: '', available_slots: '',
-  attachment_duration: '', work_mode: 'onsite',
-  internal_supervisor: '', supervisor_position: '',
-  allowance: '', resources_provided: '',
-});
+    full_name: '', reg_number: '', email: '',
+    password: '', confirm_password: '', department: '', year_of_study: '',
+    phone: '',
+    // Host org fields
+    org_name: '', industry: '', location: '',
+    official_email: '', website: '', description: '',
+    contact_person: '', contact_position: '',
+    department_offering: '', roles_tasks: '',
+    required_skills: '', available_slots: '',
+    attachment_duration: '', work_mode: 'onsite',
+    internal_supervisor: '', supervisor_position: '',
+    allowance: '', resources_provided: '',
+  });
   const [loading, setLoading] = useState(false);
+  const [agreeTerms, setAgreeTerms] = useState(false);
 
   const handleChange = (key, value) => setForm({ ...form, [key]: value });
 
@@ -32,10 +45,22 @@ export default function RegisterScreen({ navigation }) {
       Alert.alert('Error', 'Please fill in all required fields');
       return;
     }
+    
+    if (form.password !== form.confirm_password) {
+      Alert.alert('Error', 'Passwords do not match');
+      return;
+    }
+
+    if (!agreeTerms) {
+      Alert.alert('Error', 'Please agree to Terms & Conditions');
+      return;
+    }
+
     if (role === 'student' && !form.reg_number) {
       Alert.alert('Error', 'Registration number is required for students');
       return;
     }
+
     setLoading(true);
     try {
       await api.post('/auth/register', { ...form, role });
@@ -48,308 +73,532 @@ export default function RegisterScreen({ navigation }) {
   };
 
   const roles = [
-    { key: 'student', label: '🎓 Student', desc: 'Attachment student' },
-    { key: 'supervisor', label: '👨‍🏫 Supervisor', desc: 'Academic supervisor' },
-    { key: 'host_org', label: '🏢 Host Org', desc: 'Company offering attachment' },
+    { key: 'student', label: 'Student', icon: 'school' },
+    { key: 'supervisor', label: 'Supervisor', icon: 'briefcase' },
+    { key: 'host_org', label: 'Host Organization', icon: 'office-building' },
   ];
 
+  const selectedRoleLabel = roles.find(r => r.key === role)?.label || 'Select Role';
+
   return (
-    <ScrollView style={[styles.container, { backgroundColor: theme.background }]}>
-      <View style={[styles.header, { backgroundColor: theme.secondary }]}>
-        <Text style={[styles.title, { color: theme.primary }]}>Create Account</Text>
-        <Text style={[styles.subtitle, { color: theme.white }]}>IAMS — Baraton University</Text>
-      </View>
-
-      <View style={styles.form}>
-
-        <Text style={[styles.sectionTitle, { color: theme.secondary }]}>I am registering as:</Text>
-        <View style={styles.roleContainer}>
-          {roles.map((r) => (
-            <TouchableOpacity
-              key={r.key}
-              style={[
-                styles.roleCard,
-                {
-                  borderColor: role === r.key ? theme.primary : theme.gray,
-                  backgroundColor: role === r.key ? `${theme.primary}15` : theme.surface,
-                }
-              ]}
-              onPress={() => setRole(r.key)}
-            >
-              <Text style={styles.roleIcon}>{r.label.split(' ')[0]}</Text>
-              <Text style={[styles.roleLabel, role === r.key && { color: theme.primary }]}>
-                {r.label.split(' ')[1]}
-              </Text>
-              <Text style={[styles.roleDesc, role === r.key && { color: theme.primary }]}>
-                {r.desc}
-              </Text>
-            </TouchableOpacity>
-          ))}
+    <View style={styles.root}>
+      {/* ── Navy header section ── */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <Ionicons name="arrow-back" size={24} color={WHITE} />
+        </TouchableOpacity>
+        
+        <View style={styles.headerContent}>
+          <Text style={styles.headerTitle}>Create Account</Text>
+          <Text style={styles.headerSubtitle}>Join Learning Hub</Text>
         </View>
 
-        <Text style={[styles.sectionTitle, { color: theme.secondary }]}>Personal Information</Text>
+        {/* Educational icon */}
+        <View style={styles.headerIcon}>
+          <MaterialCommunityIcons name="school" size={32} color={GOLD} />
+        </View>
+      </View>
 
-        <Text style={[styles.label, { color: theme.text }]}>Full Name *</Text>
-        <TextInput
-          style={[styles.input, { borderColor: theme.gray, backgroundColor: theme.surface, color: theme.text }]}
-          placeholder="e.g. Ngetich Timothy"
-          placeholderTextColor={theme.textSecondary}
-          value={form.full_name}
-          onChangeText={(v) => handleChange('full_name', v)}
-        />
+      {/* ── Decorative wave divider ── */}
+      <View style={styles.waveDivider} />
 
-        <Text style={[styles.label, { color: theme.text }]}>Email Address *</Text>
-        <TextInput
-          style={[styles.input, { borderColor: theme.gray, backgroundColor: theme.surface, color: theme.text }]}
-          placeholder="e.g. you@ueab.ac.ke"
-          placeholderTextColor={theme.textSecondary}
-          value={form.email}
-          onChangeText={(v) => handleChange('email', v)}
-          keyboardType="email-address"
-          autoCapitalize="none"
-        />
+      {/* ── Form section ── */}
+      <ScrollView
+        style={styles.formContainer}
+        contentContainerStyle={styles.formContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Role Selection Dropdown */}
+        <Text style={styles.sectionLabel}>I am registering as:</Text>
+        
+        <TouchableOpacity
+          style={styles.roleDropdown}
+          onPress={() => setShowRoleDropdown(!showRoleDropdown)}
+        >
+          <MaterialCommunityIcons 
+            name={roles.find(r => r.key === role)?.icon || 'help'} 
+            size={20} 
+            color={BLUE} 
+            style={styles.roleIcon}
+          />
+          <Text style={styles.roleDropdownText}>{selectedRoleLabel}</Text>
+          <Ionicons 
+            name={showRoleDropdown ? 'chevron-up' : 'chevron-down'} 
+            size={20} 
+            color={BLUE} 
+          />
+        </TouchableOpacity>
 
-        <Text style={[styles.label, { color: theme.text }]}>Password *</Text>
-        <TextInput
-          style={[styles.input, { borderColor: theme.gray, backgroundColor: theme.surface, color: theme.text }]}
-          placeholder="Min 6 characters"
-          placeholderTextColor={theme.textSecondary}
-          value={form.password}
-          onChangeText={(v) => handleChange('password', v)}
-          secureTextEntry
-        />
+        {showRoleDropdown && (
+          <View style={styles.roleDropdownMenu}>
+            {roles.map((r) => (
+              <TouchableOpacity
+                key={r.key}
+                style={[
+                  styles.roleOption,
+                  role === r.key && styles.roleOptionSelected
+                ]}
+                onPress={() => {
+                  setRole(r.key);
+                  setShowRoleDropdown(false);
+                }}
+              >
+                <MaterialCommunityIcons 
+                  name={r.icon} 
+                  size={18} 
+                  color={role === r.key ? BLUE : GRAY}
+                  style={{ marginRight: 10 }}
+                />
+                <Text style={[
+                  styles.roleOptionText,
+                  role === r.key && styles.roleOptionTextSelected
+                ]}>
+                  {r.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
 
-        <Text style={[styles.label, { color: theme.text }]}>Phone Number</Text>
-        <TextInput
-          style={[styles.input, { borderColor: theme.gray, backgroundColor: theme.surface, color: theme.text }]}
-          placeholder="e.g. 0712345678"
-          placeholderTextColor={theme.textSecondary}
-          value={form.phone}
-          onChangeText={(v) => handleChange('phone', v)}
-          keyboardType="phone-pad"
-        />
+        {/* Personal Information Section */}
+        <Text style={styles.sectionLabel}>Personal Information</Text>
 
+        {/* Full Name */}
+        <View style={styles.inputWrap}>
+          <Ionicons name="person-outline" size={20} color={BLUE} style={styles.inputIcon} />
+          <TextInput
+            style={styles.input}
+            placeholder="Full Name"
+            placeholderTextColor={GRAY}
+            value={form.full_name}
+            onChangeText={(v) => handleChange('full_name', v)}
+          />
+        </View>
+
+        {/* Email */}
+        <View style={styles.inputWrap}>
+          <Ionicons name="mail-outline" size={20} color={BLUE} style={styles.inputIcon} />
+          <TextInput
+            style={styles.input}
+            placeholder="Email"
+            placeholderTextColor={GRAY}
+            value={form.email}
+            onChangeText={(v) => handleChange('email', v)}
+            keyboardType="email-address"
+            autoCapitalize="none"
+          />
+        </View>
+
+        {/* Password */}
+        <View style={styles.inputWrap}>
+          <MaterialCommunityIcons name="lock-outline" size={20} color={BLUE} style={styles.inputIcon} />
+          <TextInput
+            style={styles.input}
+            placeholder="Password"
+            placeholderTextColor={GRAY}
+            value={form.password}
+            onChangeText={(v) => handleChange('password', v)}
+            secureTextEntry
+          />
+        </View>
+
+        {/* Confirm Password */}
+        <View style={styles.inputWrap}>
+          <MaterialCommunityIcons name="lock-outline" size={20} color={BLUE} style={styles.inputIcon} />
+          <TextInput
+            style={styles.input}
+            placeholder="Confirm Password"
+            placeholderTextColor={GRAY}
+            value={form.confirm_password}
+            onChangeText={(v) => handleChange('confirm_password', v)}
+            secureTextEntry
+          />
+        </View>
+
+        {/* Phone Number */}
+        <View style={styles.inputWrap}>
+          <Ionicons name="call-outline" size={20} color={BLUE} style={styles.inputIcon} />
+          <TextInput
+            style={styles.input}
+            placeholder="Phone Number"
+            placeholderTextColor={GRAY}
+            value={form.phone}
+            onChangeText={(v) => handleChange('phone', v)}
+            keyboardType="phone-pad"
+          />
+        </View>
+
+        {/* Student-specific fields */}
         {role === 'student' && (
           <>
-            <Text style={[styles.sectionTitle, { color: theme.secondary }]}>Student Details</Text>
-            <Text style={[styles.label, { color: theme.text }]}>Registration Number *</Text>
-            <TextInput
-              style={[styles.input, { borderColor: theme.gray, backgroundColor: theme.surface, color: theme.text }]}
-              placeholder="e.g. SNGEKI2311"
-              placeholderTextColor={theme.textSecondary}
-              value={form.reg_number}
-              onChangeText={(v) => handleChange('reg_number', v)}
-              autoCapitalize="characters"
-            />
-            <Text style={[styles.label, { color: theme.text }]}>Department</Text>
-            <TextInput
-              style={[styles.input, { borderColor: theme.gray, backgroundColor: theme.surface, color: theme.text }]}
-              placeholder="e.g. Information Systems"
-              placeholderTextColor={theme.textSecondary}
-              value={form.department}
-              onChangeText={(v) => handleChange('department', v)}
-            />
-            <Text style={[styles.label, { color: theme.text }]}>Year of Study</Text>
-            <TextInput
-              style={[styles.input, { borderColor: theme.gray, backgroundColor: theme.surface, color: theme.text }]}
-              placeholder="e.g. 4"
-              placeholderTextColor={theme.textSecondary}
-              value={form.year_of_study}
-              onChangeText={(v) => handleChange('year_of_study', v)}
-              keyboardType="numeric"
-            />
+            <Text style={styles.sectionLabel}>Student Details</Text>
+
+            <View style={styles.inputWrap}>
+              <Ionicons name="id-card-outline" size={20} color={BLUE} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Registration Number"
+                placeholderTextColor={GRAY}
+                value={form.reg_number}
+                onChangeText={(v) => handleChange('reg_number', v)}
+                autoCapitalize="characters"
+              />
+            </View>
+
+            <View style={styles.inputWrap}>
+              <Ionicons name="book-outline" size={20} color={BLUE} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Department"
+                placeholderTextColor={GRAY}
+                value={form.department}
+                onChangeText={(v) => handleChange('department', v)}
+              />
+            </View>
+
+            <View style={styles.inputWrap}>
+              <Ionicons name="layers-outline" size={20} color={BLUE} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Year of Study"
+                placeholderTextColor={GRAY}
+                value={form.year_of_study}
+                onChangeText={(v) => handleChange('year_of_study', v)}
+                keyboardType="numeric"
+              />
+            </View>
           </>
         )}
 
+        {/* Supervisor-specific fields */}
         {role === 'supervisor' && (
           <>
-            <Text style={[styles.sectionTitle, { color: theme.secondary }]}>Supervisor Details</Text>
-            <Text style={[styles.label, { color: theme.text }]}>Department</Text>
-            <TextInput
-              style={[styles.input, { borderColor: theme.gray, backgroundColor: theme.surface, color: theme.text }]}
-              placeholder="e.g. Computer Science"
-              placeholderTextColor={theme.textSecondary}
-              value={form.department}
-              onChangeText={(v) => handleChange('department', v)}
-            />
+            <Text style={styles.sectionLabel}>Supervisor Details</Text>
+
+            <View style={styles.inputWrap}>
+              <Ionicons name="book-outline" size={20} color={BLUE} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Department"
+                placeholderTextColor={GRAY}
+                value={form.department}
+                onChangeText={(v) => handleChange('department', v)}
+              />
+            </View>
           </>
         )}
 
+        {/* Host Organization-specific fields */}
         {role === 'host_org' && (
-  <>
-    <Text style={styles.sectionTitle}>Organization Information</Text>
+          <>
+            <Text style={styles.sectionLabel}>Organization Information</Text>
 
-    <Text style={styles.label}>Organization Name *</Text>
-    <TextInput style={styles.input} placeholder="e.g. Safaricom PLC"
-      value={form.org_name} onChangeText={(v) => handleChange('org_name', v)} />
+            <View style={styles.inputWrap}>
+              <MaterialCommunityIcons name="office-building-outline" size={20} color={BLUE} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Organization Name"
+                placeholderTextColor={GRAY}
+                value={form.org_name}
+                onChangeText={(v) => handleChange('org_name', v)}
+              />
+            </View>
 
-    <Text style={styles.label}>Industry/Sector *</Text>
-    <TextInput style={styles.input} placeholder="e.g. Telecommunications"
-      value={form.industry} onChangeText={(v) => handleChange('industry', v)} />
+            <View style={styles.inputWrap}>
+              <Ionicons name="briefcase-outline" size={20} color={BLUE} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Industry/Sector"
+                placeholderTextColor={GRAY}
+                value={form.industry}
+                onChangeText={(v) => handleChange('industry', v)}
+              />
+            </View>
 
-    <Text style={styles.label}>Physical Address *</Text>
-    <TextInput style={styles.input} placeholder="e.g. Nairobi, Westlands"
-      value={form.location} onChangeText={(v) => handleChange('location', v)} />
+            <View style={styles.inputWrap}>
+              <Ionicons name="location-outline" size={20} color={BLUE} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Physical Address"
+                placeholderTextColor={GRAY}
+                value={form.location}
+                onChangeText={(v) => handleChange('location', v)}
+              />
+            </View>
 
-    <Text style={styles.label}>Official Email *</Text>
-    <TextInput style={styles.input} placeholder="e.g. hr@company.com"
-      value={form.official_email} onChangeText={(v) => handleChange('official_email', v)}
-      keyboardType="email-address" autoCapitalize="none" />
+            <View style={styles.inputWrap}>
+              <Ionicons name="mail-outline" size={20} color={BLUE} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Official Email"
+                placeholderTextColor={GRAY}
+                value={form.official_email}
+                onChangeText={(v) => handleChange('official_email', v)}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+            </View>
 
-    <Text style={styles.label}>Website (optional)</Text>
-    <TextInput style={styles.input} placeholder="e.g. https://company.com"
-      value={form.website} onChangeText={(v) => handleChange('website', v)}
-      autoCapitalize="none" />
+            <View style={styles.inputWrap}>
+              <Ionicons name="globe-outline" size={20} color={BLUE} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Website (optional)"
+                placeholderTextColor={GRAY}
+                value={form.website}
+                onChangeText={(v) => handleChange('website', v)}
+                autoCapitalize="none"
+              />
+            </View>
+          </>
+        )}
 
-    <Text style={styles.label}>Brief Description</Text>
-    <TextInput style={[styles.input, { height: 80, textAlignVertical: 'top' }]}
-      placeholder="Brief description of your organization..."
-      value={form.description} onChangeText={(v) => handleChange('description', v)}
-      multiline />
-
-    <Text style={styles.sectionTitle}>Contact Person</Text>
-
-    <Text style={styles.label}>Contact Person Full Name *</Text>
-    <TextInput style={styles.input} placeholder="e.g. Jane Doe"
-      value={form.contact_person} onChangeText={(v) => handleChange('contact_person', v)} />
-
-    <Text style={styles.label}>Position/Job Title *</Text>
-    <TextInput style={styles.input} placeholder="e.g. HR Manager"
-      value={form.contact_position} onChangeText={(v) => handleChange('contact_position', v)} />
-
-    <Text style={styles.sectionTitle}>Attachment Opportunity</Text>
-
-    <Text style={styles.label}>Department Offering Attachment *</Text>
-    <TextInput style={styles.input} placeholder="e.g. IT Department"
-      value={form.department_offering} onChangeText={(v) => handleChange('department_offering', v)} />
-
-    <Text style={styles.label}>Roles/Tasks Student Will Undertake *</Text>
-    <TextInput style={[styles.input, { height: 80, textAlignVertical: 'top' }]}
-      placeholder="Describe what the student will do..."
-      value={form.roles_tasks} onChangeText={(v) => handleChange('roles_tasks', v)}
-      multiline />
-
-    <Text style={styles.label}>Required Skills/Specialization</Text>
-    <TextInput style={styles.input} placeholder="e.g. Programming, Networking"
-      value={form.required_skills} onChangeText={(v) => handleChange('required_skills', v)} />
-
-    <Text style={styles.label}>Number of Available Slots *</Text>
-    <TextInput style={styles.input} placeholder="e.g. 3"
-      value={form.available_slots} onChangeText={(v) => handleChange('available_slots', v)}
-      keyboardType="numeric" />
-
-    <Text style={styles.label}>Attachment Duration</Text>
-    <TextInput style={styles.input} placeholder="e.g. 3 months"
-      value={form.attachment_duration} onChangeText={(v) => handleChange('attachment_duration', v)} />
-
-    <Text style={styles.label}>Work Mode</Text>
-    <View style={styles.workModeRow}>
-      {['onsite', 'remote', 'hybrid'].map((mode) => (
-        <TouchableOpacity
-          key={mode}
-          style={[styles.workModeBtn,
-            form.work_mode === mode && styles.workModeBtnActive]}
-          onPress={() => handleChange('work_mode', mode)}
+        {/* Terms & Conditions */}
+        <TouchableOpacity 
+          style={styles.termsRow} 
+          onPress={() => setAgreeTerms(!agreeTerms)}
         >
-          <Text style={[styles.workModeBtnText,
-            form.work_mode === mode && styles.workModeBtnTextActive]}>
-            {mode.charAt(0).toUpperCase() + mode.slice(1)}
-          </Text>
-        </TouchableOpacity>
-      ))}
-    </View>
-
-    <Text style={styles.sectionTitle}>Internal Supervision</Text>
-
-    <Text style={styles.label}>Internal Supervisor Name</Text>
-    <TextInput style={styles.input} placeholder="e.g. John Smith"
-      value={form.internal_supervisor} onChangeText={(v) => handleChange('internal_supervisor', v)} />
-
-    <Text style={styles.label}>Supervisor Position</Text>
-    <TextInput style={styles.input} placeholder="e.g. Senior Engineer"
-      value={form.supervisor_position} onChangeText={(v) => handleChange('supervisor_position', v)} />
-
-    <Text style={styles.sectionTitle}>Support Provided</Text>
-
-    <Text style={styles.label}>Allowance/Stipend</Text>
-    <TextInput style={styles.input} placeholder="e.g. KES 5,000/month or None"
-      value={form.allowance} onChangeText={(v) => handleChange('allowance', v)} />
-
-    <Text style={styles.label}>Resources/Equipment Provided</Text>
-    <TextInput style={[styles.input, { height: 80, textAlignVertical: 'top' }]}
-      placeholder="e.g. Laptop, internet access..."
-      value={form.resources_provided} onChangeText={(v) => handleChange('resources_provided', v)}
-      multiline />
-  </>
-)}
-
-        <TouchableOpacity style={[styles.registerBtn, loading && { opacity: 0.6 }]} onPress={handleRegister} disabled={loading}>
-          {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.registerBtnText}>Create Account</Text>}
+          <View style={[styles.checkbox, agreeTerms && styles.checkboxChecked]}>
+            {agreeTerms && <Ionicons name="checkmark" size={12} color={WHITE} />}
+          </View>
+          <Text style={styles.termsText}>I agree to </Text>
+          <TouchableOpacity>
+            <Text style={styles.termsLink}>Terms & Conditions</Text>
+          </TouchableOpacity>
         </TouchableOpacity>
 
-        <View style={styles.loginLink}>
-          <Text style={styles.loginLinkText}>Already have an account? </Text>
+        {/* Sign Up Button */}
+        <TouchableOpacity
+          style={[styles.signUpBtn, loading && { opacity: 0.7 }]}
+          onPress={handleRegister}
+          disabled={loading}
+          activeOpacity={0.85}
+        >
+          {loading ? (
+            <ActivityIndicator color={WHITE} />
+          ) : (
+            <Text style={styles.signUpText}>Sign Up</Text>
+          )}
+        </TouchableOpacity>
+
+        {/* Sign In Link */}
+        <View style={styles.signInRow}>
+          <Text style={styles.signInText}>Already have an account? </Text>
           <TouchableOpacity onPress={() => navigation.navigate('Login')}>
-            <Text style={[styles.loginLinkText, { color: theme.primary, fontWeight: '700' }]}>Login</Text>
+            <Text style={styles.signInLink}>Sign In</Text>
           </TouchableOpacity>
         </View>
 
         <View style={{ height: 40 }} />
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F4F4F4' },
-  header: { padding: 20, paddingTop: 40, alignItems: 'center', marginBottom: 20 },
-  title: { fontSize: 28, fontWeight: '700', marginBottom: 5 },
-  subtitle: { fontSize: 13, opacity: 0.7 },
-  form: { paddingHorizontal: 16, paddingBottom: 20 },
-  sectionTitle: { fontSize: 15, fontWeight: '700', marginTop: 18, marginBottom: 12 },
-  label: { fontSize: 13, fontWeight: '600', marginBottom: 6 },
-  input: {
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 14,
+  root: {
+    flex: 1,
+    backgroundColor: WHITE,
+  },
+
+  // Header
+  header: {
+    backgroundColor: NAVY,
+    paddingTop: 40,
+    paddingBottom: 30,
+    paddingHorizontal: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  backBtn: {
+    padding: 8,
+  },
+  headerContent: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: '900',
+    color: WHITE,
+    letterSpacing: 0.5,
+  },
+  headerSubtitle: {
+    fontSize: 13,
+    color: BLUE,
+    fontWeight: '500',
+    marginTop: 4,
+  },
+  headerIcon: {
+    padding: 8,
+  },
+
+  // Wave divider
+  waveDivider: {
+    height: 24,
+    backgroundColor: NAVY,
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
+  },
+
+  // Form
+  formContainer: {
+    flex: 1,
+    backgroundColor: WHITE,
+  },
+  formContent: {
+    paddingHorizontal: 20,
+    paddingTop: 24,
+    paddingBottom: 40,
+  },
+
+  sectionLabel: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: NAVY,
+    marginBottom: 12,
+    marginTop: 8,
+  },
+
+  // Role Dropdown
+  roleDropdown: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: INPUT_BG,
+    borderWidth: 1.5,
+    borderColor: BLUE,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginBottom: 16,
+  },
+  roleIcon: {
+    marginRight: 12,
+  },
+  roleDropdownText: {
+    flex: 1,
+    fontSize: 15,
+    color: NAVY,
+    fontWeight: '600',
+  },
+  roleDropdownMenu: {
+    backgroundColor: WHITE,
+    borderWidth: 1.5,
+    borderColor: BLUE,
+    borderRadius: 12,
+    marginBottom: 16,
+    overflow: 'hidden',
+  },
+  roleOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: BORDER,
+  },
+  roleOptionSelected: {
+    backgroundColor: '#E3F2FD',
+  },
+  roleOptionText: {
     fontSize: 14,
-    minHeight: 44,
+    color: GRAY,
+    fontWeight: '500',
   },
-  roleContainer: { flexDirection: 'row', gap: 10, marginBottom: 16 },
-  roleCard: {
-    flex: 1,
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 2,
-    alignItems: 'center',
-    backgroundColor: '#F9F9F9',
+  roleOptionTextSelected: {
+    color: BLUE,
+    fontWeight: '700',
   },
-  roleIcon: { fontSize: 28, marginBottom: 6 },
-  roleLabel: { fontSize: 12, fontWeight: '700', marginBottom: 2 },
-  roleDesc: { fontSize: 10, opacity: 0.7, textAlign: 'center' },
-  workModeRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
-  workModeBtn: {
-    flex: 1,
-    padding: 10,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: '#CCC',
+
+  // Input fields
+  inputWrap: {
+    flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F9F9F9',
-  },
-  workModeBtnActive: { borderColor: '#2196F3', backgroundColor: '#E3F2FD' },
-  workModeBtnText: { fontSize: 13, fontWeight: '600', color: '#666' },
-  workModeBtnTextActive: { color: '#2196F3' },
-  registerBtn: {
-    backgroundColor: '#2196F3',
-    padding: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginTop: 20,
+    backgroundColor: INPUT_BG,
+    borderWidth: 1.5,
+    borderColor: BLUE,
+    borderRadius: 14,
+    paddingHorizontal: 16,
     marginBottom: 14,
+    height: 56,
   },
-  registerBtnText: { color: '#FFF', fontSize: 16, fontWeight: '700' },
-  loginLink: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
-  loginLinkText: { fontSize: 13, color: '#666' },
+  inputIcon: {
+    marginRight: 12,
+  },
+  input: {
+    flex: 1,
+    fontSize: 15,
+    color: NAVY,
+    fontWeight: '500',
+  },
+
+  // Terms checkbox
+  termsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+    gap: 10,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: BLUE,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: WHITE,
+  },
+  checkboxChecked: {
+    backgroundColor: BLUE,
+    borderColor: BLUE,
+  },
+  termsText: {
+    fontSize: 14,
+    color: NAVY,
+  },
+  termsLink: {
+    fontSize: 14,
+    color: BLUE,
+    fontWeight: '700',
+    textDecorationLine: 'underline',
+  },
+
+  // Sign up button
+  signUpBtn: {
+    backgroundColor: BLUE,
+    borderRadius: 14,
+    height: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+    shadowColor: BLUE,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  signUpText: {
+    color: WHITE,
+    fontSize: 17,
+    fontWeight: '700',
+  },
+
+  // Sign in link
+  signInRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  signInText: {
+    fontSize: 14,
+    color: GRAY,
+  },
+  signInLink: {
+    fontSize: 14,
+    color: BLUE,
+    fontWeight: '700',
+  },
 });
