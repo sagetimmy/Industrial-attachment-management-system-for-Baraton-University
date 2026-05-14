@@ -1,88 +1,39 @@
 const express = require('express');
 const router = express.Router();
 const { protect, authorize } = require('../middleware/auth.middleware');
-const db = require('../config/db');
+const supabase = require('../config/db');
 
-const VALID_ATTACHMENT_STATUSES = ['pending', 'approved', 'ongoing', 'completed', 'rejected'];
-
-const badRequest = (message) => Object.assign(new Error(message), { statusCode: 400 });
-const notFound = (message) => Object.assign(new Error(message), { statusCode: 404 });
+const VALID_STATUSES = ['pending', 'approved', 'ongoing', 'completed', 'rejected'];
 
 const parsePagination = (query) => {
   const page = Math.max(parseInt(query.page, 10) || 1, 1);
   const limit = Math.min(Math.max(parseInt(query.limit, 10) || 20, 1), 100);
-  return { page, limit, offset: (page - 1) * limit };
+  return { page, limit, from: (page - 1) * limit };
 };
 
-const buildAttachmentFilters = (query = {}, { includeSearch = false } = {}) => {
-  const where = [];
-  const params = [];
-
-  if (query.status) {
-    const status = String(query.status).toLowerCase();
-    if (!VALID_ATTACHMENT_STATUSES.includes(status)) {
-      throw badRequest('Invalid attachment status');
-    }
-    where.push('a.status = ?');
-    params.push(status);
-  }
-
-  if (query.startDate) {
-    where.push('DATE(a.created_at) >= ?');
-    params.push(query.startDate);
-  }
-
-  if (query.endDate) {
-    where.push('DATE(a.created_at) <= ?');
-    params.push(query.endDate);
-  }
-
-  if (includeSearch && query.search) {
-    const search = `%${String(query.search).trim()}%`;
-    where.push(`(
-      s.full_name LIKE ? OR
-      s.reg_number LIKE ? OR
-      o.org_name LIKE ? OR
-      COALESCE(sv.full_name, '') LIKE ?
-    )`);
-    params.push(search, search, search, search);
-  }
-
-  return {
-    whereClause: where.length ? `WHERE ${where.join(' AND ')}` : '',
-    params,
-  };
-};
-
+// Helper: update attachment status + notify student
 const updateAttachmentStatus = async (attachmentId, status) => {
-  const normalizedStatus = String(status || '').toLowerCase();
-  if (!VALID_ATTACHMENT_STATUSES.includes(normalizedStatus)) {
-    throw badRequest('Invalid attachment status');
-  }
+  const normalized = String(status || '').toLowerCase();
+  if (!VALID_STATUSES.includes(normalized)) throw Object.assign(new Error('Invalid attachment status'), { statusCode: 400 });
 
-  const [att] = await db.query(
-    `SELECT a.*, s.user_id as student_user_id
-     FROM attachments a
-     JOIN students s ON a.student_id = s.student_id
-     WHERE a.attachment_id = ?`,
-    [attachmentId]
-  );
-  if (!att.length) throw notFound('Attachment not found');
+  const { data: att, error } = await supabase
+    .from('attachments')
+    .select(`attachment_id, students!attachments_student_id_fkey (user_id)`)
+    .eq('attachment_id', attachmentId)
+    .single();
 
-  await db.query(
-    'UPDATE attachments SET status = ? WHERE attachment_id = ?',
-    [normalizedStatus, attachmentId]
-  );
+  if (error || !att) throw Object.assign(new Error('Attachment not found'), { statusCode: 404 });
 
-  await db.query(
-    'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
-    [att[0].student_user_id, `Your attachment status has been updated to: ${normalizedStatus}`]
-  );
+  await supabase.from('attachments').update({ status: normalized }).eq('attachment_id', attachmentId);
+  await supabase.from('notifications').insert({
+    user_id: att.students.user_id,
+    message: `Your attachment status has been updated to: ${normalized}`,
+  });
 
-  return { message: `Attachment marked as ${normalizedStatus}` };
+  return { message: `Attachment marked as ${normalized}` };
 };
 
-const handleAttachmentStatusUpdate = async (req, res) => {
+const handleStatusUpdate = async (req, res) => {
   try {
     const result = await updateAttachmentStatus(req.params.id, req.body.status);
     res.json(result);
@@ -94,47 +45,70 @@ const handleAttachmentStatusUpdate = async (req, res) => {
 // GET /api/admin/dashboard
 router.get('/dashboard', protect, authorize('admin'), async (req, res) => {
   try {
-    const [[{ totalStudents }]] = await db.query('SELECT COUNT(*) as totalStudents FROM students');
-    const [[{ totalSupervisors }]] = await db.query('SELECT COUNT(*) as totalSupervisors FROM supervisors');
-    const [[{ totalOrgs }]] = await db.query('SELECT COUNT(*) as totalOrgs FROM host_organizations');
-    const [[{ totalAttachments }]] = await db.query('SELECT COUNT(*) as totalAttachments FROM attachments');
-    const [[{ pendingOrgs }]] = await db.query('SELECT COUNT(*) as pendingOrgs FROM host_organizations WHERE is_approved = FALSE');
-    const [[{ activeAttachments }]] = await db.query("SELECT COUNT(*) as activeAttachments FROM attachments WHERE status = 'ongoing'");
+    const [
+      { count: totalStudents },
+      { count: totalSupervisors },
+      { count: totalOrgs },
+      { count: totalAttachments },
+      { count: pendingOrgs },
+      { count: activeAttachments },
+    ] = await Promise.all([
+      supabase.from('students').select('*', { count: 'exact', head: true }),
+      supabase.from('supervisors').select('*', { count: 'exact', head: true }),
+      supabase.from('host_organizations').select('*', { count: 'exact', head: true }),
+      supabase.from('attachments').select('*', { count: 'exact', head: true }),
+      supabase.from('host_organizations').select('*', { count: 'exact', head: true }).eq('is_approved', false),
+      supabase.from('attachments').select('*', { count: 'exact', head: true }).eq('status', 'ongoing'),
+    ]);
 
-    const [recentUsers] = await db.query(
-      `SELECT u.user_id, u.email, u.role, u.created_at,
-              COALESCE(s.full_name, sv.full_name, o.org_name) as name
-       FROM users u
-       LEFT JOIN students s ON u.user_id = s.user_id
-       LEFT JOIN supervisors sv ON u.user_id = sv.user_id
-       LEFT JOIN host_organizations o ON u.user_id = o.user_id
-       ORDER BY u.created_at DESC LIMIT 5`
-    );
+    const { data: recentUsers } = await supabase
+      .from('users')
+      .select(`
+        user_id, email, role, created_at,
+        students!students_user_id_fkey (full_name),
+        supervisors!supervisors_user_id_fkey (full_name),
+        host_organizations!host_organizations_user_id_fkey (org_name)
+      `)
+      .order('created_at', { ascending: false })
+      .limit(5);
 
-    const [pendingOrgList] = await db.query(
-      `SELECT o.org_id, o.org_name, o.location, o.contact_person, o.phone, u.email
-       FROM host_organizations o
-       JOIN users u ON o.user_id = u.user_id
-       WHERE o.is_approved = FALSE
-       ORDER BY o.created_at DESC`
-    );
+    const { data: pendingOrgList } = await supabase
+      .from('host_organizations')
+      .select(`*, users!host_organizations_user_id_fkey (email)`)
+      .eq('is_approved', false)
+      .order('created_at', { ascending: false });
 
-    const [recentAttachments] = await db.query(
-      `SELECT a.attachment_id, a.status, a.start_date,
-              s.full_name as student_name, s.reg_number,
-              o.org_name, sv.full_name as supervisor_name
-       FROM attachments a
-       JOIN students s ON a.student_id = s.student_id
-       JOIN host_organizations o ON a.org_id = o.org_id
-       LEFT JOIN supervisors sv ON a.supervisor_id = sv.supervisor_id
-       ORDER BY a.created_at DESC LIMIT 5`
-    );
+    const { data: recentAttachments } = await supabase
+      .from('attachments')
+      .select(`
+        attachment_id, status, start_date,
+        students!attachments_student_id_fkey (full_name, reg_number),
+        host_organizations!attachments_org_id_fkey (org_name),
+        supervisors!attachments_supervisor_id_fkey (full_name)
+      `)
+      .order('created_at', { ascending: false })
+      .limit(5);
+
+    const flatRecentUsers = (recentUsers || []).map(u => ({
+      ...u,
+      name: u.students?.[0]?.full_name || u.supervisors?.[0]?.full_name || u.host_organizations?.[0]?.org_name,
+      students: undefined, supervisors: undefined, host_organizations: undefined,
+    }));
+
+    const flatAttachments = (recentAttachments || []).map(a => ({
+      ...a,
+      student_name: a.students?.full_name,
+      reg_number: a.students?.reg_number,
+      org_name: a.host_organizations?.org_name,
+      supervisor_name: a.supervisors?.full_name,
+      students: undefined, host_organizations: undefined, supervisors: undefined,
+    }));
 
     res.json({
       stats: { totalStudents, totalSupervisors, totalOrgs, totalAttachments, pendingOrgs, activeAttachments },
-      recentUsers,
-      pendingOrgList,
-      recentAttachments,
+      recentUsers: flatRecentUsers,
+      pendingOrgList: pendingOrgList || [],
+      recentAttachments: flatAttachments,
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -144,245 +118,12 @@ router.get('/dashboard', protect, authorize('admin'), async (req, res) => {
 // PUT /api/admin/approve-org/:id
 router.put('/approve-org/:id', protect, authorize('admin'), async (req, res) => {
   try {
-    await db.query('UPDATE host_organizations SET is_approved = TRUE WHERE org_id = ?', [req.params.id]);
+    const { error } = await supabase
+      .from('host_organizations')
+      .update({ is_approved: true })
+      .eq('org_id', req.params.id);
+    if (error) throw error;
     res.json({ message: 'Organization approved successfully!' });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
-
-// GET /api/admin/reports/summary
-router.get('/reports/summary', protect, authorize('admin'), async (req, res) => {
-  try {
-    const { whereClause, params } = buildAttachmentFilters(req.query);
-
-    const [[{ totalAttachments }]] = await db.query(
-      `SELECT COUNT(*) as totalAttachments FROM attachments a ${whereClause}`,
-      params
-    );
-    const [[{ totalStudents }]] = await db.query('SELECT COUNT(*) as totalStudents FROM students');
-    const [[{ totalSupervisors }]] = await db.query('SELECT COUNT(*) as totalSupervisors FROM supervisors');
-    const [[{ totalOrgs }]] = await db.query('SELECT COUNT(*) as totalOrgs FROM host_organizations');
-
-    const [statusBreakdown] = await db.query(
-      `SELECT a.status, COUNT(*) as count
-       FROM attachments a
-       ${whereClause}
-       GROUP BY a.status
-       ORDER BY a.status ASC`,
-      params
-    );
-
-    const [orgBreakdown] = await db.query(
-      `SELECT o.org_name, COUNT(*) as count
-       FROM attachments a
-       JOIN host_organizations o ON a.org_id = o.org_id
-       ${whereClause}
-       GROUP BY o.org_id, o.org_name
-       ORDER BY count DESC, o.org_name ASC
-       LIMIT 5`,
-      params
-    );
-
-    const [deptBreakdown] = await db.query(
-      `SELECT COALESCE(NULLIF(s.department, ''), 'Unspecified') as department, COUNT(*) as count
-       FROM attachments a
-       JOIN students s ON a.student_id = s.student_id
-       ${whereClause}
-       GROUP BY COALESCE(NULLIF(s.department, ''), 'Unspecified')
-       ORDER BY count DESC, department ASC`,
-      params
-    );
-
-    res.json({
-      totalAttachments,
-      totalStudents,
-      totalSupervisors,
-      totalOrgs,
-      statusBreakdown,
-      orgBreakdown,
-      deptBreakdown,
-    });
-  } catch (err) {
-    res.status(err.statusCode || 500).json({ message: err.message });
-  }
-});
-
-// GET /api/admin/reports/detailed
-router.get('/reports/detailed', protect, authorize('admin'), async (req, res) => {
-  try {
-    const { page, limit, offset } = parsePagination(req.query);
-    const { whereClause, params } = buildAttachmentFilters(req.query);
-
-    const [[{ total }]] = await db.query(
-      `SELECT COUNT(*) as total
-       FROM attachments a
-       JOIN students s ON a.student_id = s.student_id
-       JOIN host_organizations o ON a.org_id = o.org_id
-       LEFT JOIN supervisors sv ON a.supervisor_id = sv.supervisor_id
-       ${whereClause}`,
-      params
-    );
-
-    const [details] = await db.query(
-      `SELECT a.attachment_id, a.status, a.start_date, a.end_date, a.created_at,
-              s.full_name as student_name, s.reg_number, s.department,
-              o.org_name, sv.full_name as supervisor_name,
-              COUNT(DISTINCT l.entry_id) as logbook_count,
-              AVG(e.rating) as evaluation_rating
-       FROM attachments a
-       JOIN students s ON a.student_id = s.student_id
-       JOIN host_organizations o ON a.org_id = o.org_id
-       LEFT JOIN supervisors sv ON a.supervisor_id = sv.supervisor_id
-       LEFT JOIN logbook_entries l ON a.attachment_id = l.attachment_id
-       LEFT JOIN evaluations e ON a.attachment_id = e.attachment_id
-       ${whereClause}
-       GROUP BY a.attachment_id, a.status, a.start_date, a.end_date, a.created_at,
-                s.full_name, s.reg_number, s.department, o.org_name, sv.full_name
-       ORDER BY a.created_at DESC
-       LIMIT ? OFFSET ?`,
-      [...params, limit, offset]
-    );
-
-    res.json({
-      details,
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.max(Math.ceil(total / limit), 1),
-      },
-    });
-  } catch (err) {
-    res.status(err.statusCode || 500).json({ message: err.message });
-  }
-});
-
-// GET /api/admin/attachments
-router.get('/attachments', protect, authorize('admin'), async (req, res) => {
-  try {
-    const { page, limit, offset } = parsePagination(req.query);
-    const { whereClause, params } = buildAttachmentFilters(req.query, { includeSearch: true });
-
-    const [[{ total }]] = await db.query(
-      `SELECT COUNT(*) as total
-       FROM attachments a
-       JOIN students s ON a.student_id = s.student_id
-       JOIN host_organizations o ON a.org_id = o.org_id
-       LEFT JOIN supervisors sv ON a.supervisor_id = sv.supervisor_id
-       ${whereClause}`,
-      params
-    );
-
-    const [attachments] = await db.query(
-      `SELECT a.attachment_id, a.status, a.start_date, a.end_date, a.created_at,
-              s.full_name as student_name, s.reg_number, s.department,
-              o.org_name, o.location,
-              sv.full_name as supervisor_name
-       FROM attachments a
-       JOIN students s ON a.student_id = s.student_id
-       JOIN host_organizations o ON a.org_id = o.org_id
-       LEFT JOIN supervisors sv ON a.supervisor_id = sv.supervisor_id
-       ${whereClause}
-       ORDER BY a.created_at DESC
-       LIMIT ? OFFSET ?`,
-      [...params, limit, offset]
-    );
-
-    res.json({
-      attachments,
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.max(Math.ceil(total / limit), 1),
-      },
-    });
-  } catch (err) {
-    res.status(err.statusCode || 500).json({ message: err.message });
-  }
-});
-
-// GET /api/admin/attachment/:id
-router.get('/attachment/:id', protect, authorize('admin'), async (req, res) => {
-  try {
-    const [rows] = await db.query(
-      `SELECT a.*,
-              s.full_name as student_name, s.reg_number, s.department,
-              s.year_of_study, s.phone as student_phone,
-              o.org_name, o.location, o.contact_person, o.phone as org_phone,
-              sv.full_name as supervisor_name, sv.phone as supervisor_phone
-       FROM attachments a
-       JOIN students s ON a.student_id = s.student_id
-       JOIN host_organizations o ON a.org_id = o.org_id
-       LEFT JOIN supervisors sv ON a.supervisor_id = sv.supervisor_id
-       WHERE a.attachment_id = ?`,
-      [req.params.id]
-    );
-
-    if (!rows.length) return res.status(404).json({ message: 'Attachment not found' });
-
-    const [logbookEntries] = await db.query(
-      `SELECT entry_id, week_number, description, tasks_done, challenges, document_url, submitted_at
-       FROM logbook_entries
-       WHERE attachment_id = ?
-       ORDER BY week_number ASC`,
-      [req.params.id]
-    );
-
-    const [evaluations] = await db.query(
-      `SELECT e.*, sv.full_name as supervisor_name
-       FROM evaluations e
-       LEFT JOIN supervisors sv ON e.supervisor_id = sv.supervisor_id
-       WHERE e.attachment_id = ?
-       ORDER BY e.created_at DESC`,
-      [req.params.id]
-    );
-
-    res.json({
-      attachment: rows[0],
-      logbookEntries,
-      evaluation: evaluations[0] || null,
-    });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
-
-// PUT /api/admin/attachment/:id/status
-router.put('/attachment/:id/status', protect, authorize('admin'), handleAttachmentStatusUpdate);
-
-// GET /api/admin/pending-orgs
-router.get('/pending-orgs', protect, authorize('admin'), async (req, res) => {
-  try {
-    const [orgs] = await db.query(
-      `SELECT o.*, u.email
-       FROM host_organizations o
-       JOIN users u ON o.user_id = u.user_id
-       WHERE o.is_approved = FALSE
-       ORDER BY o.created_at DESC`
-    );
-    res.json(orgs);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
-
-// GET /api/admin/org-details/:id
-router.get('/org-details/:id', protect, authorize('admin'), async (req, res) => {
-  try {
-    const [org] = await db.query(
-      `SELECT o.*, u.email,
-              COUNT(DISTINCT r.review_id) as total_reviews,
-              AVG(r.rating) as avg_rating
-       FROM host_organizations o
-       JOIN users u ON o.user_id = u.user_id
-       LEFT JOIN org_reviews r ON o.org_id = r.org_id
-       WHERE o.org_id = ?
-       GROUP BY o.org_id`,
-      [req.params.id]
-    );
-    res.json(org[0]);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -392,104 +133,211 @@ router.get('/org-details/:id', protect, authorize('admin'), async (req, res) => 
 router.put('/reject-org/:id', protect, authorize('admin'), async (req, res) => {
   try {
     const { reason } = req.body;
-    const [org] = await db.query(
-      'SELECT * FROM host_organizations WHERE org_id = ?', [req.params.id]
-    );
-    if (!org.length) return res.status(404).json({ message: 'Organization not found' });
+    const { data: org, error } = await supabase
+      .from('host_organizations')
+      .select('user_id')
+      .eq('org_id', req.params.id)
+      .single();
+    if (error || !org) return res.status(404).json({ message: 'Organization not found' });
 
-    // Notify host org user
-    await db.query(
-      'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
-      [org[0].user_id, `Your organization registration was rejected. Reason: ${reason || 'Does not meet requirements'}`]
-    );
+    await supabase.from('notifications').insert({
+      user_id: org.user_id,
+      message: `Your organization registration was rejected. Reason: ${reason || 'Does not meet requirements'}`,
+    });
 
-    await db.query('DELETE FROM host_organizations WHERE org_id = ?', [req.params.id]);
+    await supabase.from('host_organizations').delete().eq('org_id', req.params.id);
     res.json({ message: 'Organization rejected' });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
-// PUT /api/admin/attachment-status/:id
-router.put('/attachment-status/:id', protect, authorize('admin'), handleAttachmentStatusUpdate);
+// GET /api/admin/pending-orgs
+router.get('/pending-orgs', protect, authorize('admin'), async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('host_organizations')
+      .select(`*, users!host_organizations_user_id_fkey (email)`)
+      .eq('is_approved', false)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// GET /api/admin/org-details/:id
+router.get('/org-details/:id', protect, authorize('admin'), async (req, res) => {
+  try {
+    const { data: org, error } = await supabase
+      .from('host_organizations')
+      .select(`*, users!host_organizations_user_id_fkey (email), org_reviews (rating)`)
+      .eq('org_id', req.params.id)
+      .single();
+    if (error) throw error;
+
+    const reviews = org.org_reviews || [];
+    const avg_rating = reviews.length ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : null;
+
+    res.json({ ...org, total_reviews: reviews.length, avg_rating, org_reviews: undefined });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// GET /api/admin/attachments
+router.get('/attachments', protect, authorize('admin'), async (req, res) => {
+  try {
+    const { page, limit, from } = parsePagination(req.query);
+
+    let query = supabase
+      .from('attachments')
+      .select(`
+        attachment_id, status, start_date, end_date, created_at,
+        students!attachments_student_id_fkey (full_name, reg_number, department),
+        host_organizations!attachments_org_id_fkey (org_name, location),
+        supervisors!attachments_supervisor_id_fkey (full_name)
+      `, { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(from, from + limit - 1);
+
+    if (req.query.status) query = query.eq('status', req.query.status);
+    if (req.query.startDate) query = query.gte('created_at', req.query.startDate);
+    if (req.query.endDate) query = query.lte('created_at', req.query.endDate);
+
+    const { data, error, count } = await query;
+    if (error) throw error;
+
+    const result = (data || []).map(a => ({
+      ...a,
+      student_name: a.students?.full_name,
+      reg_number: a.students?.reg_number,
+      department: a.students?.department,
+      org_name: a.host_organizations?.org_name,
+      location: a.host_organizations?.location,
+      supervisor_name: a.supervisors?.full_name,
+      students: undefined, host_organizations: undefined, supervisors: undefined,
+    }));
+
+    res.json({
+      attachments: result,
+      pagination: { page, limit, total: count, pages: Math.max(Math.ceil(count / limit), 1) },
+    });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ message: err.message });
+  }
+});
 
 // GET /api/admin/all-attachments
 router.get('/all-attachments', protect, authorize('admin'), async (req, res) => {
   try {
-    const [attachments] = await db.query(
-      `SELECT a.attachment_id, a.status, a.start_date, a.end_date,
-              s.full_name as student_name, s.reg_number, s.department,
-              o.org_name, o.location,
-              sv.full_name as supervisor_name
-       FROM attachments a
-       JOIN students s ON a.student_id = s.student_id
-       JOIN host_organizations o ON a.org_id = o.org_id
-       LEFT JOIN supervisors sv ON a.supervisor_id = sv.supervisor_id
-       ORDER BY a.created_at DESC`
-    );
-    res.json(attachments);
+    const { data, error } = await supabase
+      .from('attachments')
+      .select(`
+        attachment_id, status, start_date, end_date,
+        students!attachments_student_id_fkey (full_name, reg_number, department),
+        host_organizations!attachments_org_id_fkey (org_name, location),
+        supervisors!attachments_supervisor_id_fkey (full_name)
+      `)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+
+    res.json((data || []).map(a => ({
+      ...a,
+      student_name: a.students?.full_name,
+      reg_number: a.students?.reg_number,
+      department: a.students?.department,
+      org_name: a.host_organizations?.org_name,
+      location: a.host_organizations?.location,
+      supervisor_name: a.supervisors?.full_name,
+      students: undefined, host_organizations: undefined, supervisors: undefined,
+    })));
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
-// GET /api/admin/users
-router.get('/users', protect, authorize('admin'), async (req, res) => {
+// GET /api/admin/attachment/:id
+router.get('/attachment/:id', protect, authorize('admin'), async (req, res) => {
   try {
-    const [users] = await db.query(
-      `SELECT u.user_id, u.email, u.role, u.is_verified, u.is_active, u.created_at,
-              COALESCE(s.full_name, sv.full_name, o.org_name) as name,
-              s.reg_number, s.department, s.phone as student_phone,
-              sv.department as supervisor_dept, sv.phone as supervisor_phone
-       FROM users u
-       LEFT JOIN students s ON u.user_id = s.user_id
-       LEFT JOIN supervisors sv ON u.user_id = sv.user_id
-       LEFT JOIN host_organizations o ON u.user_id = o.user_id
-       ORDER BY u.created_at DESC`
-    );
-    res.json(users);
+    const { data, error } = await supabase
+      .from('attachments')
+      .select(`
+        *,
+        students!attachments_student_id_fkey (full_name, reg_number, department, year_of_study, phone),
+        host_organizations!attachments_org_id_fkey (org_name, location, contact_person, phone),
+        supervisors!attachments_supervisor_id_fkey (full_name, phone)
+      `)
+      .eq('attachment_id', req.params.id)
+      .single();
+
+    if (error || !data) return res.status(404).json({ message: 'Attachment not found' });
+
+    const { data: logbookEntries } = await supabase
+      .from('logbook_entries')
+      .select('entry_id, week_number, description, tasks_done, challenges, document_url, submitted_at')
+      .eq('attachment_id', req.params.id)
+      .order('week_number', { ascending: true });
+
+    const { data: evaluations } = await supabase
+      .from('evaluations')
+      .select(`*, supervisors!evaluations_supervisor_id_fkey (full_name)`)
+      .eq('attachment_id', req.params.id)
+      .order('created_at', { ascending: false });
+
+    const attachment = {
+      ...data,
+      student_name: data.students?.full_name,
+      reg_number: data.students?.reg_number,
+      department: data.students?.department,
+      year_of_study: data.students?.year_of_study,
+      student_phone: data.students?.phone,
+      org_name: data.host_organizations?.org_name,
+      location: data.host_organizations?.location,
+      contact_person: data.host_organizations?.contact_person,
+      org_phone: data.host_organizations?.phone,
+      supervisor_name: data.supervisors?.full_name,
+      supervisor_phone: data.supervisors?.phone,
+      students: undefined, host_organizations: undefined, supervisors: undefined,
+    };
+
+    res.json({ attachment, logbookEntries: logbookEntries || [], evaluation: evaluations?.[0] || null });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
-// PUT /api/admin/toggle-user/:id
-router.put('/toggle-user/:id', protect, authorize('admin'), async (req, res) => {
-  try {
-    await db.query(
-      'UPDATE users SET is_active = IF(is_active, FALSE, TRUE) WHERE user_id = ?',
-      [req.params.id]
-    );
-    res.json({ message: 'User status updated!' });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
+// PUT /api/admin/attachment/:id/status
+router.put('/attachment/:id/status', protect, authorize('admin'), handleStatusUpdate);
 
-// DELETE /api/admin/delete-user/:id
-router.delete('/delete-user/:id', protect, authorize('admin'), async (req, res) => {
-  try {
-    await db.query('DELETE FROM users WHERE user_id = ?', [req.params.id]);
-    res.json({ message: 'User deleted successfully!' });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
+// PUT /api/admin/attachment-status/:id
+router.put('/attachment-status/:id', protect, authorize('admin'), handleStatusUpdate);
 
 // GET /api/admin/unassigned-attachments
 router.get('/unassigned-attachments', protect, authorize('admin'), async (req, res) => {
   try {
-    const [attachments] = await db.query(
-      `SELECT a.attachment_id, a.status, a.start_date, a.end_date,
-              s.full_name as student_name, s.reg_number, s.department,
-              o.org_name, o.location
-       FROM attachments a
-       JOIN students s ON a.student_id = s.student_id
-       JOIN host_organizations o ON a.org_id = o.org_id
-       WHERE a.supervisor_id IS NULL AND a.status IN ('pending','ongoing','approved')
-       ORDER BY a.created_at DESC`
-    );
-    res.json(attachments);
+    const { data, error } = await supabase
+      .from('attachments')
+      .select(`
+        attachment_id, status, start_date, end_date,
+        students!attachments_student_id_fkey (full_name, reg_number, department),
+        host_organizations!attachments_org_id_fkey (org_name, location)
+      `)
+      .is('supervisor_id', null)
+      .in('status', ['pending', 'ongoing', 'approved'])
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+
+    res.json((data || []).map(a => ({
+      ...a,
+      student_name: a.students?.full_name,
+      reg_number: a.students?.reg_number,
+      department: a.students?.department,
+      org_name: a.host_organizations?.org_name,
+      location: a.host_organizations?.location,
+      students: undefined, host_organizations: undefined,
+    })));
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -498,18 +346,22 @@ router.get('/unassigned-attachments', protect, authorize('admin'), async (req, r
 // GET /api/admin/supervisors
 router.get('/supervisors', protect, authorize('admin'), async (req, res) => {
   try {
-    const [supervisors] = await db.query(
-      `SELECT sv.supervisor_id, sv.full_name, sv.department, sv.phone,
-              u.email,
-              COUNT(a.attachment_id) as assigned_count
-       FROM supervisors sv
-       JOIN users u ON sv.user_id = u.user_id
-       LEFT JOIN attachments a ON sv.supervisor_id = a.supervisor_id
-         AND a.status IN ('ongoing','approved')
-       GROUP BY sv.supervisor_id
-       ORDER BY sv.full_name ASC`
-    );
-    res.json(supervisors);
+    const { data, error } = await supabase
+      .from('supervisors')
+      .select(`
+        supervisor_id, full_name, department, phone,
+        users!supervisors_user_id_fkey (email),
+        attachments!attachments_supervisor_id_fkey (attachment_id, status)
+      `)
+      .order('full_name', { ascending: true });
+    if (error) throw error;
+
+    res.json((data || []).map(sv => ({
+      ...sv,
+      email: sv.users?.email,
+      assigned_count: sv.attachments?.filter(a => ['ongoing', 'approved'].includes(a.status)).length || 0,
+      users: undefined, attachments: undefined,
+    })));
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -519,32 +371,197 @@ router.get('/supervisors', protect, authorize('admin'), async (req, res) => {
 router.put('/assign-supervisor', protect, authorize('admin'), async (req, res) => {
   const { attachment_id, supervisor_id } = req.body;
   try {
-    await db.query(
-      'UPDATE attachments SET supervisor_id = ?, status = ? WHERE attachment_id = ?',
-      [supervisor_id, 'ongoing', attachment_id]
-    );
+    await supabase
+      .from('attachments')
+      .update({ supervisor_id, status: 'ongoing' })
+      .eq('attachment_id', attachment_id);
 
-    // Notify student
-    const [attachment] = await db.query(
-      `SELECT a.*, s.user_id as student_user_id, sv.full_name as supervisor_name
-       FROM attachments a
-       JOIN students s ON a.student_id = s.student_id
-       JOIN supervisors sv ON sv.supervisor_id = ?
-       WHERE a.attachment_id = ?`,
-      [supervisor_id, attachment_id]
-    );
+    const { data: att } = await supabase
+      .from('attachments')
+      .select(`
+        students!attachments_student_id_fkey (user_id),
+        supervisors!attachments_supervisor_id_fkey (full_name)
+      `)
+      .eq('attachment_id', attachment_id)
+      .single();
 
-    if (attachment.length) {
-      await db.query(
-        'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
-        [
-          attachment[0].student_user_id,
-          `A supervisor has been assigned to your attachment: ${attachment[0].supervisor_name}`
-        ]
-      );
+    if (att?.students?.user_id) {
+      await supabase.from('notifications').insert({
+        user_id: att.students.user_id,
+        message: `A supervisor has been assigned to your attachment: ${att.supervisors?.full_name}`,
+      });
     }
 
     res.json({ message: 'Supervisor assigned successfully!' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// GET /api/admin/users
+router.get('/users', protect, authorize('admin'), async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .select(`
+        user_id, email, role, is_verified, is_active, created_at,
+        students!students_user_id_fkey (full_name, reg_number, department, phone),
+        supervisors!supervisors_user_id_fkey (full_name, department, phone),
+        host_organizations!host_organizations_user_id_fkey (org_name)
+      `)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+
+    res.json((data || []).map(u => ({
+      ...u,
+      name: u.students?.[0]?.full_name || u.supervisors?.[0]?.full_name || u.host_organizations?.[0]?.org_name,
+      reg_number: u.students?.[0]?.reg_number,
+      department: u.students?.[0]?.department || u.supervisors?.[0]?.department,
+      student_phone: u.students?.[0]?.phone,
+      supervisor_phone: u.supervisors?.[0]?.phone,
+      supervisor_dept: u.supervisors?.[0]?.department,
+      students: undefined, supervisors: undefined, host_organizations: undefined,
+    })));
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// PUT /api/admin/toggle-user/:id
+router.put('/toggle-user/:id', protect, authorize('admin'), async (req, res) => {
+  try {
+    const { data: user } = await supabase
+      .from('users')
+      .select('is_active')
+      .eq('user_id', req.params.id)
+      .single();
+
+    await supabase
+      .from('users')
+      .update({ is_active: !user.is_active })
+      .eq('user_id', req.params.id);
+
+    res.json({ message: 'User status updated!' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// DELETE /api/admin/delete-user/:id
+router.delete('/delete-user/:id', protect, authorize('admin'), async (req, res) => {
+  try {
+    const { error } = await supabase.from('users').delete().eq('user_id', req.params.id);
+    if (error) throw error;
+    res.json({ message: 'User deleted successfully!' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// GET /api/admin/reports/summary
+router.get('/reports/summary', protect, authorize('admin'), async (req, res) => {
+  try {
+    const [
+      { count: totalAttachments },
+      { count: totalStudents },
+      { count: totalSupervisors },
+      { count: totalOrgs },
+      { data: statusRows },
+      { data: allAttachments },
+    ] = await Promise.all([
+      supabase.from('attachments').select('*', { count: 'exact', head: true }),
+      supabase.from('students').select('*', { count: 'exact', head: true }),
+      supabase.from('supervisors').select('*', { count: 'exact', head: true }),
+      supabase.from('host_organizations').select('*', { count: 'exact', head: true }),
+      supabase.from('attachments').select('status'),
+      supabase.from('attachments').select(`
+        status,
+        students!attachments_student_id_fkey (department),
+        host_organizations!attachments_org_id_fkey (org_name)
+      `),
+    ]);
+
+    // Status breakdown
+    const statusMap = {};
+    (statusRows || []).forEach(a => {
+      statusMap[a.status] = (statusMap[a.status] || 0) + 1;
+    });
+    const statusBreakdown = Object.entries(statusMap).map(([status, count]) => ({ status, count }));
+
+    // Org breakdown
+    const orgMap = {};
+    (allAttachments || []).forEach(a => {
+      const name = a.host_organizations?.org_name || 'Unknown';
+      orgMap[name] = (orgMap[name] || 0) + 1;
+    });
+    const orgBreakdown = Object.entries(orgMap)
+      .map(([org_name, count]) => ({ org_name, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+
+    // Dept breakdown
+    const deptMap = {};
+    (allAttachments || []).forEach(a => {
+      const dept = a.students?.department || 'Unspecified';
+      deptMap[dept] = (deptMap[dept] || 0) + 1;
+    });
+    const deptBreakdown = Object.entries(deptMap)
+      .map(([department, count]) => ({ department, count }))
+      .sort((a, b) => b.count - a.count);
+
+    res.json({ totalAttachments, totalStudents, totalSupervisors, totalOrgs, statusBreakdown, orgBreakdown, deptBreakdown });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// GET /api/admin/reports/detailed
+router.get('/reports/detailed', protect, authorize('admin'), async (req, res) => {
+  try {
+    const { page, limit, from } = parsePagination(req.query);
+
+    let query = supabase
+      .from('attachments')
+      .select(`
+        attachment_id, status, start_date, end_date, created_at,
+        students!attachments_student_id_fkey (full_name, reg_number, department),
+        host_organizations!attachments_org_id_fkey (org_name),
+        supervisors!attachments_supervisor_id_fkey (full_name),
+        logbook_entries!logbook_entries_attachment_id_fkey (entry_id),
+        evaluations!evaluations_attachment_id_fkey (rating)
+      `, { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(from, from + limit - 1);
+
+    if (req.query.status) query = query.eq('status', req.query.status);
+    if (req.query.startDate) query = query.gte('created_at', req.query.startDate);
+    if (req.query.endDate) query = query.lte('created_at', req.query.endDate);
+
+    const { data, error, count } = await query;
+    if (error) throw error;
+
+    const details = (data || []).map(a => {
+      const ratings = (a.evaluations || []).map(e => e.rating).filter(Boolean);
+      return {
+        attachment_id: a.attachment_id,
+        status: a.status,
+        start_date: a.start_date,
+        end_date: a.end_date,
+        created_at: a.created_at,
+        student_name: a.students?.full_name,
+        reg_number: a.students?.reg_number,
+        department: a.students?.department,
+        org_name: a.host_organizations?.org_name,
+        supervisor_name: a.supervisors?.full_name,
+        logbook_count: a.logbook_entries?.length || 0,
+        evaluation_rating: ratings.length ? ratings.reduce((s, r) => s + r, 0) / ratings.length : null,
+      };
+    });
+
+    res.json({
+      details,
+      pagination: { page, limit, total: count, pages: Math.max(Math.ceil(count / limit), 1) },
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

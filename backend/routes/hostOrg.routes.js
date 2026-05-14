@@ -1,43 +1,39 @@
 const express = require('express');
 const router = express.Router();
 const { protect } = require('../middleware/auth.middleware');
-const db = require('../config/db');
+const supabase = require('../config/db');
 
 // GET /api/host-orgs/dashboard
 router.get('/dashboard', protect, async (req, res) => {
   try {
-    // Get org info
-    const [org] = await db.query(
-      'SELECT * FROM host_organizations WHERE user_id = ?',
-      [req.user.user_id]
-    );
+    const { data: org, error: orgError } = await supabase
+      .from('host_organizations')
+      .select('*')
+      .eq('user_id', req.user.user_id)
+      .single();
 
-    if (!org.length) return res.status(404).json({ message: 'Organization not found' });
+    if (orgError || !org) return res.status(404).json({ message: 'Organization not found' });
 
-    const orgId = org[0].org_id;
+    const { data: applications, error: appError } = await supabase
+      .from('attachments')
+      .select(`
+        attachment_id, status, start_date, end_date,
+        students (full_name, reg_number, department, year_of_study, phone)
+      `)
+      .eq('org_id', org.org_id)
+      .order('created_at', { ascending: false });
 
-    // Get placement applications
-    const [applications] = await db.query(
-      `SELECT a.attachment_id, a.status, a.start_date, a.end_date,
-              s.full_name, s.reg_number, s.department, s.year_of_study, s.phone
-       FROM attachments a
-       JOIN students s ON a.student_id = s.student_id
-       WHERE a.org_id = ?
-       ORDER BY a.created_at DESC`,
-      [orgId]
-    );
+    if (appError) throw appError;
 
-    // Stats
-    const total = applications.length;
-    const pending = applications.filter(a => a.status === 'pending').length;
-    const ongoing = applications.filter(a => a.status === 'ongoing').length;
-    const completed = applications.filter(a => a.status === 'completed').length;
+    // Flatten student fields onto each application
+    const flat = applications.map(({ students, ...a }) => ({ ...a, ...students }));
 
-    res.json({
-      org: org[0],
-      applications,
-      stats: { total, pending, ongoing, completed },
-    });
+    const total = flat.length;
+    const pending = flat.filter(a => a.status === 'pending').length;
+    const ongoing = flat.filter(a => a.status === 'ongoing').length;
+    const completed = flat.filter(a => a.status === 'completed').length;
+
+    res.json({ org, applications: flat, stats: { total, pending, ongoing, completed } });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -46,22 +42,20 @@ router.get('/dashboard', protect, async (req, res) => {
 // PUT /api/host-orgs/profile
 router.put('/profile', protect, async (req, res) => {
   const { org_name, location, contact_person, phone, available_slots } = req.body;
+
+  if (!org_name || !location || !contact_person || !phone)
+    return res.status(400).json({ message: 'All fields are required' });
+
+  if (available_slots < 0)
+    return res.status(400).json({ message: 'Available slots cannot be negative' });
+
   try {
-    // Validate inputs
-    if (!org_name || !location || !contact_person || !phone) {
-      return res.status(400).json({ message: 'All fields are required' });
-    }
+    const { error } = await supabase
+      .from('host_organizations')
+      .update({ org_name, location, contact_person, phone, available_slots })
+      .eq('user_id', req.user.user_id);
 
-    if (available_slots < 0) {
-      return res.status(400).json({ message: 'Available slots cannot be negative' });
-    }
-
-    await db.query(
-      `UPDATE host_organizations 
-       SET org_name = ?, location = ?, contact_person = ?, phone = ?, available_slots = ?
-       WHERE user_id = ?`,
-      [org_name, location, contact_person, phone, available_slots, req.user.user_id]
-    );
+    if (error) throw error;
     res.json({ message: 'Profile updated successfully!' });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -71,23 +65,23 @@ router.put('/profile', protect, async (req, res) => {
 // GET /api/host-orgs/available-slots
 router.get('/available-slots', protect, async (req, res) => {
   try {
-    const [rows] = await db.query(
-      'SELECT org_id, available_slots FROM host_organizations WHERE user_id = ?',
-      [req.user.user_id]
-    );
+    const { data: org, error: orgError } = await supabase
+      .from('host_organizations')
+      .select('org_id, available_slots')
+      .eq('user_id', req.user.user_id)
+      .single();
 
-    const org = rows[0];
-    if (!org) {
-      return res.status(404).json({ message: 'Organization not found' });
-    }
+    if (orgError || !org) return res.status(404).json({ message: 'Organization not found' });
 
-    // Get count of ongoing attachments
-    const [countRows] = await db.query(
-      'SELECT COUNT(*) as count FROM attachments WHERE org_id = ? AND status = "ongoing"',
-      [org.org_id]
-    );
+    const { count, error: countError } = await supabase
+      .from('attachments')
+      .select('*', { count: 'exact', head: true })
+      .eq('org_id', org.org_id)
+      .eq('status', 'ongoing');
 
-    const usedSlots = countRows[0]?.count || 0;
+    if (countError) throw countError;
+
+    const usedSlots = count || 0;
     res.json({
       available_slots: org.available_slots,
       used_slots: usedSlots,
@@ -101,57 +95,51 @@ router.get('/available-slots', protect, async (req, res) => {
 // POST /api/host-orgs/evaluate/:attachmentId
 router.post('/evaluate/:attachmentId', protect, async (req, res) => {
   const { rating, comments } = req.body;
+  const { attachmentId } = req.params;
+
+  if (!rating || rating < 1 || rating > 5)
+    return res.status(400).json({ message: 'Rating must be between 1 and 5' });
+
+  if (!comments || comments.trim().length === 0)
+    return res.status(400).json({ message: 'Comments are required' });
 
   try {
-    // Validate rating
-    if (!rating || rating < 1 || rating > 5) {
-      return res.status(400).json({ message: 'Rating must be between 1 and 5' });
-    }
+    // Check attachment exists and belongs to this org
+    const { data: attachment, error: attachError } = await supabase
+      .from('attachments')
+      .select('attachment_id, org_id, status, host_organizations!inner(user_id)')
+      .eq('attachment_id', attachmentId)
+      .eq('host_organizations.user_id', req.user.user_id)
+      .single();
 
-    if (!comments || comments.trim().length === 0) {
-      return res.status(400).json({ message: 'Comments are required' });
-    }
-
-    // Check if attachment exists and belongs to this org
-    const [attachmentRows] = await db.query(
-      `SELECT a.attachment_id, a.org_id, a.status, ho.user_id
-       FROM attachments a
-       JOIN host_organizations ho ON a.org_id = ho.org_id
-       WHERE a.attachment_id = ? AND ho.user_id = ?`,
-      [req.params.attachmentId, req.user.user_id]
-    );
-
-    const attachment = attachmentRows[0];
-    if (!attachment) {
+    if (attachError || !attachment)
       return res.status(404).json({ message: 'Attachment not found or not authorized' });
-    }
 
-    // Can only evaluate ongoing or completed attachments
-    if (!['ongoing', 'completed'].includes(attachment.status)) {
+    if (!['ongoing', 'completed'].includes(attachment.status))
       return res.status(400).json({ message: 'Can only evaluate active or completed attachments' });
-    }
 
     // Check if evaluation already exists
-    const [evalRows] = await db.query(
-      'SELECT evaluation_id FROM evaluations WHERE attachment_id = ?',
-      [req.params.attachmentId]
-    );
+    const { data: existing } = await supabase
+      .from('evaluations')
+      .select('evaluation_id')
+      .eq('attachment_id', attachmentId)
+      .maybeSingle();
 
-    const existing = evalRows[0];
     if (existing) {
-      // Update existing evaluation
-      await db.query(
-        'UPDATE evaluations SET rating = ?, comments = ?, created_at = NOW() WHERE attachment_id = ?',
-        [rating, comments, req.params.attachmentId]
-      );
-      res.json({ message: 'Evaluation updated successfully!' });
+      const { error } = await supabase
+        .from('evaluations')
+        .update({ rating, comments, created_at: new Date().toISOString() })
+        .eq('attachment_id', attachmentId);
+
+      if (error) throw error;
+      return res.json({ message: 'Evaluation updated successfully!' });
     } else {
-      // Create new evaluation (note: typically supervisor evaluates, but host can too)
-      await db.query(
-        'INSERT INTO evaluations (attachment_id, supervisor_id, rating, comments, created_at) VALUES (?, NULL, ?, ?, NOW())',
-        [req.params.attachmentId, rating, comments]
-      );
-      res.json({ message: 'Evaluation submitted successfully!' });
+      const { error } = await supabase
+        .from('evaluations')
+        .insert({ attachment_id: attachmentId, supervisor_id: null, rating, comments });
+
+      if (error) throw error;
+      return res.json({ message: 'Evaluation submitted successfully!' });
     }
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -161,28 +149,37 @@ router.post('/evaluate/:attachmentId', protect, async (req, res) => {
 // GET /api/host-orgs/ongoing-attachments
 router.get('/ongoing-attachments', protect, async (req, res) => {
   try {
-    const [rows] = await db.query(
-      'SELECT org_id FROM host_organizations WHERE user_id = ?',
-      [req.user.user_id]
-    );
+    const { data: org, error: orgError } = await supabase
+      .from('host_organizations')
+      .select('org_id')
+      .eq('user_id', req.user.user_id)
+      .single();
 
-    const org = rows[0];
-    if (!org) {
-      return res.status(404).json({ message: 'Organization not found' });
-    }
+    if (orgError || !org) return res.status(404).json({ message: 'Organization not found' });
 
-    const [attachments] = await db.query(
-      `SELECT a.attachment_id, a.status, s.full_name, s.reg_number, s.department,
-              e.rating, e.comments, e.created_at as evaluated_at
-       FROM attachments a
-       JOIN students s ON a.student_id = s.student_id
-       LEFT JOIN evaluations e ON a.attachment_id = e.attachment_id
-       WHERE a.org_id = ? AND a.status IN ('ongoing', 'completed')
-       ORDER BY a.status DESC, a.start_date DESC`,
-      [org.org_id]
-    );
+    const { data: attachments, error } = await supabase
+      .from('attachments')
+      .select(`
+        attachment_id, status, start_date,
+        students (full_name, reg_number, department),
+        evaluations (rating, comments, created_at)
+      `)
+      .eq('org_id', org.org_id)
+      .in('status', ['ongoing', 'completed'])
+      .order('status', { ascending: false })
+      .order('start_date', { ascending: false });
 
-    res.json(attachments);
+    if (error) throw error;
+
+    const flat = attachments.map(({ students, evaluations, ...a }) => ({
+      ...a,
+      ...students,
+      rating: evaluations?.[0]?.rating || null,
+      comments: evaluations?.[0]?.comments || null,
+      evaluated_at: evaluations?.[0]?.created_at || null,
+    }));
+
+    res.json(flat);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

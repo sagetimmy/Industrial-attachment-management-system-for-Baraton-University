@@ -1,18 +1,19 @@
 const express = require('express');
 const router = express.Router();
 const { protect } = require('../middleware/auth.middleware');
-const db = require('../config/db');
+const supabase = require('../config/db');
 
 // GET /api/notifications
 router.get('/', protect, async (req, res) => {
   try {
-    const [notifications] = await db.query(
-      `SELECT * FROM notifications
-       WHERE user_id = ?
-       ORDER BY created_at DESC`,
-      [req.user.user_id]
-    );
-    res.json(notifications);
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('user_id', req.user.user_id)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    res.json(data);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -21,11 +22,29 @@ router.get('/', protect, async (req, res) => {
 // GET /api/notifications/unread-count
 router.get('/unread-count', protect, async (req, res) => {
   try {
-    const [[{ count }]] = await db.query(
-      'SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = FALSE',
-      [req.user.user_id]
-    );
+    const { count, error } = await supabase
+      .from('notifications')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', req.user.user_id)
+      .eq('is_read', false);
+
+    if (error) throw error;
     res.json({ count });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// PUT /api/notifications/read-all  ← must be before /:id to avoid route conflict
+router.put('/read-all', protect, async (req, res) => {
+  try {
+    const { error } = await supabase
+      .from('notifications')
+      .update({ is_read: true })
+      .eq('user_id', req.user.user_id);
+
+    if (error) throw error;
+    res.json({ message: 'All notifications marked as read' });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -34,24 +53,29 @@ router.get('/unread-count', protect, async (req, res) => {
 // PUT /api/notifications/:id/read
 router.put('/:id/read', protect, async (req, res) => {
   try {
-    await db.query(
-      'UPDATE notifications SET is_read = TRUE WHERE notif_id = ? AND user_id = ?',
-      [req.params.id, req.user.user_id]
-    );
+    const { error } = await supabase
+      .from('notifications')
+      .update({ is_read: true })
+      .eq('notif_id', req.params.id)
+      .eq('user_id', req.user.user_id);
+
+    if (error) throw error;
     res.json({ message: 'Notification marked as read' });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
-// PUT /api/notifications/read-all
-router.put('/read-all', protect, async (req, res) => {
+// DELETE /api/notifications/clear-all  ← must be before /:id to avoid route conflict
+router.delete('/clear-all', protect, async (req, res) => {
   try {
-    await db.query(
-      'UPDATE notifications SET is_read = TRUE WHERE user_id = ?',
-      [req.user.user_id]
-    );
-    res.json({ message: 'All notifications marked as read' });
+    const { error } = await supabase
+      .from('notifications')
+      .delete()
+      .eq('user_id', req.user.user_id);
+
+    if (error) throw error;
+    res.json({ message: 'All notifications cleared' });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -60,24 +84,14 @@ router.put('/read-all', protect, async (req, res) => {
 // DELETE /api/notifications/:id
 router.delete('/:id', protect, async (req, res) => {
   try {
-    await db.query(
-      'DELETE FROM notifications WHERE notif_id = ? AND user_id = ?',
-      [req.params.id, req.user.user_id]
-    );
-    res.json({ message: 'Notification deleted' });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
+    const { error } = await supabase
+      .from('notifications')
+      .delete()
+      .eq('notif_id', req.params.id)
+      .eq('user_id', req.user.user_id);
 
-// DELETE /api/notifications/clear-all
-router.delete('/clear-all', protect, async (req, res) => {
-  try {
-    await db.query(
-      'DELETE FROM notifications WHERE user_id = ?',
-      [req.user.user_id]
-    );
-    res.json({ message: 'All notifications cleared' });
+    if (error) throw error;
+    res.json({ message: 'Notification deleted' });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

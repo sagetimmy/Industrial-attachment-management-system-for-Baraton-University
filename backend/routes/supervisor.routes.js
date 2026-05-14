@@ -1,64 +1,89 @@
 const express = require('express');
 const router = express.Router();
 const { protect } = require('../middleware/auth.middleware');
-const db = require('../config/db');
+const supabase = require('../config/db');
+
+// Helper: get supervisor record from user_id
+const getSupervisor = async (user_id) => {
+  const { data, error } = await supabase
+    .from('supervisors')
+    .select('*')
+    .eq('user_id', user_id)
+    .single();
+  return { supervisor: data, error };
+};
 
 // GET /api/supervisors/dashboard
 router.get('/dashboard', protect, async (req, res) => {
   try {
-    const [supervisor] = await db.query(
-      'SELECT * FROM supervisors WHERE user_id = ?',
-      [req.user.user_id]
-    );
-    if (!supervisor.length) return res.status(404).json({ message: 'Supervisor not found' });
+    const { supervisor, error: sErr } = await getSupervisor(req.user.user_id);
+    if (sErr || !supervisor) return res.status(404).json({ message: 'Supervisor not found' });
 
-    const supId = supervisor[0].supervisor_id;
+    const supId = supervisor.supervisor_id;
 
-    const [students] = await db.query(
-      `SELECT s.full_name, s.reg_number, s.department, s.phone,
-              a.status, a.start_date, a.end_date, a.attachment_id,
-              o.org_name, o.location
-       FROM attachments a
-       JOIN students s ON a.student_id = s.student_id
-       JOIN host_organizations o ON a.org_id = o.org_id
-       WHERE a.supervisor_id = ?`,
-      [supId]
-    );
+    const { data: students, error: stErr } = await supabase
+      .from('attachments')
+      .select(`
+        status, start_date, end_date, attachment_id,
+        students!attachments_student_id_fkey (full_name, reg_number, department, phone),
+        host_organizations!attachments_org_id_fkey (org_name, location)
+      `)
+      .eq('supervisor_id', supId);
 
-    const [pendingLogs] = await db.query(
-      `SELECT l.entry_id, l.week_number, l.submitted_at, l.description,
-              s.full_name, s.reg_number
-       FROM logbook_entries l
-       JOIN attachments a ON l.attachment_id = a.attachment_id
-       JOIN students s ON a.student_id = s.student_id
-       WHERE a.supervisor_id = ?
-       ORDER BY l.submitted_at DESC LIMIT 5`,
-      [supId]
-    );
+    if (stErr) throw stErr;
 
-    const [upcomingVisits] = await db.query(
-      `SELECT sv.*, s.full_name as student_name, o.org_name
-       FROM site_visits sv
-       JOIN attachments a ON sv.attachment_id = a.attachment_id
-       JOIN students s ON a.student_id = s.student_id
-       JOIN host_organizations o ON a.org_id = o.org_id
-       WHERE sv.supervisor_id = ? AND sv.status = 'scheduled'
-         AND sv.visit_date >= CURDATE()
-       ORDER BY sv.visit_date ASC LIMIT 3`,
-      [supId]
-    );
+    const { data: pendingLogs, error: lErr } = await supabase
+      .from('logbook_entries')
+      .select(`
+        entry_id, week_number, submitted_at, description,
+        attachments!logbook_entries_attachment_id_fkey (
+          supervisor_id,
+          students!attachments_student_id_fkey (full_name, reg_number)
+        )
+      `)
+      .eq('attachments.supervisor_id', supId)
+      .order('submitted_at', { ascending: false })
+      .limit(5);
+
+    if (lErr) throw lErr;
+
+    const { data: upcomingVisits, error: vErr } = await supabase
+      .from('site_visits')
+      .select(`
+        *,
+        attachments!site_visits_attachment_id_fkey (
+          students!attachments_student_id_fkey (full_name),
+          host_organizations!attachments_org_id_fkey (org_name)
+        )
+      `)
+      .eq('supervisor_id', supId)
+      .eq('status', 'scheduled')
+      .gte('visit_date', new Date().toISOString().split('T')[0])
+      .order('visit_date', { ascending: true })
+      .limit(3);
+
+    if (vErr) throw vErr;
+
+    const flatStudents = (students || []).map(a => ({
+      ...a.students,
+      ...a.host_organizations,
+      status: a.status,
+      start_date: a.start_date,
+      end_date: a.end_date,
+      attachment_id: a.attachment_id,
+    }));
 
     res.json({
-      supervisor: supervisor[0],
-      students,
-      pendingLogs,
-      upcomingVisits,
+      supervisor,
+      students: flatStudents,
+      pendingLogs: pendingLogs || [],
+      upcomingVisits: upcomingVisits || [],
       stats: {
-        totalStudents: students.length,
-        activeStudents: students.filter(s => s.status === 'ongoing').length,
-        pendingLogs: pendingLogs.length,
-        upcomingVisits: upcomingVisits.length,
-      }
+        totalStudents: flatStudents.length,
+        activeStudents: flatStudents.filter(s => s.status === 'ongoing').length,
+        pendingLogs: pendingLogs?.length || 0,
+        upcomingVisits: upcomingVisits?.length || 0,
+      },
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -68,27 +93,37 @@ router.get('/dashboard', protect, async (req, res) => {
 // GET /api/supervisors/students
 router.get('/students', protect, async (req, res) => {
   try {
-    const [supervisor] = await db.query(
-      'SELECT * FROM supervisors WHERE user_id = ?', [req.user.user_id]
-    );
-    if (!supervisor.length) return res.status(404).json({ message: 'Supervisor not found' });
+    const { supervisor, error: sErr } = await getSupervisor(req.user.user_id);
+    if (sErr || !supervisor) return res.status(404).json({ message: 'Supervisor not found' });
 
-    const [students] = await db.query(
-      `SELECT s.*, a.attachment_id, a.status, a.start_date, a.end_date,
-              o.org_name, o.location,
-              u.email,
-              COUNT(l.entry_id) as logbook_count
-       FROM attachments a
-       JOIN students s ON a.student_id = s.student_id
-       JOIN host_organizations o ON a.org_id = o.org_id
-       JOIN users u ON s.user_id = u.user_id
-       LEFT JOIN logbook_entries l ON a.attachment_id = l.attachment_id
-       WHERE a.supervisor_id = ?
-       GROUP BY s.student_id, a.attachment_id
-       ORDER BY s.full_name ASC`,
-      [supervisor[0].supervisor_id]
-    );
-    res.json(students);
+    const { data, error } = await supabase
+      .from('attachments')
+      .select(`
+        attachment_id, status, start_date, end_date,
+        students!attachments_student_id_fkey (
+          *, users!students_user_id_fkey (email)
+        ),
+        host_organizations!attachments_org_id_fkey (org_name, location),
+        logbook_entries!logbook_entries_attachment_id_fkey (entry_id)
+      `)
+      .eq('supervisor_id', supervisor.supervisor_id)
+      .order('students(full_name)', { ascending: true });
+
+    if (error) throw error;
+
+    const result = (data || []).map(a => ({
+      ...a.students,
+      email: a.students?.users?.email,
+      attachment_id: a.attachment_id,
+      status: a.status,
+      start_date: a.start_date,
+      end_date: a.end_date,
+      org_name: a.host_organizations?.org_name,
+      location: a.host_organizations?.location,
+      logbook_count: a.logbook_entries?.length || 0,
+    }));
+
+    res.json(result);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -97,22 +132,34 @@ router.get('/students', protect, async (req, res) => {
 // GET /api/supervisors/logbooks
 router.get('/logbooks', protect, async (req, res) => {
   try {
-    const [supervisor] = await db.query(
-      'SELECT * FROM supervisors WHERE user_id = ?', [req.user.user_id]
-    );
-    if (!supervisor.length) return res.status(404).json({ message: 'Supervisor not found' });
+    const { supervisor, error: sErr } = await getSupervisor(req.user.user_id);
+    if (sErr || !supervisor) return res.status(404).json({ message: 'Supervisor not found' });
 
-    const [entries] = await db.query(
-      `SELECT l.*, s.full_name, s.reg_number, o.org_name, a.attachment_id
-       FROM logbook_entries l
-       JOIN attachments a ON l.attachment_id = a.attachment_id
-       JOIN students s ON a.student_id = s.student_id
-       JOIN host_organizations o ON a.org_id = o.org_id
-       WHERE a.supervisor_id = ?
-       ORDER BY l.submitted_at DESC`,
-      [supervisor[0].supervisor_id]
-    );
-    res.json(entries);
+    const { data, error } = await supabase
+      .from('logbook_entries')
+      .select(`
+        *,
+        attachments!logbook_entries_attachment_id_fkey (
+          attachment_id, supervisor_id,
+          students!attachments_student_id_fkey (full_name, reg_number),
+          host_organizations!attachments_org_id_fkey (org_name)
+        )
+      `)
+      .eq('attachments.supervisor_id', supervisor.supervisor_id)
+      .order('submitted_at', { ascending: false });
+
+    if (error) throw error;
+
+    const result = (data || []).map(l => ({
+      ...l,
+      full_name: l.attachments?.students?.full_name,
+      reg_number: l.attachments?.students?.reg_number,
+      org_name: l.attachments?.host_organizations?.org_name,
+      attachment_id: l.attachments?.attachment_id,
+      attachments: undefined,
+    }));
+
+    res.json(result);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -121,23 +168,35 @@ router.get('/logbooks', protect, async (req, res) => {
 // GET /api/supervisors/site-visits
 router.get('/site-visits', protect, async (req, res) => {
   try {
-    const [supervisor] = await db.query(
-      'SELECT * FROM supervisors WHERE user_id = ?', [req.user.user_id]
-    );
-    if (!supervisor.length) return res.status(404).json({ message: 'Supervisor not found' });
+    const { supervisor, error: sErr } = await getSupervisor(req.user.user_id);
+    if (sErr || !supervisor) return res.status(404).json({ message: 'Supervisor not found' });
 
-    const [visits] = await db.query(
-      `SELECT sv.*, s.full_name as student_name, s.reg_number,
-              o.org_name, o.location, a.attachment_id
-       FROM site_visits sv
-       JOIN attachments a ON sv.attachment_id = a.attachment_id
-       JOIN students s ON a.student_id = s.student_id
-       JOIN host_organizations o ON a.org_id = o.org_id
-       WHERE sv.supervisor_id = ?
-       ORDER BY sv.visit_date DESC`,
-      [supervisor[0].supervisor_id]
-    );
-    res.json(visits);
+    const { data, error } = await supabase
+      .from('site_visits')
+      .select(`
+        *,
+        attachments!site_visits_attachment_id_fkey (
+          attachment_id,
+          students!attachments_student_id_fkey (full_name, reg_number),
+          host_organizations!attachments_org_id_fkey (org_name, location)
+        )
+      `)
+      .eq('supervisor_id', supervisor.supervisor_id)
+      .order('visit_date', { ascending: false });
+
+    if (error) throw error;
+
+    const result = (data || []).map(v => ({
+      ...v,
+      student_name: v.attachments?.students?.full_name,
+      reg_number: v.attachments?.students?.reg_number,
+      org_name: v.attachments?.host_organizations?.org_name,
+      location: v.attachments?.host_organizations?.location,
+      attachment_id: v.attachments?.attachment_id,
+      attachments: undefined,
+    }));
+
+    res.json(result);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -147,28 +206,33 @@ router.get('/site-visits', protect, async (req, res) => {
 router.post('/site-visits', protect, async (req, res) => {
   const { attachment_id, visit_date, visit_time, notes } = req.body;
   try {
-    const [supervisor] = await db.query(
-      'SELECT * FROM supervisors WHERE user_id = ?', [req.user.user_id]
-    );
-    if (!supervisor.length) return res.status(404).json({ message: 'Supervisor not found' });
+    const { supervisor, error: sErr } = await getSupervisor(req.user.user_id);
+    if (sErr || !supervisor) return res.status(404).json({ message: 'Supervisor not found' });
 
-    await db.query(
-      'INSERT INTO site_visits (attachment_id, supervisor_id, visit_date, visit_time, notes) VALUES (?,?,?,?,?)',
-      [attachment_id, supervisor[0].supervisor_id, visit_date, visit_time || '', notes || '']
-    );
+    const { error } = await supabase
+      .from('site_visits')
+      .insert({
+        attachment_id,
+        supervisor_id: supervisor.supervisor_id,
+        visit_date,
+        visit_time: visit_time || '',
+        notes: notes || '',
+      });
+
+    if (error) throw error;
 
     // Notify student
-    const [att] = await db.query(
-      `SELECT s.user_id FROM attachments a
-       JOIN students s ON a.student_id = s.student_id
-       WHERE a.attachment_id = ?`,
-      [attachment_id]
-    );
-    if (att.length) {
-      await db.query(
-        'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
-        [att[0].user_id, `A site visit has been scheduled for ${visit_date} at ${visit_time}`]
-      );
+    const { data: att } = await supabase
+      .from('attachments')
+      .select(`students!attachments_student_id_fkey (user_id)`)
+      .eq('attachment_id', attachment_id)
+      .single();
+
+    if (att?.students?.user_id) {
+      await supabase.from('notifications').insert({
+        user_id: att.students.user_id,
+        message: `A site visit has been scheduled for ${visit_date} at ${visit_time}`,
+      });
     }
 
     res.status(201).json({ message: 'Site visit scheduled successfully!' });
@@ -181,10 +245,12 @@ router.post('/site-visits', protect, async (req, res) => {
 router.put('/site-visits/:id', protect, async (req, res) => {
   const { status } = req.body;
   try {
-    await db.query(
-      'UPDATE site_visits SET status = ? WHERE visit_id = ?',
-      [status, req.params.id]
-    );
+    const { error } = await supabase
+      .from('site_visits')
+      .update({ status })
+      .eq('visit_id', req.params.id);
+
+    if (error) throw error;
     res.json({ message: `Site visit marked as ${status}` });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -195,28 +261,33 @@ router.put('/site-visits/:id', protect, async (req, res) => {
 router.post('/evaluations', protect, async (req, res) => {
   const { attachment_id, score, comments, eval_date } = req.body;
   try {
-    const [supervisor] = await db.query(
-      'SELECT * FROM supervisors WHERE user_id = ?', [req.user.user_id]
-    );
-    if (!supervisor.length) return res.status(404).json({ message: 'Supervisor not found' });
+    const { supervisor, error: sErr } = await getSupervisor(req.user.user_id);
+    if (sErr || !supervisor) return res.status(404).json({ message: 'Supervisor not found' });
 
-    await db.query(
-      'INSERT INTO evaluations (attachment_id, supervisor_id, score, comments, eval_date) VALUES (?,?,?,?,?)',
-      [attachment_id, supervisor[0].supervisor_id, score, comments, eval_date || new Date()]
-    );
+    const { error } = await supabase
+      .from('evaluations')
+      .insert({
+        attachment_id,
+        supervisor_id: supervisor.supervisor_id,
+        score,
+        comments,
+        eval_date: eval_date || new Date().toISOString().split('T')[0],
+      });
+
+    if (error) throw error;
 
     // Notify student
-    const [att] = await db.query(
-      `SELECT s.user_id FROM attachments a
-       JOIN students s ON a.student_id = s.student_id
-       WHERE a.attachment_id = ?`,
-      [attachment_id]
-    );
-    if (att.length) {
-      await db.query(
-        'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
-        [att[0].user_id, `Your supervisor has submitted an evaluation. Score: ${score}%`]
-      );
+    const { data: att } = await supabase
+      .from('attachments')
+      .select(`students!attachments_student_id_fkey (user_id)`)
+      .eq('attachment_id', attachment_id)
+      .single();
+
+    if (att?.students?.user_id) {
+      await supabase.from('notifications').insert({
+        user_id: att.students.user_id,
+        message: `Your supervisor has submitted an evaluation. Score: ${score}%`,
+      });
     }
 
     res.status(201).json({ message: 'Evaluation submitted successfully!' });
@@ -228,22 +299,32 @@ router.post('/evaluations', protect, async (req, res) => {
 // GET /api/supervisors/evaluations
 router.get('/evaluations', protect, async (req, res) => {
   try {
-    const [supervisor] = await db.query(
-      'SELECT * FROM supervisors WHERE user_id = ?', [req.user.user_id]
-    );
-    if (!supervisor.length) return res.status(404).json({ message: 'Supervisor not found' });
+    const { supervisor, error: sErr } = await getSupervisor(req.user.user_id);
+    if (sErr || !supervisor) return res.status(404).json({ message: 'Supervisor not found' });
 
-    const [evaluations] = await db.query(
-      `SELECT e.*, s.full_name as student_name, s.reg_number, o.org_name
-       FROM evaluations e
-       JOIN attachments a ON e.attachment_id = a.attachment_id
-       JOIN students s ON a.student_id = s.student_id
-       JOIN host_organizations o ON a.org_id = o.org_id
-       WHERE e.supervisor_id = ?
-       ORDER BY e.created_at DESC`,
-      [supervisor[0].supervisor_id]
-    );
-    res.json(evaluations);
+    const { data, error } = await supabase
+      .from('evaluations')
+      .select(`
+        *,
+        attachments!evaluations_attachment_id_fkey (
+          students!attachments_student_id_fkey (full_name, reg_number),
+          host_organizations!attachments_org_id_fkey (org_name)
+        )
+      `)
+      .eq('supervisor_id', supervisor.supervisor_id)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    const result = (data || []).map(e => ({
+      ...e,
+      student_name: e.attachments?.students?.full_name,
+      reg_number: e.attachments?.students?.reg_number,
+      org_name: e.attachments?.host_organizations?.org_name,
+      attachments: undefined,
+    }));
+
+    res.json(result);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

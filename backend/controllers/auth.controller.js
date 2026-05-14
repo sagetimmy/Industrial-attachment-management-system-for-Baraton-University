@@ -1,6 +1,6 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const db = require('../config/db');
+const supabase = require('../config/db');
 const { sendVerificationEmail, sendPasswordResetEmail } = require('../config/mailer');
 
 const generateToken = (user) =>
@@ -13,21 +13,6 @@ const generateToken = (user) =>
 const generateCode = () =>
   Math.floor(100000 + Math.random() * 900000).toString();
 
-const ensurePasswordResetTable = async () => {
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS password_reset_codes (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      user_id INT NOT NULL,
-      email VARCHAR(255) NOT NULL,
-      code VARCHAR(10) NOT NULL,
-      expires_at DATETIME NOT NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      INDEX idx_password_reset_email (email),
-      INDEX idx_password_reset_user (user_id)
-    )
-  `);
-};
-
 // POST /api/auth/register
 const register = async (req, res) => {
   const {
@@ -36,34 +21,45 @@ const register = async (req, res) => {
   } = req.body;
 
   try {
-    const [existing] = await db.query('SELECT user_id FROM users WHERE email = ?', [email]);
-    if (existing.length) return res.status(400).json({ message: 'Email already registered' });
+    const { data: existing } = await supabase
+      .from('users')
+      .select('user_id')
+      .eq('email', email)
+      .single();
+
+    if (existing) return res.status(400).json({ message: 'Email already registered' });
 
     const hashed = await bcrypt.hash(password, 10);
     const code = generateCode();
-    const expires = new Date(Date.now() + 10 * 60 * 1000);
+    const expires = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
-    const [result] = await db.query(
-      'INSERT INTO users (email, password, role, verify_code, verify_code_expires) VALUES (?, ?, ?, ?, ?)',
-      [email, hashed, role || 'student', code, expires]
-    );
-    const userId = result.insertId;
+    const { data: newUser, error: userError } = await supabase
+      .from('users')
+      .insert({ email, password: hashed, role: role || 'student', verify_code: code, verify_code_expires: expires })
+      .select()
+      .single();
+
+    if (userError) throw userError;
+
+    const userId = newUser.user_id;
 
     if (!role || role === 'student') {
-      await db.query(
-        'INSERT INTO students (user_id, reg_number, full_name, phone, department, year_of_study) VALUES (?,?,?,?,?,?)',
-        [userId, reg_number, full_name, phone || '', department || '', year_of_study || 1]
-      );
+      const { error } = await supabase.from('students').insert({
+        user_id: userId, reg_number, full_name,
+        phone: phone || '', department: department || '', year_of_study: year_of_study || 1
+      });
+      if (error) throw error;
     } else if (role === 'supervisor') {
-      await db.query(
-        'INSERT INTO supervisors (user_id, full_name, phone, department) VALUES (?,?,?,?)',
-        [userId, full_name, phone || '', department || '']
-      );
+      const { error } = await supabase.from('supervisors').insert({
+        user_id: userId, full_name, phone: phone || '', department: department || ''
+      });
+      if (error) throw error;
     } else if (role === 'host_org') {
-      await db.query(
-        'INSERT INTO host_organizations (user_id, org_name, location, contact_person, phone) VALUES (?,?,?,?,?)',
-        [userId, org_name, location || '', contact_person || '', phone || '']
-      );
+      const { error } = await supabase.from('host_organizations').insert({
+        user_id: userId, org_name, location: location || '',
+        contact_person: contact_person || '', phone: phone || ''
+      });
+      if (error) throw error;
     }
 
     try {
@@ -88,21 +84,21 @@ const register = async (req, res) => {
 const verifyEmail = async (req, res) => {
   const { email, code } = req.body;
   try {
-    const [rows] = await db.query(
-      'SELECT * FROM users WHERE email = ? AND verify_code = ? AND verify_code_expires > NOW()',
-      [email, code]
-    );
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email)
+      .eq('verify_code', code)
+      .gt('verify_code_expires', new Date().toISOString())
+      .single();
 
-    if (!rows.length) {
-      return res.status(400).json({ message: 'Invalid or expired verification code' });
-    }
+    if (error || !user) return res.status(400).json({ message: 'Invalid or expired verification code' });
 
-    await db.query(
-      'UPDATE users SET is_verified = TRUE, verify_code = NULL, verify_code_expires = NULL WHERE email = ?',
-      [email]
-    );
+    await supabase
+      .from('users')
+      .update({ is_verified: true, verify_code: null, verify_code_expires: null })
+      .eq('email', email);
 
-    const user = rows[0];
     res.json({
       message: 'Email verified successfully!',
       token: generateToken(user),
@@ -117,22 +113,30 @@ const verifyEmail = async (req, res) => {
 const resendCode = async (req, res) => {
   const { email } = req.body;
   try {
-    const [rows] = await db.query('SELECT * FROM users WHERE email = ?', [email]);
-    if (!rows.length) return res.status(404).json({ message: 'Email not found' });
-    if (rows[0].is_verified) return res.status(400).json({ message: 'Email already verified' });
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email)
+      .single();
+
+    if (error || !user) return res.status(404).json({ message: 'Email not found' });
+    if (user.is_verified) return res.status(400).json({ message: 'Email already verified' });
 
     const code = generateCode();
-    const expires = new Date(Date.now() + 10 * 60 * 1000);
+    const expires = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
-    await db.query(
-      'UPDATE users SET verify_code = ?, verify_code_expires = ? WHERE email = ?',
-      [code, expires, email]
-    );
+    await supabase
+      .from('users')
+      .update({ verify_code: code, verify_code_expires: expires })
+      .eq('email', email);
 
-    const [student] = await db.query(
-      'SELECT full_name FROM students WHERE user_id = ?', [rows[0].user_id]
-    );
-    const name = student[0]?.full_name || 'User';
+    const { data: student } = await supabase
+      .from('students')
+      .select('full_name')
+      .eq('user_id', user.user_id)
+      .single();
+
+    const name = student?.full_name || 'User';
 
     try {
       await sendVerificationEmail(email, name, code);
@@ -152,23 +156,18 @@ const login = async (req, res) => {
   const { email, password } = req.body;
   console.log('Login attempt:', { email, ip: req.ip });
   try {
-    const [rows] = await db.query('SELECT * FROM users WHERE email = ?', [email]);
-    console.log('DB rows for login:', rows.length);
-    if (!rows.length) {
-      console.log('Login failed - user not found:', email);
-      return res.status(401).json({ message: 'Invalid email or password' });
-    }
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email)
+      .single();
 
-    const user = rows[0];
-    console.log('User fetched for login:', { user_id: user.user_id, is_verified: user.is_verified });
+    if (error || !user) return res.status(401).json({ message: 'Invalid email or password' });
+
     const match = await bcrypt.compare(password, user.password);
-    if (!match) {
-      console.log('Login failed - wrong password for:', email);
-      return res.status(401).json({ message: 'Invalid email or password' });
-    }
+    if (!match) return res.status(401).json({ message: 'Invalid email or password' });
 
     if (!user.is_verified) {
-      console.log('Login blocked - email not verified for:', email);
       return res.status(403).json({
         message: 'Please verify your email first',
         requiresVerification: true,
@@ -188,42 +187,38 @@ const login = async (req, res) => {
 // POST /api/auth/forgot-password
 const forgotPassword = async (req, res) => {
   const { email } = req.body;
-  if (!email) {
-    return res.status(400).json({ message: 'Email is required' });
-  }
+  if (!email) return res.status(400).json({ message: 'Email is required' });
 
   try {
-    await ensurePasswordResetTable();
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('user_id, email, is_verified, role')
+      .eq('email', email)
+      .single();
 
-    const [rows] = await db.query('SELECT user_id, email, is_verified, role FROM users WHERE email = ?', [email]);
-    if (!rows.length) {
-      return res.status(404).json({ message: 'No account found with that email' });
-    }
-
-    const user = rows[0];
-    if (!user.is_verified) {
-      return res.status(400).json({ message: 'Please verify your account email first' });
-    }
+    if (error || !user) return res.status(404).json({ message: 'No account found with that email' });
+    if (!user.is_verified) return res.status(400).json({ message: 'Please verify your account email first' });
 
     const code = generateCode();
-    const expires = new Date(Date.now() + 10 * 60 * 1000);
+    const expires = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
-    await db.query('DELETE FROM password_reset_codes WHERE email = ?', [email]);
-    await db.query(
-      'INSERT INTO password_reset_codes (user_id, email, code, expires_at) VALUES (?, ?, ?, ?)',
-      [user.user_id, user.email, code, expires]
-    );
+    await supabase.from('password_reset_codes').delete().eq('email', email);
+    const { error: insertError } = await supabase
+      .from('password_reset_codes')
+      .insert({ user_id: user.user_id, email, code, expires_at: expires });
+
+    if (insertError) throw insertError;
 
     let name = 'User';
     if (user.role === 'student') {
-      const [student] = await db.query('SELECT full_name FROM students WHERE user_id = ?', [user.user_id]);
-      name = student[0]?.full_name || 'User';
+      const { data } = await supabase.from('students').select('full_name').eq('user_id', user.user_id).single();
+      name = data?.full_name || 'User';
     } else if (user.role === 'supervisor') {
-      const [supervisor] = await db.query('SELECT full_name FROM supervisors WHERE user_id = ?', [user.user_id]);
-      name = supervisor[0]?.full_name || 'User';
+      const { data } = await supabase.from('supervisors').select('full_name').eq('user_id', user.user_id).single();
+      name = data?.full_name || 'User';
     } else if (user.role === 'host_org') {
-      const [org] = await db.query('SELECT contact_person FROM host_organizations WHERE user_id = ?', [user.user_id]);
-      name = org[0]?.contact_person || 'User';
+      const { data } = await supabase.from('host_organizations').select('contact_person').eq('user_id', user.user_id).single();
+      name = data?.contact_person || 'User';
     }
 
     try {
@@ -242,31 +237,25 @@ const forgotPassword = async (req, res) => {
 // POST /api/auth/reset-password
 const resetPassword = async (req, res) => {
   const { email, code, password } = req.body;
-  if (!email || !code || !password) {
-    return res.status(400).json({ message: 'Email, code and new password are required' });
-  }
-
-  if (password.length < 6) {
-    return res.status(400).json({ message: 'Password must be at least 6 characters' });
-  }
+  if (!email || !code || !password) return res.status(400).json({ message: 'Email, code and new password are required' });
+  if (password.length < 6) return res.status(400).json({ message: 'Password must be at least 6 characters' });
 
   try {
-    await ensurePasswordResetTable();
+    const { data: resetEntry, error } = await supabase
+      .from('password_reset_codes')
+      .select('id, user_id')
+      .eq('email', email)
+      .eq('code', code)
+      .gt('expires_at', new Date().toISOString())
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
 
-    const [codes] = await db.query(
-      `SELECT id, user_id FROM password_reset_codes
-       WHERE email = ? AND code = ? AND expires_at > NOW()
-       ORDER BY created_at DESC LIMIT 1`,
-      [email, code]
-    );
-
-    if (!codes.length) {
-      return res.status(400).json({ message: 'Invalid or expired reset code' });
-    }
+    if (error || !resetEntry) return res.status(400).json({ message: 'Invalid or expired reset code' });
 
     const hashed = await bcrypt.hash(password, 10);
-    await db.query('UPDATE users SET password = ? WHERE user_id = ?', [hashed, codes[0].user_id]);
-    await db.query('DELETE FROM password_reset_codes WHERE email = ?', [email]);
+    await supabase.from('users').update({ password: hashed }).eq('user_id', resetEntry.user_id);
+    await supabase.from('password_reset_codes').delete().eq('email', email);
 
     return res.json({ message: 'Password reset successful. You can now log in.' });
   } catch (err) {
@@ -277,20 +266,26 @@ const resetPassword = async (req, res) => {
 // GET /api/auth/me
 const getMe = async (req, res) => {
   try {
-    const [rows] = await db.query(
-      `SELECT u.user_id, u.email, u.role, 
-              COALESCE(s.full_name, sv.full_name, o.contact_person) as full_name,
-              s.reg_number, s.department, s.year_of_study,
-              sv.department as supervisor_dept, sv.phone as supervisor_phone,
-              o.org_name, o.location, o.available_slots
-       FROM users u 
-       LEFT JOIN students s ON u.user_id = s.user_id
-       LEFT JOIN supervisors sv ON u.user_id = sv.user_id
-       LEFT JOIN host_organizations o ON u.user_id = o.user_id
-       WHERE u.user_id = ?`,
-      [req.user.user_id]
-    );
-    res.json(rows[0]);
+    const { data: user, error } = await supabase
+      .from('users')
+      .select(`
+        user_id, email, role,
+        students!students_user_id_fkey (full_name, reg_number, department, year_of_study, phone),
+        supervisors!supervisors_user_id_fkey (full_name, department, phone),
+        host_organizations!host_organizations_user_id_fkey (org_name, location, contact_person, available_slots)
+      `)
+      .eq('user_id', req.user.user_id)
+      .single();
+
+    if (error) throw error;
+
+    const profile =
+      user.students?.[0] ||
+      user.supervisors?.[0] ||
+      user.host_organizations?.[0] ||
+      {};
+
+    res.json({ user_id: user.user_id, email: user.email, role: user.role, ...profile });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
