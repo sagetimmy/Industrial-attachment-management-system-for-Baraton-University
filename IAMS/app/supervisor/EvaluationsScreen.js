@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ScrollView, Alert, ActivityIndicator, RefreshControl
+  ScrollView, Alert, ActivityIndicator, RefreshControl, useWindowDimensions
 } from 'react-native';
 import { COLORS } from '../../constants/colors';
 import api from '../../api/axios';
 
 export default function EvaluationsScreen({ navigation, route }) {
+  const { width } = useWindowDimensions();
   const { attachmentId, studentName } = route.params || {};
   const [evaluations, setEvaluations] = useState([]);
   const [students, setStudents] = useState([]);
@@ -20,6 +21,8 @@ export default function EvaluationsScreen({ navigation, route }) {
     comments: '',
     eval_date: new Date().toISOString().split('T')[0],
   });
+  const isTablet = width >= 768;
+  const isDesktop = width >= 1100;
 
   const fetchData = async () => {
     try {
@@ -96,9 +99,11 @@ export default function EvaluationsScreen({ navigation, route }) {
   return (
     <ScrollView
       style={styles.container}
+      contentContainerStyle={styles.scrollContent}
       showsVerticalScrollIndicator={false}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
     >
+      <View style={[styles.contentWrap, isTablet && styles.contentWrapTablet, isDesktop && styles.contentWrapDesktop]}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Text style={styles.backText}>← Back</Text>
@@ -112,13 +117,13 @@ export default function EvaluationsScreen({ navigation, route }) {
       {/* New Evaluation Button */}
       {!showForm ? (
         <TouchableOpacity
-          style={styles.newEvalBtn}
+          style={[styles.newEvalBtn, isTablet && styles.cardNarrow]}
           onPress={() => setShowForm(true)}
         >
           <Text style={styles.newEvalBtnText}>+ Submit New Evaluation</Text>
         </TouchableOpacity>
       ) : (
-        <View style={styles.formCard}>
+        <View style={[styles.formCard, isTablet && styles.cardNarrow]}>
           <Text style={styles.formTitle}>New Evaluation</Text>
 
           {/* Student Selector */}
@@ -217,14 +222,15 @@ export default function EvaluationsScreen({ navigation, route }) {
       {/* Evaluations List */}
       <Text style={styles.sectionTitle}>Past Evaluations</Text>
       {evaluations.length === 0 ? (
-        <View style={styles.emptyCard}>
+        <View style={[styles.emptyCard, isTablet && styles.cardNarrow]}>
           <Text style={styles.emptyIcon}>⭐</Text>
           <Text style={styles.emptyTitle}>No Evaluations Yet</Text>
           <Text style={styles.emptyText}>Submit your first evaluation above.</Text>
         </View>
       ) : (
-        evaluations.map((eval_, index) => (
-          <View key={index} style={styles.evalCard}>
+        <View style={[styles.cardsGrid, isTablet && styles.cardsGridTablet]}>
+          {evaluations.map((eval_, index) => (
+          <View key={index} style={[styles.evalCard, isTablet && styles.evalCardTablet, isDesktop && styles.evalCardDesktop]}>
             <View style={styles.evalHeader}>
               <View style={styles.evalLeft}>
                 <Text style={styles.evalStudent}>{eval_.student_name}</Text>
@@ -270,20 +276,27 @@ export default function EvaluationsScreen({ navigation, route }) {
               <Text style={styles.scoreBarLabel}>{eval_.score}%</Text>
             </View>
           </View>
-        ))
+          ))}
+        </View>
       )}
       <View style={{ height: 40 }} />
+      </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F4F4F4' },
+  scrollContent: { paddingBottom: 16 },
+  contentWrap: { width: '100%', alignSelf: 'center' },
+  contentWrapTablet: { maxWidth: 960 },
+  contentWrapDesktop: { maxWidth: 1160 },
+  cardNarrow: { marginHorizontal: '4.5%' },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: {
     backgroundColor: COLORS.secondary,
     paddingTop: 55, paddingBottom: 25,
-    paddingHorizontal: 20,
+    paddingHorizontal: '5%',
     borderBottomLeftRadius: 25,
     borderBottomRightRadius: 25,
   },
@@ -293,13 +306,13 @@ const styles = StyleSheet.create({
   subtitle: { color: '#8899AA', fontSize: 13, marginTop: 4 },
   newEvalBtn: {
     backgroundColor: COLORS.primary,
-    margin: 16, padding: 15,
+    margin: 16, paddingVertical: 15, paddingHorizontal: '4%',
     borderRadius: 14, alignItems: 'center',
   },
   newEvalBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 15 },
   formCard: {
     backgroundColor: COLORS.white,
-    margin: 16, padding: 16,
+    margin: 16, padding: '4%',
     borderRadius: 16, elevation: 2,
   },
   formTitle: { fontSize: 16, fontWeight: '700', color: COLORS.secondary, marginBottom: 16 },
@@ -349,17 +362,26 @@ const styles = StyleSheet.create({
   },
   emptyCard: {
     backgroundColor: COLORS.white,
-    margin: 16, padding: 30,
+    margin: 16, padding: '8%',
     borderRadius: 16, alignItems: 'center', elevation: 2,
+  },
+  cardsGrid: { width: '100%' },
+  cardsGridTablet: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    paddingHorizontal: '3.5%',
   },
   emptyIcon: { fontSize: 40, marginBottom: 10 },
   emptyTitle: { fontSize: 16, fontWeight: '700', color: COLORS.darkGray },
   emptyText: { fontSize: 13, color: COLORS.gray, textAlign: 'center', marginTop: 6 },
   evalCard: {
     backgroundColor: COLORS.white,
-    marginHorizontal: 16, marginBottom: 12,
+    marginHorizontal: '4.5%', marginBottom: 12,
     padding: 14, borderRadius: 16, elevation: 2,
   },
+  evalCardTablet: { width: '48%', marginHorizontal: 0 },
+  evalCardDesktop: { width: '31.8%' },
   evalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',

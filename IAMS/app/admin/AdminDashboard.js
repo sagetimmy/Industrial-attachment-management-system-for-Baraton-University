@@ -8,7 +8,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { useAuth } from '../../context/AuthContext';
 import api from '../../api/axios';
 
 const NAVY      = '#0D1B2E';
@@ -102,7 +101,6 @@ function NotificationPanel({ visible, notifications, unreadCount, onClose, onMar
 }
 
 export default function AdminDashboard({ navigation }) {
-  const { user, logout } = useAuth();
   const [data, setData]               = useState(null);
   const [loading, setLoading]         = useState(true);
   const [refreshing, setRefreshing]   = useState(false);
@@ -177,13 +175,6 @@ export default function AdminDashboard({ navigation }) {
     }
   };
 
-  const handleLogout = () => {
-    Alert.alert('Logout', 'Are you sure?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Logout', style: 'destructive', onPress: logout },
-    ]);
-  };
-
   const handleApproveOrg = async (orgId, orgName) => {
     Alert.alert('Approve Organization', `Approve ${orgName}?`, [
       { text: 'Cancel', style: 'cancel' },
@@ -213,11 +204,49 @@ export default function AdminDashboard({ navigation }) {
     );
   }
 
+  const stats = data?.stats || {};
+  const totalStudents = stats.totalStudents || 0;
+  const totalSupervisors = stats.totalSupervisors || 0;
+  const totalOrgs = stats.totalOrgs || 0;
+  const totalAttachments = stats.totalAttachments || 0;
+  const activeAttachments = stats.activeAttachments || 0;
+  const pendingOrgs = stats.pendingOrgs || 0;
+  const totalUsers = totalStudents + totalSupervisors + totalOrgs;
+  const approvedOrgs = Math.max(totalOrgs - pendingOrgs, 0);
+  const percentOf = (value, total) => {
+    if (!total) return 0;
+    return Math.round((value / total) * 100);
+  };
+
   const statCards = [
-    { label: 'TOTAL STUDENTS', value: data?.stats?.totalStudents    || 0, change: '+12%', up: true,  icon: 'people-outline' },
-    { label: 'ACTIVE',         value: data?.stats?.activeAttachments|| 0, change: '+5%',  up: true,  icon: 'person-outline' },
-    { label: 'PENDING',        value: data?.stats?.pendingOrgs      || 0, change: '+18%', up: true,  icon: 'time-outline' },
-    { label: 'HOST ORGS',      value: data?.stats?.totalOrgs        || 0, change: '-2%',  up: false, icon: 'business-outline' },
+    {
+      label: 'TOTAL STUDENTS',
+      value: totalStudents,
+      change: `${percentOf(totalStudents, totalUsers)}% of users`,
+      up: true,
+      icon: 'people-outline',
+    },
+    {
+      label: 'ACTIVE',
+      value: activeAttachments,
+      change: `${percentOf(activeAttachments, totalAttachments)}% active`,
+      up: true,
+      icon: 'person-outline',
+    },
+    {
+      label: 'PENDING',
+      value: pendingOrgs,
+      change: `${percentOf(pendingOrgs, totalOrgs)}% pending`,
+      up: false,
+      icon: 'time-outline',
+    },
+    {
+      label: 'HOST ORGS',
+      value: totalOrgs,
+      change: `${percentOf(approvedOrgs, totalOrgs)}% approved`,
+      up: true,
+      icon: 'business-outline',
+    },
   ];
 
   const quickActions = [
@@ -280,7 +309,7 @@ export default function AdminDashboard({ navigation }) {
 
   const tabs = [
     { label: 'Home',        icon: 'home',             active: true,  screen: null },
-    { label: 'Students',    icon: 'people-outline',   active: false, screen: 'ManageUsers' },
+    { label: 'Students',    icon: 'people-outline',   active: false, screen: 'ManageUsers', params: { role: 'student' } },
     { label: 'Supervisors', icon: 'ribbon-outline',   active: false, screen: 'ManageSupervisors' },
     { label: 'Orgs',        icon: 'business-outline', active: false, screen: 'ManageOrgs' },
     { label: 'Manage Users',icon: 'person-outline',   active: false, screen: 'ManageUsers' },
@@ -302,9 +331,6 @@ export default function AdminDashboard({ navigation }) {
       {/* ── DARK NAVY TOP SECTION ── */}
       <View style={styles.navySection}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={handleLogout} hitSlop={{ top:10, bottom:10, left:10, right:10 }}>
-            <Ionicons name="menu" size={26} color={WHITE} />
-          </TouchableOpacity>
           <Text style={styles.headerTitle}>Admin Dashboard</Text>
 
           {/* Bell with live unread count badge */}
@@ -491,7 +517,7 @@ export default function AdminDashboard({ navigation }) {
           <TouchableOpacity
             key={i}
             style={styles.tabItem}
-            onPress={() => t.screen && navigation.navigate(t.screen)}
+            onPress={() => t.screen && navigation.navigate(t.screen, t.params)}
           >
             <Ionicons
               name={t.active ? t.icon.replace('-outline', '') : t.icon}
@@ -529,12 +555,12 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row', alignItems: 'center',
-    justifyContent: 'space-between', paddingTop: 8, paddingBottom: 20,
+    paddingTop: 8, paddingBottom: 20,
   },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: WHITE },
+  headerTitle: { flex: 1, fontSize: 18, fontWeight: '700', color: WHITE },
 
   // Bell with count badge
-  bellWrap: { position: 'relative', padding: 4 },
+  bellWrap: { position: 'relative', padding: 4, marginLeft: 12 },
   bellBadge: {
     position: 'absolute', top: 0, right: 0,
     backgroundColor: RED, borderRadius: 10,

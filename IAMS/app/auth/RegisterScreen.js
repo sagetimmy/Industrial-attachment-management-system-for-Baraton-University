@@ -378,7 +378,7 @@ export default function RegisterScreen({ navigation }) {
           {loading ? (
             <ActivityIndicator color={WHITE} />
           ) : (
-            <Text style={styles.signUpText}>Sign Up</Text>
+            <Text style={styles.signUpText}>Register</Text>
           )}
         </TouchableOpacity>
 

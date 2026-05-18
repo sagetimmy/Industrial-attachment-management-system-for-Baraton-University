@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
-import { API_BASE_URL } from '../../api/axios';
+import { getApiBaseUrl } from '../../api/axios';
 
 const { height } = Dimensions.get('window');
 
@@ -45,7 +45,7 @@ export default function LoginScreen({ navigation }) {
       } else {
         const message = err.response?.data?.message
           || (err.request
-            ? `Cannot reach the server at ${API_BASE_URL}. Make sure the backend is running.`
+            ? `Cannot reach the server at ${getApiBaseUrl()}. Make sure the backend is running.`
             : err.message || 'Something went wrong');
         Alert.alert('Login Failed', message);
       }

@@ -3,16 +3,18 @@ import {
   View, Text, TouchableOpacity, StyleSheet,
   ScrollView, Alert, ActivityIndicator, RefreshControl, TextInput
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS } from '../../constants/colors';
 import api from '../../api/axios';
 
-export default function ManageUsersScreen({ navigation }) {
+export default function ManageUsersScreen({ navigation, route }) {
+  const initialRole = route?.params?.role || 'student';
   const [users, setUsers] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
-  const [activeFilter, setActiveFilter] = useState('all');
+  const [activeFilter, setActiveFilter] = useState(initialRole);
 
   const fetchUsers = async () => {
     try {
@@ -93,74 +95,75 @@ export default function ManageUsersScreen({ navigation }) {
     fetchUsers();
   };
 
-  const roleColor = (role) => {
+  const roleConfig = (role) => {
     switch (role) {
-      case 'student': return { bg: '#E3F2FD', text: COLORS.secondary };
-      case 'supervisor': return { bg: '#E8F5E9', text: '#2E7D32' };
-      case 'host_org': return { bg: '#F3E5F5', text: '#6A1B9A' };
-      case 'admin': return { bg: '#FFF3E0', text: COLORS.primary };
-      default: return { bg: '#F4F4F4', text: COLORS.gray };
+      case 'student':    return { bg: '#E8F5E9', color: '#1B6B5A', label: 'STUDENT' };
+      case 'supervisor': return { bg: '#EDE7F6', color: '#6A1B9A', label: 'SUPERVISOR' };
+      case 'host_org':   return { bg: '#E3F2FD', color: '#1565C0', label: 'HOST ORG' };
+      case 'admin':      return { bg: '#FFF3E0', color: '#E65100', label: 'ADMIN' };
+      default:           return { bg: '#F4F4F4', color: '#888', label: role };
     }
   };
 
-  const filters = ['all', 'student', 'supervisor', 'host_org', 'admin'];
+  const filters = [
+    { key: 'student',    label: 'Students' },
+    { key: 'supervisor', label: 'Supervisors' },
+    { key: 'host_org',   label: 'Host Orgs' },
+  ];
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+        <ActivityIndicator size="large" color="#1B6B5A" />
         <Text style={styles.loadingText}>Loading users...</Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
+
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backText}>← Back</Text>
+        <View style={styles.notifBtn} />
+        <Text style={styles.headerTitle}>User Management</Text>
+        <TouchableOpacity style={styles.notifBtn}>
+          <Text style={styles.notifIcon}>🔔</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>Manage Users 👥</Text>
-        <Text style={styles.subtitle}>{filtered.length} users found</Text>
+      </View>
+
+      {/* Filter Tabs */}
+      <View style={styles.filterContainer}>
+        {filters.map((f) => (
+          <TouchableOpacity
+            key={f.key}
+            style={[styles.filterTab, activeFilter === f.key && styles.filterTabActive]}
+            onPress={() => setActiveFilter(f.key)}
+          >
+            <Text style={[styles.filterTabText, activeFilter === f.key && styles.filterTabTextActive]}>
+              {f.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
       {/* Search */}
       <View style={styles.searchContainer}>
+        <Text style={styles.searchIcon}>🔍</Text>
         <TextInput
           style={styles.searchInput}
-          placeholder="🔍 Search by name or email..."
+          placeholder="Search users by name or ID..."
+          placeholderTextColor="#9E9E9E"
           value={search}
           onChangeText={setSearch}
         />
       </View>
 
-      {/* Filter Tabs */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.filterRow}
-        contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}
-      >
-        {filters.map((f) => (
-          <TouchableOpacity
-            key={f}
-            style={[styles.filterBtn, activeFilter === f && styles.filterBtnActive]}
-            onPress={() => setActiveFilter(f)}
-          >
-            <Text style={[styles.filterText, activeFilter === f && styles.filterTextActive]}>
-              {f === 'all' ? 'All' :
-               f === 'host_org' ? 'Host Org' :
-               f.charAt(0).toUpperCase() + f.slice(1)}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-
       {/* Users List */}
       <ScrollView
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        contentContainerStyle={styles.listContent}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#1B6B5A']} />}
       >
         {filtered.length === 0 ? (
           <View style={styles.emptyCard}>
@@ -168,156 +171,285 @@ export default function ManageUsersScreen({ navigation }) {
             <Text style={styles.emptyText}>No users found</Text>
           </View>
         ) : (
-          filtered.map((user, index) => (
-            <View key={index} style={[styles.userCard, !user.is_active && styles.userCardInactive]}>
-              <View style={styles.userTop}>
-                <View style={[styles.avatar, { backgroundColor: roleColor(user.role).text }]}>
+          filtered.map((user, index) => {
+            const role = roleConfig(user.role);
+            return (
+              <TouchableOpacity
+                key={index}
+                style={[styles.userCard, !user.is_active && styles.userCardInactive]}
+                onPress={() => navigation.navigate('UserDetail', { user })}
+                activeOpacity={0.8}
+              >
+                {/* Avatar */}
+                <View style={[styles.avatar, { backgroundColor: role.color }]}>
                   <Text style={styles.avatarText}>
                     {user.name?.charAt(0).toUpperCase() || '?'}
                   </Text>
                 </View>
+
+                {/* Info */}
                 <View style={styles.userInfo}>
                   <Text style={styles.userName}>{user.name || 'Unknown'}</Text>
-                  <Text style={styles.userEmail}>{user.email}</Text>
-                  {user.reg_number && (
-                    <Text style={styles.userExtra}>{user.reg_number} • {user.department}</Text>
-                  )}
-                  {user.supervisor_dept && (
-                    <Text style={styles.userExtra}>{user.supervisor_dept}</Text>
-                  )}
+                  <View style={[styles.roleBadge, { backgroundColor: role.bg }]}>
+                    <Text style={[styles.roleText, { color: role.color }]}>
+                      {role.label}
+                    </Text>
+                  </View>
                 </View>
-                <View style={[styles.roleBadge, { backgroundColor: roleColor(user.role).bg }]}>
-                  <Text style={[styles.roleText, { color: roleColor(user.role).text }]}>
-                    {user.role === 'host_org' ? 'Host' : user.role}
-                  </Text>
-                </View>
-              </View>
 
-              {/* Status & Verified */}
-              <View style={styles.userMeta}>
-                <View style={[styles.metaBadge, {
-                  backgroundColor: user.is_active ? '#E8F5E9' : '#FFEBEE'
-                }]}>
-                  <Text style={[styles.metaText, {
-                    color: user.is_active ? '#2E7D32' : '#C62828'
-                  }]}>
-                    {user.is_active ? '✓ Active' : '✗ Inactive'}
-                  </Text>
+                {/* Actions */}
+                <View style={styles.cardActions}>
+                  <TouchableOpacity
+                    style={styles.toggleBtn}
+                    onPress={() => handleToggleUser(user.user_id, user.name, user.is_active)}
+                  >
+                    <Text style={styles.toggleBtnText}>
+                      {user.is_active ? '⏸' : '▶'}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.deleteBtn}
+                    onPress={() => handleDeleteUser(user.user_id, user.name)}
+                  >
+                    <Text style={styles.deleteBtnText}>🗑</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.chevron}>›</Text>
                 </View>
-                <View style={[styles.metaBadge, {
-                  backgroundColor: user.is_verified ? '#E8F5E9' : '#FFF3E0'
-                }]}>
-                  <Text style={[styles.metaText, {
-                    color: user.is_verified ? '#2E7D32' : COLORS.primary
-                  }]}>
-                    {user.is_verified ? '✓ Verified' : '⏳ Unverified'}
-                  </Text>
-                </View>
-                <Text style={styles.joinDate}>
-                  {new Date(user.created_at).toLocaleDateString()}
-                </Text>
-              </View>
-
-              {/* Actions */}
-              <View style={styles.actions}>
-                <TouchableOpacity
-                  style={[styles.actionBtn, {
-                    backgroundColor: user.is_active ? '#FFF3E0' : '#E8F5E9'
-                  }]}
-                  onPress={() => handleToggleUser(user.user_id, user.name, user.is_active)}
-                >
-                  <Text style={[styles.actionBtnText, {
-                    color: user.is_active ? COLORS.primary : '#2E7D32'
-                  }]}>
-                    {user.is_active ? '⏸ Deactivate' : '▶ Activate'}
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.deleteBtn}
-                  onPress={() => handleDeleteUser(user.user_id, user.name)}
-                >
-                  <Text style={styles.deleteBtnText}>🗑 Delete</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))
+              </TouchableOpacity>
+            );
+          })
         )}
-        <View style={{ height: 40 }} />
+        <View style={{ height: 100 }} />
       </ScrollView>
-    </View>
+
+      {/* Bottom Tab Bar */}
+      <View style={styles.bottomBar}>
+        <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('AdminDashboard')}>
+          <Text style={styles.tabIcon}>🏠</Text>
+          <Text style={styles.tabLabel}>Home</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.tabItem, styles.tabItemActive]}>
+          <Text style={styles.tabIcon}>👥</Text>
+          <Text style={[styles.tabLabel, styles.tabLabelActive]}>Users</Text>
+          <View style={styles.tabDot} />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('ManageOrgs')}>
+          <Text style={styles.tabIcon}>🏢</Text>
+          <Text style={styles.tabLabel}>Orgs</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('AdminProfile')}>
+          <Text style={styles.tabIcon}>👤</Text>
+          <Text style={styles.tabLabel}>Profile</Text>
+        </TouchableOpacity>
+      </View>
+
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F4F4F4' },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { marginTop: 10, color: COLORS.gray },
+  container: {
+    flex: 1,
+    backgroundColor: '#F0F4F3',
+  },
+  loadingContainer: {
+    flex: 1, justifyContent: 'center', alignItems: 'center',
+    backgroundColor: '#F0F4F3',
+  },
+  loadingText: { marginTop: 10, color: '#888', fontSize: 14 },
+
+  // Header
   header: {
-    backgroundColor: COLORS.secondary,
-    paddingTop: 55, paddingBottom: 25,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 20,
-    borderBottomLeftRadius: 25,
-    borderBottomRightRadius: 25,
+    paddingVertical: 16,
+    backgroundColor: '#F0F4F3',
   },
-  backBtn: { marginBottom: 10 },
-  backText: { color: COLORS.primary, fontSize: 14, fontWeight: '600' },
-  title: { color: COLORS.white, fontSize: 24, fontWeight: 'bold' },
-  subtitle: { color: '#8899AA', fontSize: 13, marginTop: 4 },
-  searchContainer: { margin: 16, marginBottom: 8 },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#1B3A2F',
+    flex: 1,
+    textAlign: 'center',
+  },
+  notifBtn: { padding: 4 },
+  notifIcon: { fontSize: 22 },
+
+  // Filter Tabs
+  filterContainer: {
+    flexDirection: 'row',
+    marginHorizontal: 16,
+    marginBottom: 16,
+    backgroundColor: '#DDE8E5',
+    borderRadius: 14,
+    padding: 4,
+  },
+  filterTab: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 11,
+    alignItems: 'center',
+  },
+  filterTabActive: {
+    backgroundColor: '#1B6B5A',
+  },
+  filterTabText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#4A6B60',
+  },
+  filterTabTextActive: {
+    color: '#FFFFFF',
+  },
+
+  // Search
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginBottom: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 30,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+  },
+  searchIcon: { fontSize: 16, marginRight: 10 },
   searchInput: {
-    backgroundColor: COLORS.white,
-    borderRadius: 12, padding: 12,
-    fontSize: 14, elevation: 2,
+    flex: 1,
+    fontSize: 14,
+    color: '#1B3A2F',
   },
-  filterRow: { marginBottom: 8 },
-  filterBtn: {
-    paddingHorizontal: 16, paddingVertical: 8,
-    borderRadius: 20, backgroundColor: COLORS.white,
-    borderWidth: 1, borderColor: COLORS.gray,
+
+  // List
+  listContent: { paddingHorizontal: 16 },
+
+  // User Card
+  userCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 10,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
   },
-  filterBtnActive: { backgroundColor: COLORS.secondary, borderColor: COLORS.secondary },
-  filterText: { fontSize: 13, color: COLORS.darkGray, fontWeight: '600' },
-  filterTextActive: { color: COLORS.white },
+  userCardInactive: { opacity: 0.6 },
+  avatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 14,
+  },
+  avatarText: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  userInfo: { flex: 1 },
+  userName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1B3A2F',
+    marginBottom: 6,
+  },
+  roleBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 20,
+  },
+  roleText: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+
+  // Card Actions
+  cardActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  toggleBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#F0F4F3',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  toggleBtnText: { fontSize: 14 },
+  deleteBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#FFEBEE',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  deleteBtnText: { fontSize: 14 },
+  chevron: {
+    fontSize: 24,
+    color: '#9E9E9E',
+    marginLeft: 4,
+  },
+
+  // Empty
   emptyCard: {
-    backgroundColor: COLORS.white,
-    margin: 16, padding: 30,
-    borderRadius: 16, alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    padding: 40,
+    borderRadius: 16,
+    alignItems: 'center',
+    marginTop: 20,
   },
   emptyIcon: { fontSize: 40, marginBottom: 10 },
-  emptyText: { color: COLORS.gray, fontSize: 14 },
-  userCard: {
-    backgroundColor: COLORS.white,
-    marginHorizontal: 16, marginBottom: 12,
-    padding: 14, borderRadius: 16, elevation: 2,
+  emptyText: { color: '#9E9E9E', fontSize: 14 },
+
+  // Bottom Bar
+  bottomBar: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#E8EDEB',
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
   },
-  userCardInactive: { opacity: 0.7 },
-  userTop: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  avatar: {
-    width: 44, height: 44, borderRadius: 22,
-    justifyContent: 'center', alignItems: 'center',
-    marginRight: 12,
+  tabItem: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 4,
   },
-  avatarText: { color: COLORS.white, fontSize: 18, fontWeight: 'bold' },
-  userInfo: { flex: 1 },
-  userName: { fontSize: 14, fontWeight: '700', color: COLORS.darkGray },
-  userEmail: { fontSize: 12, color: COLORS.gray, marginTop: 2 },
-  userExtra: { fontSize: 11, color: COLORS.primary, marginTop: 2 },
-  roleBadge: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10 },
-  roleText: { fontSize: 11, fontWeight: '700', textTransform: 'capitalize' },
-  userMeta: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
-  metaBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-  metaText: { fontSize: 11, fontWeight: '600' },
-  joinDate: { fontSize: 11, color: COLORS.gray, marginLeft: 'auto' },
-  actions: { flexDirection: 'row', gap: 10 },
-  actionBtn: {
-    flex: 1, padding: 10,
-    borderRadius: 10, alignItems: 'center',
+  tabItemActive: {},
+  tabIcon: { fontSize: 20, marginBottom: 2 },
+  tabLabel: {
+    fontSize: 11,
+    color: '#9E9E9E',
+    fontWeight: '500',
   },
-  actionBtnText: { fontSize: 13, fontWeight: '700' },
-  deleteBtn: {
-    backgroundColor: '#FFEBEE',
-    padding: 10, borderRadius: 10,
-    alignItems: 'center', paddingHorizontal: 16,
+  tabLabelActive: {
+    color: '#1B6B5A',
+    fontWeight: '700',
   },
-  deleteBtnText: { color: '#C62828', fontWeight: '700', fontSize: 13 },
+  tabDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: '#1B6B5A',
+    marginTop: 3,
+  },
 });

@@ -1,17 +1,43 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, Alert, ActivityIndicator, RefreshControl
+  ScrollView, Alert, ActivityIndicator, RefreshControl, useWindowDimensions
 } from 'react-native';
+import Svg, { Circle, Text as SvgText } from 'react-native-svg';
 import { useAuth } from '../../context/AuthContext';
 import { COLORS } from '../../constants/colors';
 import api from '../../api/axios';
 
+function ProgressRing({ percent = 0, size = 52, color = '#0F6E56' }) {
+  const radius = 21;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (percent / 100) * circumference;
+  return (
+    <Svg width={size} height={size} viewBox="0 0 52 52">
+      <Circle cx="26" cy="26" r={radius} fill="none" stroke="#E1F5EE" strokeWidth="4" />
+      <Circle
+        cx="26" cy="26" r={radius}
+        fill="none" stroke={color} strokeWidth="4"
+        strokeLinecap="round"
+        strokeDasharray={`${circumference}`}
+        strokeDashoffset={offset}
+        rotation="-90" originX="26" originY="26"
+      />
+      <SvgText x="26" y="30" textAnchor="middle" fontSize="11" fontWeight="500" fill={color}>
+        {percent}%
+      </SvgText>
+    </Svg>
+  );
+}
+
 export default function SupervisorDashboard({ navigation }) {
+  const { width } = useWindowDimensions();
   const { user, logout } = useAuth();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const isTablet = width >= 768;
+  const isDesktop = width >= 1100;
 
   const fetchDashboard = async () => {
     try {
@@ -27,275 +53,344 @@ export default function SupervisorDashboard({ navigation }) {
 
   useEffect(() => { fetchDashboard(); }, []);
 
-  const handleLogout = () => {
-    Alert.alert('Logout', 'Are you sure you want to logout?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Logout', style: 'destructive', onPress: logout },
-    ]);
-  };
-
-  const onRefresh = () => {
-    setRefreshing(true);
-    fetchDashboard();
-  };
+  const onRefresh = () => { setRefreshing(true); fetchDashboard(); };
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+        <ActivityIndicator size="large" color="#0F6E56" />
         <Text style={styles.loadingText}>Loading dashboard...</Text>
       </View>
     );
   }
 
+  const getInitialColor = (name) => {
+    const colors = ['#5DCAA5', '#378ADD', '#888780', '#7F77DD', '#D85A30'];
+    const i = (name?.charCodeAt(0) || 0) % colors.length;
+    return colors[i];
+  };
+
+  const getProgress = (student) => {
+    // Calculate from attachment dates if available, else default 50
+    if (student.start_date && student.end_date) {
+      const start = new Date(student.start_date);
+      const end = new Date(student.end_date);
+      const now = new Date();
+      const total = end - start;
+      const elapsed = now - start;
+      return Math.min(100, Math.max(0, Math.round((elapsed / total) * 100)));
+    }
+    return student.progress || 50;
+  };
+
   return (
-    <ScrollView
-      style={styles.container}
-      showsVerticalScrollIndicator={false}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-    >
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerTop}>
-          <View>
-            <Text style={styles.greeting}>Welcome back 👋</Text>
-            <Text style={styles.name}>{user?.full_name || 'Supervisor'}</Text>
-            <Text style={styles.dept}>{data?.supervisor?.department}</Text>
+    <View style={styles.wrapper}>
+      {/* Top bar */}
+      <View style={styles.topBar}>
+        <TouchableOpacity onPress={() => navigation.openDrawer?.()}>
+          <Text style={styles.menuIcon}>☰</Text>
+        </TouchableOpacity>
+        <Text style={styles.topBarTitle}>Supervisor Dashboard</Text>
+        <TouchableOpacity onPress={() => navigation.navigate('Profile')}>
+          <View style={styles.profileIcon}>
+            <Text style={styles.profileInitial}>
+              {user?.full_name?.charAt(0).toUpperCase() || 'S'}
+            </Text>
           </View>
-          <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
-            <Text style={styles.logoutText}>Logout</Text>
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
+        <View style={[styles.contentWrap, isTablet && styles.contentWrapTablet, isDesktop && styles.contentWrapDesktop]}>
+        {/* Stats Card */}
+        <View style={styles.statsCard}>
+          <View style={styles.statsRow}>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Active Students</Text>
+              <Text style={[styles.statNum, { color: '#0F6E56' }]}>
+                {String(data?.stats?.totalStudents || 0).padStart(2, '0')}
+              </Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Pending Reviews</Text>
+              <Text style={[styles.statNum, { color: '#BA7517' }]}>
+                {String(data?.stats?.pendingLogs || 0).padStart(2, '0')}
+              </Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Reports Due</Text>
+              <Text style={[styles.statNum, { color: '#D85A30' }]}>
+                {String(data?.stats?.reportsDue || 0).padStart(2, '0')}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Urgent Alert */}
+        {data?.stats?.pendingLogs > 0 && (
+          <View style={styles.alertCard}>
+            <View style={styles.alertIconWrap}>
+              <Text style={styles.alertIconText}>!</Text>
+            </View>
+            <View style={styles.alertBody}>
+              <Text style={styles.alertTitle}>Urgent: Monthly Reviews</Text>
+              <Text style={styles.alertDesc}>
+                {data.stats.pendingLogs} student report{data.stats.pendingLogs !== 1 ? 's are' : ' is'} reaching
+                their final deadline tonight.
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.alertBtn}
+              onPress={() => navigation.navigate('ReviewLogbooks')}
+            >
+              <Text style={styles.alertBtnText}>Review</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Students Section */}
+        <View style={styles.sectionHeader}>
+          <View style={styles.sectionTitleRow}>
+            <View style={styles.greenDot} />
+            <Text style={styles.sectionTitle}>MY STUDENTS</Text>
+          </View>
+          <TouchableOpacity onPress={() => navigation.navigate('MyStudents')}>
+            <Text style={styles.viewAll}>View All →</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Stats */}
-        <View style={styles.statsRow}>
-          <View style={styles.statBox}>
-            <Text style={styles.statNum}>{data?.stats?.totalStudents || 0}</Text>
-            <Text style={styles.statLabel}>Total{'\n'}Students</Text>
+        {!data?.students?.length ? (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyIcon}>👥</Text>
+            <Text style={styles.emptyText}>No students assigned yet</Text>
           </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statBox}>
-            <Text style={styles.statNum}>{data?.stats?.activeStudents || 0}</Text>
-            <Text style={styles.statLabel}>Active{'\n'}Attachments</Text>
+        ) : (
+          <View style={[styles.cardsGrid, isTablet && styles.cardsGridTablet]}>
+            {data.students.map((student, index) => (
+            <TouchableOpacity
+              key={index}
+              style={[styles.studentCard, isTablet && styles.studentCardTablet, isDesktop && styles.studentCardDesktop]}
+              onPress={() => navigation.navigate('StudentDetail', { student })}
+              activeOpacity={0.7}
+            >
+              <View style={styles.avatarWrap}>
+                <View style={[styles.avatar, { backgroundColor: getInitialColor(student.full_name) }]}>
+                  <Text style={styles.avatarText}>
+                    {student.full_name?.charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+                <View style={[
+                  styles.statusDot,
+                  { backgroundColor: student.status === 'ongoing' ? '#0F6E56' : '#ccc' }
+                ]} />
+              </View>
+              <View style={styles.studentInfo}>
+                <Text style={styles.studentName}>{student.full_name}</Text>
+                <Text style={styles.studentSub} numberOfLines={1}>
+                  {student.org_name} • {student.department}
+                </Text>
+              </View>
+              <ProgressRing percent={getProgress(student)} />
+            </TouchableOpacity>
+            ))}
           </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statBox}>
-            <Text style={styles.statNum}>{data?.stats?.pendingLogs || 0}</Text>
-            <Text style={styles.statLabel}>Pending{'\n'}Logbooks</Text>
-          </View>
-        </View>
-      </View>
+        )}
 
-      {/* Quick Actions */}
-      <Text style={styles.sectionTitle}>Quick Actions</Text>
-      <View style={styles.actionsRow}>
-        {[
-          { label: 'My Students', icon: '👥', screen: 'MyStudents', color: COLORS.secondary },
-          { label: 'Review Logbooks', icon: '📖', screen: 'ReviewLogbooks', color: COLORS.primary },
-          { label: 'Site Visits', icon: '🗓️', screen: 'SiteVisits', color: '#2E7D32' },
-          { label: 'Evaluations', icon: '⭐', screen: 'Evaluations', color: '#6A1B9A' },
-        ].map((item) => (
-          <TouchableOpacity
-            key={item.screen}
-            style={styles.actionCard}
-            onPress={() => navigation.navigate(item.screen)}
-          >
-            <View style={[styles.actionIcon, { backgroundColor: item.color }]}>
-              <Text style={{ fontSize: 22 }}>{item.icon}</Text>
+        {/* Recent Logbook Entries */}
+        {data?.pendingLogs?.length > 0 && (
+          <>
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionTitleRow}>
+                <View style={styles.greenDot} />
+                <Text style={styles.sectionTitle}>RECENT SUBMISSIONS</Text>
+              </View>
             </View>
-            <Text style={styles.actionLabel}>{item.label}</Text>
+            <View style={[styles.cardsGrid, isTablet && styles.cardsGridTablet]}>
+              {data.pendingLogs.map((log, index) => (
+              <TouchableOpacity
+                key={index}
+                style={[styles.logCard, isTablet && styles.logCardTablet, isDesktop && styles.logCardDesktop]}
+                onPress={() => navigation.navigate('ReviewLogbooks')}
+                activeOpacity={0.7}
+              >
+                <View>
+                  <Text style={styles.logWeek}>Week {log.week_number}</Text>
+                  <Text style={styles.logStudent}>{log.full_name}</Text>
+                  <Text style={styles.logReg}>{log.reg_number}</Text>
+                </View>
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={styles.logDate}>
+                    {new Date(log.submitted_at).toLocaleDateString()}
+                  </Text>
+                  <View style={styles.reviewBtn}>
+                    <Text style={styles.reviewBtnText}>Review →</Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+              ))}
+            </View>
+          </>
+        )}
+
+        <View style={{ height: 24 }} />
+        </View>
+      </ScrollView>
+
+      {/* Bottom Tab Bar */}
+      <View style={styles.tabBar}>
+        {[
+          { label: 'Home', icon: '⌂', screen: 'Dashboard', active: true },
+          { label: 'Students', icon: '👥', screen: 'MyStudents' },
+          { label: 'Reviews', icon: '📋', screen: 'ReviewLogbooks' },
+          { label: 'Reports', icon: '📄', screen: 'Reports' },
+        ].map((tab) => (
+          <TouchableOpacity
+            key={tab.screen}
+            style={styles.tabItem}
+            onPress={() => !tab.active && navigation.navigate(tab.screen)}
+          >
+            <Text style={[styles.tabIcon, tab.active && styles.tabIconActive]}>{tab.icon}</Text>
+            <Text style={[styles.tabLabel, tab.active && styles.tabLabelActive]}>{tab.label}</Text>
+            {tab.active && <View style={styles.tabDot} />}
           </TouchableOpacity>
         ))}
       </View>
-
-      {/* Assigned Students */}
-      <Text style={styles.sectionTitle}>Assigned Students</Text>
-      {data?.students?.length === 0 ? (
-        <View style={styles.emptyCard}>
-          <Text style={styles.emptyIcon}>👥</Text>
-          <Text style={styles.emptyText}>No students assigned yet</Text>
-        </View>
-      ) : (
-        data?.students?.map((student, index) => (
-          <TouchableOpacity
-            key={index}
-            style={styles.studentCard}
-            onPress={() => navigation.navigate('StudentDetail', { student })}
-          >
-            <View style={styles.studentAvatar}>
-              <Text style={styles.avatarText}>
-                {student.full_name?.charAt(0).toUpperCase()}
-              </Text>
-            </View>
-            <View style={styles.studentInfo}>
-              <Text style={styles.studentName}>{student.full_name}</Text>
-              <Text style={styles.studentReg}>{student.reg_number} • {student.department}</Text>
-              <Text style={styles.studentOrg}>🏢 {student.org_name}</Text>
-            </View>
-            <View style={[styles.statusBadge,
-              { backgroundColor: student.status === 'ongoing' ? '#E8F5E9' : '#FFF3E0' }
-            ]}>
-              <Text style={[styles.statusText,
-                { color: student.status === 'ongoing' ? '#2E7D32' : COLORS.primary }
-              ]}>
-                {student.status}
-              </Text>
-            </View>
-          </TouchableOpacity>
-        ))
-      )}
-
-      {/* Recent Logbook Entries */}
-      <Text style={styles.sectionTitle}>Recent Logbook Submissions</Text>
-      {data?.pendingLogs?.length === 0 ? (
-        <View style={styles.emptyCard}>
-          <Text style={styles.emptyIcon}>📖</Text>
-          <Text style={styles.emptyText}>No logbook submissions yet</Text>
-        </View>
-      ) : (
-        data?.pendingLogs?.map((log, index) => (
-          <TouchableOpacity
-            key={index}
-            style={styles.logCard}
-            onPress={() => navigation.navigate('ReviewLogbooks')}
-          >
-            <View style={styles.logLeft}>
-              <Text style={styles.logWeek}>Week {log.week_number}</Text>
-              <Text style={styles.logStudent}>{log.full_name}</Text>
-              <Text style={styles.logReg}>{log.reg_number}</Text>
-            </View>
-            <View style={styles.logRight}>
-              <Text style={styles.logDate}>
-                {new Date(log.submitted_at).toLocaleDateString()}
-              </Text>
-              <View style={styles.reviewBtn}>
-                <Text style={styles.reviewBtnText}>Review →</Text>
-              </View>
-            </View>
-          </TouchableOpacity>
-        ))
-      )}
-
-      <View style={{ height: 40 }} />
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F4F4F4' },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { marginTop: 10, color: COLORS.gray },
-  header: {
-    backgroundColor: COLORS.secondary,
-    paddingTop: 55,
-    paddingHorizontal: 20,
-    paddingBottom: 25,
-    borderBottomLeftRadius: 25,
-    borderBottomRightRadius: 25,
+  wrapper: { flex: 1, backgroundColor: '#EEF4F1' },
+  scroll: { flex: 1 },
+  scrollContent: { paddingBottom: 10 },
+  contentWrap: { width: '100%', alignSelf: 'center' },
+  contentWrapTablet: { maxWidth: 960 },
+  contentWrapDesktop: { maxWidth: 1160 },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#EEF4F1' },
+  loadingText: { marginTop: 10, color: '#888', fontSize: 14 },
+
+  topBar: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: '5%', paddingTop: 55, paddingBottom: 14, backgroundColor: '#EEF4F1',
   },
-  headerTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 20,
+  menuIcon: { fontSize: 20, color: '#333' },
+  topBarTitle: { fontSize: 17, fontWeight: '600', color: '#111' },
+  profileIcon: {
+    width: 34, height: 34, borderRadius: 17,
+    backgroundColor: '#0F6E56', justifyContent: 'center', alignItems: 'center',
   },
-  greeting: { color: '#8899AA', fontSize: 13 },
-  name: { color: COLORS.white, fontSize: 22, fontWeight: 'bold', marginTop: 2 },
-  dept: { color: COLORS.primary, fontSize: 12, marginTop: 3 },
-  logoutBtn: {
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
+  profileInitial: { color: '#fff', fontSize: 14, fontWeight: '600' },
+
+  statsCard: {
+    backgroundColor: '#fff', marginHorizontal: '4.5%', marginBottom: 14,
+    borderRadius: 16, borderWidth: 0.5, borderColor: 'rgba(0,0,0,0.07)',
+    padding: 18,
   },
-  logoutText: { color: COLORS.white, fontSize: 13 },
-  statsRow: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 15,
-    padding: 15,
-    justifyContent: 'space-around',
+  statsRow: { flexDirection: 'row', alignItems: 'center' },
+  statItem: { flex: 1, alignItems: 'center' },
+  statLabel: { fontSize: 12, color: '#888', textAlign: 'center', marginBottom: 6, lineHeight: 16 },
+  statNum: { fontSize: 26, fontWeight: '500' },
+  statDivider: { width: 0.5, height: 40, backgroundColor: 'rgba(0,0,0,0.1)' },
+
+  alertCard: {
+    marginHorizontal: '4.5%', marginBottom: 14, backgroundColor: '#fff',
+    borderRadius: 16, borderWidth: 0.5, borderColor: 'rgba(0,0,0,0.07)',
+    borderLeftWidth: 4, borderLeftColor: '#0F6E56',
+    padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12,
   },
-  statBox: { alignItems: 'center', flex: 1 },
-  statNum: { color: COLORS.primary, fontSize: 22, fontWeight: 'bold' },
-  statLabel: { color: '#AABBCC', fontSize: 11, textAlign: 'center', marginTop: 3 },
-  statDivider: { width: 1, backgroundColor: 'rgba(255,255,255,0.2)' },
-  sectionTitle: {
-    fontSize: 16, fontWeight: '700',
-    color: COLORS.darkGray,
-    marginLeft: 16, marginTop: 20, marginBottom: 10,
+  alertIconWrap: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: '#E1F5EE', justifyContent: 'center', alignItems: 'center',
   },
-  actionsRow: {
-    flexDirection: 'row', flexWrap: 'wrap',
-    paddingHorizontal: 10,
+  alertIconText: { fontSize: 18, fontWeight: '700', color: '#0F6E56' },
+  alertBody: { flex: 1 },
+  alertTitle: { fontSize: 14, fontWeight: '600', color: '#111', marginBottom: 3 },
+  alertDesc: { fontSize: 12, color: '#666', lineHeight: 17 },
+  alertBtn: {
+    backgroundColor: '#0F6E56', borderRadius: 20,
+    paddingHorizontal: 16, paddingVertical: 8,
   },
-  actionCard: {
-    backgroundColor: COLORS.white,
-    width: '46%', margin: '2%',
-    padding: 16, borderRadius: 16,
-    alignItems: 'center',
-    elevation: 2,
+  alertBtnText: { color: '#fff', fontSize: 13, fontWeight: '500' },
+
+  sectionHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: '5%', marginBottom: 10, marginTop: 4,
   },
-  actionIcon: {
-    width: 50, height: 50,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  actionLabel: { fontSize: 12, fontWeight: '700', color: COLORS.darkGray, textAlign: 'center' },
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  greenDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#0F6E56' },
+  sectionTitle: { fontSize: 13, fontWeight: '600', color: '#111', letterSpacing: 0.5 },
+  viewAll: { fontSize: 13, color: '#0F6E56', fontWeight: '500' },
+
   emptyCard: {
-    backgroundColor: COLORS.white,
-    margin: 16, padding: 30,
+    backgroundColor: '#fff', marginHorizontal: '4.5%', padding: 30,
     borderRadius: 16, alignItems: 'center',
+    borderWidth: 0.5, borderColor: 'rgba(0,0,0,0.07)',
   },
-  emptyIcon: { fontSize: 40, marginBottom: 10 },
-  emptyText: { color: COLORS.gray, fontSize: 14 },
-  studentCard: {
-    backgroundColor: COLORS.white,
-    marginHorizontal: 16, marginBottom: 10,
-    padding: 14, borderRadius: 16,
-    flexDirection: 'row', alignItems: 'center',
-    elevation: 2,
-  },
-  studentAvatar: {
-    width: 44, height: 44,
-    borderRadius: 22,
-    backgroundColor: COLORS.secondary,
-    justifyContent: 'center', alignItems: 'center',
-    marginRight: 12,
-  },
-  avatarText: { color: COLORS.white, fontSize: 18, fontWeight: 'bold' },
-  studentInfo: { flex: 1 },
-  studentName: { fontSize: 14, fontWeight: '700', color: COLORS.darkGray },
-  studentReg: { fontSize: 12, color: COLORS.gray, marginTop: 2 },
-  studentOrg: { fontSize: 12, color: COLORS.primary, marginTop: 2 },
-  statusBadge: {
-    paddingHorizontal: 10, paddingVertical: 5,
-    borderRadius: 10,
-  },
-  statusText: { fontSize: 11, fontWeight: '700', textTransform: 'capitalize' },
-  logCard: {
-    backgroundColor: COLORS.white,
-    marginHorizontal: 16, marginBottom: 10,
-    padding: 14, borderRadius: 16,
+  cardsGrid: { width: '100%' },
+  cardsGridTablet: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    elevation: 2,
+    paddingHorizontal: '3.5%',
   },
-  logLeft: { flex: 1 },
-  logWeek: { fontSize: 14, fontWeight: '700', color: COLORS.secondary },
-  logStudent: { fontSize: 13, color: COLORS.darkGray, marginTop: 2 },
-  logReg: { fontSize: 11, color: COLORS.gray, marginTop: 1 },
-  logRight: { alignItems: 'flex-end' },
-  logDate: { fontSize: 11, color: COLORS.gray },
+  emptyIcon: { fontSize: 36, marginBottom: 10 },
+  emptyText: { color: '#888', fontSize: 14 },
+
+  studentCard: {
+    backgroundColor: '#fff', marginHorizontal: '4.5%', marginBottom: 10,
+    borderRadius: 16, borderWidth: 0.5, borderColor: 'rgba(0,0,0,0.07)',
+    padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12,
+  },
+  studentCardTablet: { width: '48%', marginHorizontal: 0 },
+  studentCardDesktop: { width: '31.8%' },
+  avatarWrap: { position: 'relative' },
+  avatar: {
+    width: 52, height: 52, borderRadius: 26,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  avatarText: { color: '#fff', fontSize: 20, fontWeight: '600' },
+  statusDot: {
+    position: 'absolute', bottom: 2, right: 2,
+    width: 11, height: 11, borderRadius: 6,
+    borderWidth: 2, borderColor: '#fff',
+  },
+  studentInfo: { flex: 1, minWidth: 0 },
+  studentName: { fontSize: 14, fontWeight: '600', color: '#111' },
+  studentSub: { fontSize: 12, color: '#888', marginTop: 2 },
+
+  logCard: {
+    backgroundColor: '#fff', marginHorizontal: '4.5%', marginBottom: 10,
+    borderRadius: 16, borderWidth: 0.5, borderColor: 'rgba(0,0,0,0.07)',
+    padding: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+  },
+  logCardTablet: { width: '48%', marginHorizontal: 0 },
+  logCardDesktop: { width: '31.8%' },
+  logWeek: { fontSize: 14, fontWeight: '600', color: '#0F6E56' },
+  logStudent: { fontSize: 13, color: '#111', marginTop: 2 },
+  logReg: { fontSize: 11, color: '#888', marginTop: 1 },
+  logDate: { fontSize: 11, color: '#888' },
   reviewBtn: {
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: 10, paddingVertical: 5,
-    borderRadius: 8, marginTop: 6,
+    backgroundColor: '#0F6E56', borderRadius: 8,
+    paddingHorizontal: 10, paddingVertical: 5, marginTop: 6,
   },
-  reviewBtnText: { color: COLORS.white, fontSize: 11, fontWeight: '700' },
+  reviewBtnText: { color: '#fff', fontSize: 11, fontWeight: '600' },
+
+  tabBar: {
+    flexDirection: 'row', backgroundColor: '#fff',
+    borderTopWidth: 0.5, borderTopColor: 'rgba(0,0,0,0.1)',
+    paddingTop: 8, paddingBottom: 24,
+  },
+  tabItem: { flex: 1, alignItems: 'center', gap: 4 },
+  tabIcon: { fontSize: 20, color: '#aaa' },
+  tabIconActive: { color: '#0F6E56' },
+  tabLabel: { fontSize: 11, color: '#aaa' },
+  tabLabelActive: { color: '#0F6E56', fontWeight: '500' },
+  tabDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: '#0F6E56' },
 });
