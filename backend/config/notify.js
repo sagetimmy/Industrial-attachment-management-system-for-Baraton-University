@@ -1,11 +1,12 @@
-const db = require('./db');
+const supabase = require('./db');
 
 const notify = async (user_id, message) => {
   try {
-    await db.query(
-      'INSERT INTO notifications (user_id, message) VALUES (?, ?)',
-      [user_id, message]
-    );
+    const { error } = await supabase
+      .from('notifications')
+      .insert({ user_id, message });
+
+    if (error) throw error;
   } catch (err) {
     console.error('Notification error:', err.message);
   }
@@ -14,9 +15,11 @@ const notify = async (user_id, message) => {
 // Notify multiple users at once
 const notifyMany = async (user_ids, message) => {
   try {
-    for (const user_id of user_ids) {
-      await notify(user_id, message);
-    }
+    const { error } = await supabase
+      .from('notifications')
+      .insert(user_ids.map(user_id => ({ user_id, message })));
+
+    if (error) throw error;
   } catch (err) {
     console.error('Notification error:', err.message);
   }

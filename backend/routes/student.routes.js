@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { protect } = require('../middleware/auth.middleware');
 const supabase = require('../config/db');
+const { notify } = require('../config/notify');
 const multer = require('multer');
 const path = require('path');
 
@@ -84,6 +85,20 @@ router.post('/apply', protect, async (req, res) => {
       .insert({ student_id: student.student_id, org_id, start_date, end_date, status: 'pending' });
 
     if (error) throw error;
+
+    const { data: org } = await supabase
+      .from('host_organizations')
+      .select('user_id, org_name')
+      .eq('org_id', org_id)
+      .single();
+
+    if (org?.user_id) {
+      await notify(
+        org.user_id,
+        `📥 New placement application from ${student.full_name || 'a student'} (${student.reg_number || 'N/A'})${org.org_name ? ` for ${org.org_name}` : ''}.`
+      );
+    }
+
     res.status(201).json({ message: 'Application submitted successfully!' });
   } catch (err) {
     res.status(500).json({ message: err.message });

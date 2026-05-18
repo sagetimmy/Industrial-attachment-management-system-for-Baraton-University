@@ -13,13 +13,22 @@ const getSupervisor = async (user_id) => {
   return { supervisor: data, error };
 };
 
+const flattenPendingLogs = (rows = []) =>
+  rows.map((log) => ({
+    ...log,
+    full_name: log.attachments?.students?.full_name || null,
+    reg_number: log.attachments?.students?.reg_number || null,
+    attachments: undefined,
+  }));
+
 // GET /api/supervisors/dashboard
 router.get('/dashboard', protect, async (req, res) => {
   try {
     const { supervisor, error: sErr } = await getSupervisor(req.user.user_id);
     if (sErr || !supervisor) return res.status(404).json({ message: 'Supervisor not found' });
 
-    const supId = supervisor.supervisor_id;
+    // attachments.supervisor_id stores the supervisor's user UUID
+    const supervisorUserId = supervisor.user_id || req.user.user_id;
 
     const { data: students, error: stErr } = await supabase
       .from('attachments')
@@ -28,7 +37,7 @@ router.get('/dashboard', protect, async (req, res) => {
         students!attachments_student_id_fkey (full_name, reg_number, department, phone),
         host_organizations!attachments_org_id_fkey (org_name, location)
       `)
-      .eq('supervisor_id', supId);
+      .eq('supervisor_id', supervisorUserId);
 
     if (stErr) throw stErr;
 
@@ -41,7 +50,7 @@ router.get('/dashboard', protect, async (req, res) => {
           students!attachments_student_id_fkey (full_name, reg_number)
         )
       `)
-      .eq('attachments.supervisor_id', supId)
+      .eq('attachments.supervisor_id', supervisorUserId)
       .order('submitted_at', { ascending: false })
       .limit(5);
 
@@ -56,7 +65,7 @@ router.get('/dashboard', protect, async (req, res) => {
           host_organizations!attachments_org_id_fkey (org_name)
         )
       `)
-      .eq('supervisor_id', supId)
+      .eq('supervisor_id', supervisorUserId)
       .eq('status', 'scheduled')
       .gte('visit_date', new Date().toISOString().split('T')[0])
       .order('visit_date', { ascending: true })
@@ -73,15 +82,17 @@ router.get('/dashboard', protect, async (req, res) => {
       attachment_id: a.attachment_id,
     }));
 
+    const flatPendingLogs = flattenPendingLogs(pendingLogs || []);
+
     res.json({
       supervisor,
       students: flatStudents,
-      pendingLogs: pendingLogs || [],
+      pendingLogs: flatPendingLogs,
       upcomingVisits: upcomingVisits || [],
       stats: {
         totalStudents: flatStudents.length,
         activeStudents: flatStudents.filter(s => s.status === 'ongoing').length,
-        pendingLogs: pendingLogs?.length || 0,
+        pendingLogs: flatPendingLogs.length || 0,
         upcomingVisits: upcomingVisits?.length || 0,
       },
     });
