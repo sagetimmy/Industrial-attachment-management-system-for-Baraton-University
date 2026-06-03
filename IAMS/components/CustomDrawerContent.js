@@ -37,7 +37,7 @@ export default function CustomDrawerContent({ navigation, org, onLogout }) {
       title: 'Company Management',
       items: [
         { label: 'Edit Profile', icon: '✏️', action: () => handleNavigation('HostProfile', { org }) },
-        { label: 'Settings', icon: '⚙️', action: () => Alert.alert('Settings', 'Settings page coming soon') },
+        { label: 'Settings', icon: '⚙️', action: () => handleNavigation('HostSettings') },
         { label: 'Team Members', icon: '👥', action: () => Alert.alert('Team Members', 'Team management page coming soon') },
       ]
     },
@@ -187,6 +187,8 @@ export default function CustomDrawerContent({ navigation, org, onLogout }) {
         </View>
 
       </ScrollView>
+
+      
     </View>
   );
 }

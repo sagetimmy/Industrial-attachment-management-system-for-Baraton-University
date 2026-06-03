@@ -1,14 +1,24 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const supabase = require('../config/db');
 const { sendVerificationEmail, sendPasswordResetEmail } = require('../config/mailer');
+const { getRolePermissions } = require('../utils/rolePermissions');
 
-const generateToken = (user) =>
+// ── Token helpers ────────────────────────────────────────────────
+const generateAccessToken = (user) =>
   jwt.sign(
-    { user_id: user.user_id, role: user.role },
+    { user_id: user.user_id, role: user.role, email: user.email },
     process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRES_IN }
+    { expiresIn: '15m' }
   );
+
+const generateRefreshToken = () => crypto.randomBytes(64).toString('hex');
+
+const saveRefreshToken = async (user_id, token) => {
+  const expires_at = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days
+  await supabase.from('refresh_tokens').insert({ user_id, token, expires_at });
+};
 
 const generateCode = () =>
   Math.floor(100000 + Math.random() * 900000).toString();
@@ -57,7 +67,8 @@ const register = async (req, res) => {
     } else if (role === 'host_org') {
       const { error } = await supabase.from('host_organizations').insert({
         user_id: userId, org_name, location: location || '',
-        contact_person: contact_person || '', phone: phone || ''
+        contact_person: contact_person || '', phone: phone || '',
+        available_slots: 5
       });
       if (error) throw error;
     }
@@ -99,9 +110,14 @@ const verifyEmail = async (req, res) => {
       .update({ is_verified: true, verify_code: null, verify_code_expires: null })
       .eq('email', email);
 
+    const accessToken = generateAccessToken(user);
+    const refreshToken = generateRefreshToken();
+    await saveRefreshToken(user.user_id, refreshToken);
+
     res.json({
       message: 'Email verified successfully!',
-      token: generateToken(user),
+      accessToken,
+      refreshToken,
       role: user.role,
     });
   } catch (err) {
@@ -175,11 +191,67 @@ const login = async (req, res) => {
       });
     }
 
-    const token = generateToken(user);
+    const accessToken = generateAccessToken(user);
+    const refreshToken = generateRefreshToken();
+    await saveRefreshToken(user.user_id, refreshToken);
+
     console.log('Login success for user_id:', user.user_id);
-    res.json({ token, role: user.role });
+    res.json({ accessToken, refreshToken, role: user.role });
   } catch (err) {
     console.error('Login handler error:', err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// POST /api/auth/refresh
+const refresh = async (req, res) => {
+  const { refreshToken } = req.body;
+  if (!refreshToken) return res.status(401).json({ message: 'No refresh token provided' });
+
+  try {
+    const { data: stored, error } = await supabase
+      .from('refresh_tokens')
+      .select('*')
+      .eq('token', refreshToken)
+      .single();
+
+    if (error || !stored) return res.status(401).json({ message: 'Invalid refresh token' });
+
+    if (new Date(stored.expires_at) < new Date()) {
+      await supabase.from('refresh_tokens').delete().eq('token', refreshToken);
+      return res.status(401).json({ message: 'Session expired. Please login again.' });
+    }
+
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('user_id, role, email')
+      .eq('user_id', stored.user_id)
+      .single();
+
+    if (userError || !user) return res.status(401).json({ message: 'User not found' });
+
+    // Rotate — delete old, issue new pair
+    await supabase.from('refresh_tokens').delete().eq('token', refreshToken);
+
+    const accessToken = generateAccessToken(user);
+    const newRefreshToken = generateRefreshToken();
+    await saveRefreshToken(user.user_id, newRefreshToken);
+
+    res.json({ accessToken, refreshToken: newRefreshToken });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// POST /api/auth/logout
+const logout = async (req, res) => {
+  const { refreshToken } = req.body;
+  try {
+    if (refreshToken) {
+      await supabase.from('refresh_tokens').delete().eq('token', refreshToken);
+    }
+    res.json({ message: 'Logged out successfully' });
+  } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
@@ -257,6 +329,9 @@ const resetPassword = async (req, res) => {
     await supabase.from('users').update({ password: hashed }).eq('user_id', resetEntry.user_id);
     await supabase.from('password_reset_codes').delete().eq('email', email);
 
+    // Invalidate all refresh tokens on password reset
+    await supabase.from('refresh_tokens').delete().eq('user_id', resetEntry.user_id);
+
     return res.json({ message: 'Password reset successful. You can now log in.' });
   } catch (err) {
     return res.status(500).json({ message: err.message });
@@ -285,10 +360,12 @@ const getMe = async (req, res) => {
       user.host_organizations?.[0] ||
       {};
 
-    res.json({ user_id: user.user_id, email: user.email, role: user.role, ...profile });
+    const permissions = await getRolePermissions(user.role);
+
+    res.json({ user_id: user.user_id, email: user.email, role: user.role, permissions, ...profile });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
 
-module.exports = { register, verifyEmail, resendCode, login, forgotPassword, resetPassword, getMe };
+module.exports = { register, verifyEmail, resendCode, login, refresh, logout, forgotPassword, resetPassword, getMe };

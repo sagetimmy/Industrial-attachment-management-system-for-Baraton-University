@@ -13,9 +13,11 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { COLORS } from '../../constants/colors';
 import api from '../../api/axios';
+import { hasRolePermission } from '../../utils/permissions';
 
 const HostProfile = ({ navigation, route }) => {
   const { user } = useAuth();
+  const canEditOrgProfile = hasRolePermission(user, 'editOrgProfile');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -80,6 +82,11 @@ const HostProfile = ({ navigation, route }) => {
   };
 
   const handleSave = async () => {
+    if (!canEditOrgProfile) {
+      Alert.alert('Permission Disabled', 'Editing the organization profile is currently disabled.');
+      return;
+    }
+
     if (!validateForm()) return;
 
     try {
@@ -132,7 +139,7 @@ const HostProfile = ({ navigation, route }) => {
         onChangeText={value => handleInputChange(field, value)}
         keyboardType={keyboardType}
         maxLength={maxLength}
-        editable={!saving}
+        editable={!saving && canEditOrgProfile}
       />
       {errors[field] && <Text style={styles.errorText}>{errors[field]}</Text>}
     </View>
@@ -222,7 +229,7 @@ const HostProfile = ({ navigation, route }) => {
                 handleInputChange('available_slots', value.replace(/[^0-9]/g, ''))
               }
               keyboardType="number-pad"
-              editable={!saving}
+              editable={!saving && canEditOrgProfile}
             />
             {errors.available_slots && (
               <Text style={styles.errorText}>{errors.available_slots}</Text>
@@ -234,10 +241,19 @@ const HostProfile = ({ navigation, route }) => {
         </View>
 
         {/* Save Button */}
+        {!canEditOrgProfile && (
+          <View style={styles.permissionCard}>
+            <Text style={styles.permissionTitle}>Profile Editing Disabled</Text>
+            <Text style={styles.permissionText}>
+              You can view this profile, but editing is currently disabled by the administrator.
+            </Text>
+          </View>
+        )}
+
         <TouchableOpacity
-          style={[styles.saveButton, saving && styles.saveButtonDisabled]}
+          style={[styles.saveButton, (saving || !canEditOrgProfile) && styles.saveButtonDisabled]}
           onPress={handleSave}
-          disabled={saving}
+          disabled={saving || !canEditOrgProfile}
         >
           {saving ? (
             <ActivityIndicator color="white" size="small" />
@@ -371,6 +387,25 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  permissionCard: {
+    backgroundColor: '#FFF8E1',
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.primary,
+    borderRadius: 8,
+    padding: 14,
+    marginBottom: 16,
+  },
+  permissionTitle: {
+    color: COLORS.secondary,
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  permissionText: {
+    color: '#666',
+    fontSize: 13,
+    lineHeight: 19,
   },
 });
 

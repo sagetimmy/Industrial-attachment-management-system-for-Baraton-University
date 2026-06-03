@@ -1,11 +1,15 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, Switch, Alert, TextInput
+  TouchableOpacity, Switch, Alert, TextInput,
+  FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
+import { getApiBaseUrl } from '../../api/axios';
+import { PrivacyPolicyContent } from '../shared/PrivacyPolicyScreen';
+import Spinner from '../../components/Spinner';
 
 const NAVY     = '#0D1B2E';
 const TEAL     = '#2EC4A0';
@@ -15,6 +19,46 @@ const LIGHT_BG = '#F7F8FA';
 const DARK     = '#111827';
 const BORDER   = '#E5E7EB';
 const RED      = '#FF5252';
+
+// ── Replace with your actual API base URL ────────────────────────────────────
+const API_BASE = getApiBaseUrl();
+
+const ROLE_PERMISSION_KEYS = {
+  student: ['editLogbooks', 'exportReports', 'selfPlacement'],
+  supervisor: ['approvePlacements', 'editLogbooks', 'exportData'],
+  host_org: ['postPlacements', 'viewAnalytics', 'editOrgProfile'],
+};
+
+const DEFAULT_ROLE_PERMISSIONS = {
+  student:    { editLogbooks: true,  exportReports: true, selfPlacement: true },
+  supervisor: { approvePlacements: true, editLogbooks: true, exportData: true },
+  host_org:   { postPlacements: true, viewAnalytics: true, editOrgProfile: true },
+};
+
+const pickRolePermissions = (role, source = {}) => {
+  const keys = ROLE_PERMISSION_KEYS[role] || [];
+  return keys.reduce((acc, key) => {
+    if (Object.prototype.hasOwnProperty.call(source, key)) {
+      acc[key] = Boolean(source[key]);
+    }
+    return acc;
+  }, {});
+};
+
+const normalizeRolePermissions = (incoming = {}) => ({
+  student: {
+    ...DEFAULT_ROLE_PERMISSIONS.student,
+    ...pickRolePermissions('student', incoming.student),
+  },
+  supervisor: {
+    ...DEFAULT_ROLE_PERMISSIONS.supervisor,
+    ...pickRolePermissions('supervisor', incoming.supervisor),
+  },
+  host_org: {
+    ...DEFAULT_ROLE_PERMISSIONS.host_org,
+    ...pickRolePermissions('host_org', incoming.host_org || incoming.hostOrg),
+  },
+});
 
 // ─── Shared SubHeader ────────────────────────────────────────────────────────
 function SubHeader({ title, onBack }) {
@@ -29,19 +73,317 @@ function SubHeader({ title, onBack }) {
   );
 }
 
+// ─── Sub-screen: Audit Logs ──────────────────────────────────────────────────
+function AuditLogs({ onBack, token }) {
+  const [logs, setLogs]         = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [page, setPage]         = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [search, setSearch]     = useState('');
+  const [filter, setFilter]     = useState('ALL');
+  const [expanded, setExpanded] = useState(null);
+
+  const ACTION_FILTERS = ['ALL', 'APPROVE_ORG', 'REJECT_ORG', 'ASSIGN_SUPERVISOR',
+    'UPDATE_ATTACHMENT_STATUS', 'ACTIVATE_USER', 'DEACTIVATE_USER', 'DELETE_USER',
+    'UPDATE_ROLE_PERMISSIONS', 'VIEW_DASHBOARD', 'VIEW_SUMMARY_REPORT', 'VIEW_DETAILED_REPORT'];
+
+  const fetchLogs = useCallback(async (pageNum = 1, replace = true, query = {}) => {
+    if (!token) {
+      setLogs([]);
+      setTotalPages(1);
+      setPage(1);
+      setLoading(false);
+      setRefreshing(false);
+      Alert.alert('Error', 'Missing authentication token.');
+      return;
+    }
+
+    try {
+      const nextFilter = query.filter ?? filter;
+      const nextSearch = query.search ?? search;
+      const params = new URLSearchParams({ page: pageNum, limit: 20 });
+      if (nextFilter !== 'ALL') params.append('action', nextFilter);
+      if (nextSearch.trim()) params.append('actor_email', nextSearch.trim());
+
+      const res = await fetch(`${API_BASE}/admin/audit-logs?${params}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.message || 'Could not load audit logs.');
+
+      setLogs(prev => replace ? (json.logs || []) : [...prev, ...(json.logs || [])]);
+      setTotalPages(json.pagination?.pages || 1);
+      setPage(pageNum);
+    } catch (err) {
+      Alert.alert('Error', err.message || 'Could not load audit logs.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [filter, search, token]);
+
+  useEffect(() => {
+    setLoading(true);
+    fetchLogs(1, true);
+  }, [filter, token]);                 // re-fetch when filter or auth changes
+
+  const handleSearch = () => {
+    setLoading(true);
+    fetchLogs(1, true, { search });
+  };
+
+  const handleClearSearch = () => {
+    setSearch('');
+    setLoading(true);
+    fetchLogs(1, true, { search: '' });
+  };
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    fetchLogs(1, true);
+  };
+
+  const loadMore = () => {
+    if (page < totalPages) fetchLogs(page + 1, false);
+  };
+
+  // Colour-code actions
+  const actionColor = (action = '') => {
+    if (['DELETE_USER', 'REJECT_ORG', 'DEACTIVATE_USER'].includes(action)) return RED;
+    if (['APPROVE_ORG', 'ACTIVATE_USER', 'ASSIGN_SUPERVISOR'].includes(action)) return TEAL;
+    if (action.startsWith('VIEW_')) return '#6366F1';
+    return '#EA580C';
+  };
+
+  const formatDate = (iso) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return d.toLocaleString('en-KE', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  };
+
+  const renderLog = ({ item }) => {
+    const isOpen = expanded === item.id;
+    const color  = actionColor(item.action);
+    return (
+      <TouchableOpacity
+        style={styles.logCard}
+        onPress={() => setExpanded(isOpen ? null : item.id)}
+        activeOpacity={0.8}
+      >
+        {/* Row 1: action badge + timestamp */}
+        <View style={styles.logTop}>
+          <View style={[styles.actionBadge, { backgroundColor: `${color}18` }]}>
+            <Text style={[styles.actionBadgeText, { color }]}>{item.action}</Text>
+          </View>
+          <Text style={styles.logTime}>{formatDate(item.created_at)}</Text>
+        </View>
+
+        {/* Row 2: description */}
+        <Text style={styles.logDesc} numberOfLines={isOpen ? undefined : 2}>
+          {item.description}
+        </Text>
+
+        {/* Row 3: actor */}
+        <View style={styles.logMeta}>
+          <Ionicons name="person-outline" size={12} color={GRAY} />
+          <Text style={styles.logMetaText}>
+            {item.actor_email || 'System'}  ·  {item.actor_role || '—'}
+          </Text>
+          {item.ip_address ? (
+            <>
+              <Ionicons name="globe-outline" size={12} color={GRAY} style={{ marginLeft: 8 }} />
+              <Text style={styles.logMetaText}>{item.ip_address}</Text>
+            </>
+          ) : null}
+        </View>
+
+        {/* Expanded: entity + metadata */}
+        {isOpen && (
+          <View style={styles.logExpanded}>
+            <View style={styles.divider} />
+            {item.entity ? (
+              <Text style={styles.logDetail}>
+                <Text style={styles.logDetailKey}>Entity: </Text>
+                {item.entity}{item.entity_id ? ` #${item.entity_id}` : ''}
+              </Text>
+            ) : null}
+            {item.metadata && Object.keys(item.metadata).length > 0 ? (
+              <Text style={styles.logDetail}>
+                <Text style={styles.logDetailKey}>Metadata: </Text>
+                {JSON.stringify(item.metadata)}
+              </Text>
+            ) : null}
+          </View>
+        )}
+      </TouchableOpacity>
+    );
+  };
+
+  return (
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <SubHeader title="Audit Logs" onBack={onBack} />
+
+      {/* Search bar */}
+      <View style={styles.auditSearchRow}>
+        <View style={styles.auditSearchBox}>
+          <Ionicons name="search-outline" size={16} color={GRAY} />
+          <TextInput
+            style={styles.auditSearchInput}
+            placeholder="Search by email…"
+            placeholderTextColor={GRAY}
+            value={search}
+            onChangeText={setSearch}
+            onSubmitEditing={handleSearch}
+            returnKeyType="search"
+          />
+          {search.length > 0 && (
+            <TouchableOpacity onPress={handleClearSearch}>
+              <Ionicons name="close-circle" size={16} color={GRAY} />
+            </TouchableOpacity>
+          )}
+        </View>
+        <TouchableOpacity style={styles.auditSearchBtn} onPress={handleSearch}>
+          <Text style={styles.auditSearchBtnText}>Search</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Action filter chips */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.filterScroll}
+        contentContainerStyle={styles.filterRow}
+      >
+        {ACTION_FILTERS.map(f => (
+          <TouchableOpacity
+            key={f}
+            style={[styles.filterChip, filter === f && styles.filterChipActive]}
+            onPress={() => setFilter(f)}
+          >
+            <Text style={[styles.filterChipText, filter === f && styles.filterChipTextActive]}>
+              {f === 'ALL' ? 'All Actions' : f.replace(/_/g, ' ')}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      {loading ? (
+        <View style={styles.loaderBox}>
+          <Spinner size="large" color={TEAL} />
+          <Text style={styles.loaderText}>Loading audit logs…</Text>
+        </View>
+      ) : logs.length === 0 ? (
+        <View style={styles.emptyBox}>
+          <MaterialCommunityIcons name="text-box-search-outline" size={48} color={BORDER} />
+          <Text style={styles.emptyText}>No audit logs found</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={logs}
+          keyExtractor={(item, i) => item.id?.toString() || String(i)}
+          renderItem={renderLog}
+          contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
+          onRefresh={handleRefresh}
+          refreshing={refreshing}
+          onEndReached={loadMore}
+          onEndReachedThreshold={0.3}
+          ListFooterComponent={
+            page < totalPages
+              ? <Spinner color={TEAL} style={{ marginVertical: 16 }} />
+              : <Text style={styles.endText}>— End of logs —</Text>
+          }
+        />
+      )}
+    </SafeAreaView>
+  );
+}
+
+// ─── Sub-screen: Privacy Policy ──────────────────────────────────────────────
+function PrivacyPolicy({ onBack }) {
+  return (
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <SubHeader title="Privacy Policy" onBack={onBack} />
+      <PrivacyPolicyContent />
+    </SafeAreaView>
+  );
+}
+
 // ─── Sub-screen: Role Permissions ───────────────────────────────────────────
-function RolePermissions({ onBack }) {
-  const [perms, setPerms] = useState({
-    student:    { editLogbooks: true,  exportReports: false, selfPlacement: true },
-    supervisor: { approvePlacements: true, editLogbooks: true, exportData: true },
-    hostOrg:    { postPlacements: true, viewAnalytics: true, editOrgProfile: false },
-  });
+function RolePermissions({ onBack, token }) {
+  const [perms, setPerms] = useState(() => normalizeRolePermissions());
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   const toggle = (role, key) => {
+    if (loading || saving) return;
     setPerms(prev => ({
       ...prev,
       [role]: { ...prev[role], [key]: !prev[role][key] },
     }));
+  };
+
+  const loadPermissions = useCallback(async () => {
+    if (!token) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/admin/role-permissions`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.message || 'Failed to load role permissions.');
+      setPerms(normalizeRolePermissions(json.permissions || json));
+    } catch (err) {
+      Alert.alert('Error', err.message || 'Could not load role permissions.');
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    loadPermissions();
+  }, [loadPermissions]);
+
+  const persistPermissions = async (nextPerms, successMessage) => {
+    if (!token) {
+      Alert.alert('Error', 'Missing authentication token.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const res = await fetch(`${API_BASE}/admin/role-permissions`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ permissions: nextPerms }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.message || 'Failed to update role permissions.');
+      setPerms(normalizeRolePermissions(json.permissions || nextPerms));
+      Alert.alert('Saved', successMessage);
+    } catch (err) {
+      Alert.alert('Error', err.message || 'Could not update role permissions.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleReset = () => {
+    Alert.alert('Reset Permissions', 'Reset all roles to system defaults?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Reset',
+        style: 'destructive',
+        onPress: () => persistPermissions(DEFAULT_ROLE_PERMISSIONS, 'Role permissions reset to defaults.'),
+      },
+    ]);
   };
 
   const PermToggle = ({ label, value, onToggle }) => (
@@ -50,6 +392,7 @@ function RolePermissions({ onBack }) {
       <Switch
         value={value}
         onValueChange={onToggle}
+        disabled={loading || saving}
         trackColor={{ false: BORDER, true: TEAL }}
         thumbColor={WHITE}
       />
@@ -63,6 +406,7 @@ function RolePermissions({ onBack }) {
         <Text style={styles.pageSubtitle}>
           Manage access levels and functional controls for all system users.
         </Text>
+        {loading && <Spinner style={{ marginBottom: 12 }} color={TEAL} />}
 
         {/* Super Admin */}
         <View style={styles.card}>
@@ -130,20 +474,25 @@ function RolePermissions({ onBack }) {
             </View>
             <Text style={styles.roleTitle}>Host Org</Text>
           </View>
-          <PermToggle label="Post Placements"  value={perms.hostOrg.postPlacements}  onToggle={() => toggle('hostOrg', 'postPlacements')} />
+          <PermToggle label="Post Placements"  value={perms.host_org.postPlacements}  onToggle={() => toggle('host_org', 'postPlacements')} />
           <View style={styles.divider} />
-          <PermToggle label="View Analytics"   value={perms.hostOrg.viewAnalytics}   onToggle={() => toggle('hostOrg', 'viewAnalytics')} />
+          <PermToggle label="View Analytics"   value={perms.host_org.viewAnalytics}   onToggle={() => toggle('host_org', 'viewAnalytics')} />
           <View style={styles.divider} />
-          <PermToggle label="Edit Org Profile" value={perms.hostOrg.editOrgProfile}  onToggle={() => toggle('hostOrg', 'editOrgProfile')} />
+          <PermToggle label="Edit Org Profile" value={perms.host_org.editOrgProfile}  onToggle={() => toggle('host_org', 'editOrgProfile')} />
         </View>
 
         <TouchableOpacity
-          style={styles.saveBtn}
-          onPress={() => Alert.alert('Saved', 'Role permissions updated successfully.')}
+          style={[styles.saveBtn, (saving || loading) && { opacity: 0.7 }]}
+          onPress={() => persistPermissions(perms, 'Role permissions updated successfully.')}
+          disabled={saving || loading}
         >
-          <Text style={styles.saveBtnText}>Save All Permissions</Text>
+          <Text style={styles.saveBtnText}>{saving ? 'Saving...' : 'Save All Permissions'}</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={{ alignItems: 'center', marginBottom: 40 }}>
+        <TouchableOpacity
+          style={{ alignItems: 'center', marginBottom: 40, opacity: (saving || loading) ? 0.7 : 1 }}
+          onPress={handleReset}
+          disabled={saving || loading}
+        >
           <Text style={styles.resetText}>Reset all roles to system defaults</Text>
         </TouchableOpacity>
       </ScrollView>
@@ -184,7 +533,6 @@ function AttachmentSessions({ onBack }) {
           <Text style={styles.addSessionText}>Add New Session</Text>
         </TouchableOpacity>
 
-        {/* Active Session */}
         <View style={styles.activeSessionCard}>
           <View style={styles.activeBadge}>
             <Text style={styles.activeBadgeText}>CURRENT ACTIVE</Text>
@@ -202,7 +550,6 @@ function AttachmentSessions({ onBack }) {
           </View>
         </View>
 
-        {/* Stats */}
         <View style={styles.sessionStatsRow}>
           <View style={styles.sessionStatCard}>
             <MaterialCommunityIcons name="clipboard-clock-outline" size={22} color={RED} />
@@ -266,11 +613,11 @@ function AttachmentSessions({ onBack }) {
 
 // ─── Sub-screen: System Config ───────────────────────────────────────────────
 function SystemConfig({ onBack }) {
-  const [appName, setAppName]       = useState('Internship & Attachment Management');
+  const [appName, setAppName]           = useState('Internship & Attachment Management');
   const [academicYear, setAcademicYear] = useState('2024 / 2025');
-  const [semester, setSemester]     = useState('SEM1');
-  const [sysAlerts, setSysAlerts]   = useState(true);
-  const [emailFreq, setEmailFreq]   = useState('instant');
+  const [semester, setSemester]         = useState('SEM1');
+  const [sysAlerts, setSysAlerts]       = useState(true);
+  const [emailFreq, setEmailFreq]       = useState('instant');
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -357,7 +704,7 @@ function SystemConfig({ onBack }) {
 
 // ─── Main Settings Screen ────────────────────────────────────────────────────
 export default function AdminSettings({ navigation }) {
-  const { logout } = useAuth();
+  const { logout, token } = useAuth();       // <-- make sure AuthContext exposes token
   const [activeView, setActiveView] = useState('main');
 
   const handleLogout = () => {
@@ -367,19 +714,18 @@ export default function AdminSettings({ navigation }) {
         text: 'Logout',
         style: 'destructive',
         onPress: async () => {
-          try {
-            await logout();
-          } catch (err) {
-            Alert.alert('Error', 'Failed to logout. Please try again.');
-          }
+          try { await logout(); }
+          catch { Alert.alert('Error', 'Failed to logout. Please try again.'); }
         },
       },
     ]);
   };
 
-  if (activeView === 'permissions') return <RolePermissions onBack={() => setActiveView('main')} />;
-  if (activeView === 'sessions')    return <AttachmentSessions onBack={() => setActiveView('main')} />;
-  if (activeView === 'sysconfig')   return <SystemConfig onBack={() => setActiveView('main')} />;
+  if (activeView === 'permissions')   return <RolePermissions onBack={() => setActiveView('main')} token={token} />;
+  if (activeView === 'sessions')      return <AttachmentSessions onBack={() => setActiveView('main')} />;
+  if (activeView === 'sysconfig')     return <SystemConfig onBack={() => setActiveView('main')} />;
+  if (activeView === 'privacypolicy') return <PrivacyPolicy onBack={() => setActiveView('main')} />;
+  if (activeView === 'auditlogs')     return <AuditLogs onBack={() => setActiveView('main')} token={token} />;
 
   const SettingRow = ({ icon, label, subtitle, onPress, danger }) => (
     <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.7}>
@@ -424,16 +770,17 @@ export default function AdminSettings({ navigation }) {
 
         <Text style={styles.sectionTitle}>REPORTS</Text>
         <View style={styles.card}>
-          <SettingRow icon="chart-bar"              label="System Reports"    subtitle="View usage and activity reports"  onPress={() => navigation.navigate('Reports')} />
+          <SettingRow icon="chart-bar"              label="System Reports"    subtitle="View usage and activity reports"     onPress={() => navigation.navigate('Reports')} />
           <View style={styles.divider} />
-          <SettingRow icon="text-box-check-outline" label="Annual Audit Logs" subtitle="Review system audit trail"        onPress={() => Alert.alert('Coming Soon', 'Audit logs coming soon.')} />
+          {/* ── Audit Logs: now navigates to real AuditLogs sub-screen ── */}
+          <SettingRow icon="text-box-check-outline" label="Annual Audit Logs" subtitle="Review system audit trail"           onPress={() => setActiveView('auditlogs')} />
         </View>
 
         <Text style={styles.sectionTitle}>ABOUT</Text>
         <View style={styles.card}>
           <SettingRow icon="information-outline"  label="App Version"     subtitle="IAMS v1.0.0 · Baraton University"  onPress={() => {}} />
           <View style={styles.divider} />
-          <SettingRow icon="shield-check-outline" label="Privacy Policy"                                               onPress={() => Alert.alert('Privacy Policy', 'Contact admin@ueab.ac.ke for details.')} />
+          <SettingRow icon="shield-check-outline" label="Privacy Policy"  subtitle="Data protection & usage policy"    onPress={() => setActiveView('privacypolicy')} />
         </View>
 
         <View style={[styles.card, { marginBottom: 40 }]}>
@@ -542,4 +889,57 @@ const styles = StyleSheet.create({
   dataBtnDivider: { width: 1, backgroundColor: 'rgba(255,255,255,0.3)', marginHorizontal: 10 },
   dataBtnText: { color: WHITE, fontWeight: '700', fontSize: 12 },
   lastBackupText: { textAlign: 'center', color: 'rgba(255,255,255,0.7)', fontSize: 12, paddingBottom: 14 },
+
+  // ── Audit Log styles ──────────────────────────────────────────
+  auditSearchRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, backgroundColor: LIGHT_BG, gap: 8 },
+  auditSearchBox: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: WHITE, borderWidth: 1, borderColor: BORDER, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, gap: 6 },
+  auditSearchInput: { flex: 1, fontSize: 14, color: DARK },
+  auditSearchBtn: { backgroundColor: NAVY, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10 },
+  auditSearchBtnText: { color: WHITE, fontWeight: '700', fontSize: 13 },
+  filterScroll: { backgroundColor: LIGHT_BG, maxHeight: 48 },
+  filterRow: { paddingHorizontal: 16, paddingBottom: 8, gap: 8, flexDirection: 'row', alignItems: 'center' },
+  filterChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: BORDER, backgroundColor: WHITE },
+  filterChipActive: { backgroundColor: NAVY, borderColor: NAVY },
+  filterChipText: { fontSize: 12, color: GRAY, fontWeight: '600' },
+  filterChipTextActive: { color: WHITE },
+  logCard: { backgroundColor: WHITE, borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: BORDER, elevation: 1 },
+  logTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  actionBadge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
+  actionBadgeText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.4 },
+  logTime: { fontSize: 11, color: GRAY },
+  logDesc: { fontSize: 13, color: DARK, lineHeight: 20, marginBottom: 8 },
+  logMeta: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  logMetaText: { fontSize: 11, color: GRAY },
+  logExpanded: { marginTop: 8 },
+  logDetail: { fontSize: 12, color: GRAY, lineHeight: 18, marginTop: 6 },
+  logDetailKey: { fontWeight: '700', color: DARK },
+  loaderBox: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingTop: 60 },
+  loaderText: { fontSize: 14, color: GRAY },
+  emptyBox: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80, gap: 12 },
+  emptyText: { fontSize: 15, color: GRAY },
+  endText: { textAlign: 'center', fontSize: 12, color: GRAY, paddingVertical: 16 },
+
+  // ── Privacy Policy styles ──────────────────────────────────────
+  ppHero: {
+    alignItems: 'center', backgroundColor: NAVY,
+    paddingHorizontal: 24, paddingBottom: 32, paddingTop: 8,
+  },
+  ppHeroTitle: { fontSize: 22, fontWeight: '800', color: WHITE, marginTop: 12, marginBottom: 8 },
+  ppHeroSub: { fontSize: 13, color: 'rgba(255,255,255,0.65)', textAlign: 'center', lineHeight: 20 },
+  ppEffectiveBadge: {
+    marginTop: 16, backgroundColor: 'rgba(46,196,160,0.15)',
+    borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6,
+    borderWidth: 1, borderColor: 'rgba(46,196,160,0.3)',
+  },
+  ppEffectiveText: { color: TEAL, fontSize: 12, fontWeight: '600' },
+  ppSection: { padding: 20 },
+  ppSectionTitle: { fontSize: 14, fontWeight: '800', color: NAVY, marginBottom: 10 },
+  ppBody: { fontSize: 13, color: DARK, lineHeight: 22 },
+  ppBullet: { fontSize: 13, color: DARK, lineHeight: 22 },
+  ppBold: { fontWeight: '700', color: DARK },
+  ppFooter: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, marginTop: 24, marginBottom: 8,
+  },
+  ppFooterText: { fontSize: 11, color: GRAY },
 });

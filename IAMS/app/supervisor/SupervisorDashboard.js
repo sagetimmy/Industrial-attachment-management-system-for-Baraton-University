@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, Alert, ActivityIndicator, RefreshControl, useWindowDimensions
+  ScrollView, Alert, ActivityIndicator, RefreshControl, useWindowDimensions,
+  Modal, Pressable
 } from 'react-native';
 import Svg, { Circle, Text as SvgText } from 'react-native-svg';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { COLORS } from '../../constants/colors';
 import api from '../../api/axios';
@@ -36,6 +38,7 @@ export default function SupervisorDashboard({ navigation }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const isTablet = width >= 768;
   const isDesktop = width >= 1100;
 
@@ -83,12 +86,23 @@ export default function SupervisorDashboard({ navigation }) {
     return student.progress || 50;
   };
 
+  const openMenuScreen = (screen) => {
+    setMenuOpen(false);
+    navigation.navigate(screen);
+  };
+
+  const overflowItems = [
+    { label: 'Reports', icon: 'bar-chart-outline', screen: 'Reports' },
+    { label: 'Settings', icon: 'settings-outline', screen: 'SupervisorSettings' },
+    { label: 'Site Visits', icon: 'calendar-outline', screen: 'SiteVisits' },
+  ];
+
   return (
     <View style={styles.wrapper}>
       {/* Top bar */}
       <View style={styles.topBar}>
-        <TouchableOpacity onPress={() => navigation.openDrawer?.()}>
-          <Text style={styles.menuIcon}>☰</Text>
+        <TouchableOpacity style={styles.menuBtn} onPress={() => setMenuOpen(true)}>
+          <Ionicons name="menu" size={22} color="#1A3A33" />
         </TouchableOpacity>
         <Text style={styles.topBarTitle}>Supervisor Dashboard</Text>
         <TouchableOpacity onPress={() => navigation.navigate('Profile')}>
@@ -99,6 +113,33 @@ export default function SupervisorDashboard({ navigation }) {
           </View>
         </TouchableOpacity>
       </View>
+
+      <Modal
+        transparent
+        visible={menuOpen}
+        animationType="fade"
+        onRequestClose={() => setMenuOpen(false)}
+      >
+        <Pressable style={styles.menuOverlay} onPress={() => setMenuOpen(false)}>
+          <View style={styles.overflowMenu}>
+            <Text style={styles.overflowTitle}>Supervisor Tools</Text>
+            {overflowItems.map((item) => (
+              <TouchableOpacity
+                key={item.screen}
+                style={styles.overflowItem}
+                onPress={() => openMenuScreen(item.screen)}
+                activeOpacity={0.75}
+              >
+                <View style={styles.overflowIcon}>
+                  <Ionicons name={item.icon} size={18} color="#0F6E56" />
+                </View>
+                <Text style={styles.overflowLabel}>{item.label}</Text>
+                <Ionicons name="chevron-forward" size={17} color="#8899AA" />
+              </TouchableOpacity>
+            ))}
+          </View>
+        </Pressable>
+      </Modal>
 
       <ScrollView
         style={styles.scroll}
@@ -249,7 +290,6 @@ export default function SupervisorDashboard({ navigation }) {
           { label: 'Home', icon: '⌂', screen: 'Dashboard', active: true },
           { label: 'Students', icon: '👥', screen: 'MyStudents' },
           { label: 'Reviews', icon: '📋', screen: 'ReviewLogbooks' },
-          { label: 'Reports', icon: '📄', screen: 'Reports' },
         ].map((tab) => (
           <TouchableOpacity
             key={tab.screen}
@@ -280,13 +320,73 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: '5%', paddingTop: 55, paddingBottom: 14, backgroundColor: '#EEF4F1',
   },
-  menuIcon: { fontSize: 20, color: '#333' },
+  menuBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 0.5,
+    borderColor: 'rgba(0,0,0,0.08)',
+  },
   topBarTitle: { fontSize: 17, fontWeight: '600', color: '#111' },
   profileIcon: {
     width: 34, height: 34, borderRadius: 17,
     backgroundColor: '#0F6E56', justifyContent: 'center', alignItems: 'center',
   },
   profileInitial: { color: '#fff', fontSize: 14, fontWeight: '600' },
+
+  menuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(17, 24, 39, 0.26)',
+    paddingTop: 86,
+    paddingHorizontal: 16,
+  },
+  overflowMenu: {
+    width: 236,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.08)',
+    shadowColor: '#000',
+    shadowOpacity: 0.14,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 6,
+  },
+  overflowTitle: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#8899AA',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  overflowItem: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+  },
+  overflowIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: '#E1F5EE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  overflowLabel: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1A3A33',
+  },
 
   statsCard: {
     backgroundColor: '#fff', marginHorizontal: '4.5%', marginBottom: 14,

@@ -1,13 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
   ScrollView, Alert, ActivityIndicator,
   RefreshControl, useWindowDimensions
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/colors';
 import api from '../../api/axios';
+import { useAuth } from '../../context/AuthContext';
+import { hasRolePermission } from '../../utils/permissions';
 
 const TEAL   = '#1B6B5A';
 const LIGHT  = '#F0F4F3';
@@ -38,6 +41,8 @@ function deadlineLabel(dateStr) {
 
 export default function ReviewLogbooksScreen({ navigation, route }) {
   const { attachmentId, studentName } = route.params || {};
+  const { user } = useAuth();
+  const canEditLogbooks = hasRolePermission(user, 'editLogbooks');
   const { width } = useWindowDimensions();
   const [entries, setEntries]     = useState([]);
   const [loading, setLoading]     = useState(true);
@@ -52,7 +57,8 @@ export default function ReviewLogbooksScreen({ navigation, route }) {
         : res.data;
       setEntries(filtered);
     } catch (err) {
-      Alert.alert('Error', 'Failed to load logbooks');
+      console.error('Logbooks fetch error:', err);
+      Alert.alert('Error', err.response?.data?.message || 'Failed to load logbooks');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -60,10 +66,18 @@ export default function ReviewLogbooksScreen({ navigation, route }) {
   };
 
   const handleReview = (entry) => {
-    navigation.navigate('LogbookDetail', { entry });
+    navigation.navigate('LogbookDetail', {
+      entry,
+      totalEntries: entries.length,
+    });
   };
 
   const handleReject = (entry) => {
+    if (!canEditLogbooks) {
+      Alert.alert('Permission Disabled', 'Logbook review actions are currently disabled for supervisors.');
+      return;
+    }
+
     Alert.alert(
       'Reject Entry',
       `Reject Week ${entry.week_number} entry from ${entry.full_name}?`,
@@ -74,11 +88,12 @@ export default function ReviewLogbooksScreen({ navigation, route }) {
           style: 'destructive',
           onPress: async () => {
             try {
-              await api.put(`/supervisors/logbooks/${entry.logbook_id}/reject`);
+              await api.put(`/supervisors/logbooks/${entry.entry_id}/reject`);
               Alert.alert('Rejected', 'Entry has been rejected.');
               fetchLogbooks();
-            } catch {
-              Alert.alert('Error', 'Failed to reject entry');
+            } catch (err) {
+              console.error('Reject error:', err);
+              Alert.alert('Error', err.response?.data?.message || 'Failed to reject entry');
             }
           }
         }
@@ -87,6 +102,11 @@ export default function ReviewLogbooksScreen({ navigation, route }) {
   };
 
   useEffect(() => { fetchLogbooks(); }, []);
+  useFocusEffect(
+    useCallback(() => {
+      fetchLogbooks();
+    }, [attachmentId])
+  );
   const onRefresh = () => { setRefreshing(true); fetchLogbooks(); };
 
   const isTablet = width >= 768;
@@ -145,11 +165,10 @@ export default function ReviewLogbooksScreen({ navigation, route }) {
           </View>
         ) : (
           entries.map((entry, index) => {
-            const deadline = deadlineLabel(entry.deadline);
             const isExpanded = expanded === index;
             const initials = entry.full_name?.trim().charAt(0).toUpperCase() || '?';
             const submittedLabel = timeAgo(entry.submitted_at);
-            const entryType = entry.entry_type || `LOGBOOK WEEK ${entry.week_number}`;
+            const entryType = `LOGBOOK WEEK ${entry.week_number || '?'}`;
 
             return (
               <View
@@ -166,26 +185,8 @@ export default function ReviewLogbooksScreen({ navigation, route }) {
                   </View>
                   <View style={styles.studentInfo}>
                     <Text style={styles.studentName}>{entry.full_name || 'Unknown'}</Text>
-                    <Text style={styles.studentDept}>{entry.department || entry.reg_number}</Text>
+                    <Text style={styles.studentDept}>{entry.reg_number || entry.org_name}</Text>
                   </View>
-                  {deadline && (
-                    <View style={[
-                      styles.deadlineBadge,
-                      deadline.urgent && styles.deadlineBadgeUrgent,
-                    ]}>
-                      <Ionicons
-                        name="time-outline"
-                        size={11}
-                        color={deadline.urgent ? RED : GRAY}
-                      />
-                      <Text style={[
-                        styles.deadlineText,
-                        deadline.urgent && styles.deadlineTextUrgent,
-                      ]}>
-                        {' '}{deadline.label}
-                      </Text>
-                    </View>
-                  )}
                 </View>
 
                 {/* Entry Row */}
@@ -196,7 +197,7 @@ export default function ReviewLogbooksScreen({ navigation, route }) {
                 >
                   <View style={styles.entryIconBox}>
                     <MaterialCommunityIcons
-                      name={entry.entry_type === 'MONTHLY REPORT' ? 'chart-bar' : 'text-box-outline'}
+                      name="text-box-outline"
                       size={20}
                       color={TEAL}
                     />

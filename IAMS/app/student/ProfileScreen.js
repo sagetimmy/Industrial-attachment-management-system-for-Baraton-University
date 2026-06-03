@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, Alert, ActivityIndicator, RefreshControl
+  ScrollView, Alert, RefreshControl
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../api/axios';
+import Spinner from '../../components/Spinner';
 
 const TEAL = '#2EC4A0';
 const DARK = '#111827';
@@ -48,13 +49,20 @@ export default function ProfileScreen({ navigation }) {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={TEAL} />
+        <Spinner size="large" color={TEAL} />
         <Text style={styles.loadingText}>Loading profile...</Text>
       </View>
     );
   }
 
   const initials = profile?.full_name?.trim().charAt(0).toUpperCase() || '?';
+
+  const handleLogout = () => {
+    Alert.alert('Logout', 'Are you sure you want to logout?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Logout', style: 'destructive', onPress: logout },
+    ]);
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -63,10 +71,6 @@ export default function ProfileScreen({ navigation }) {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[TEAL]} />}
       >
         <View style={styles.banner}>
-          <TouchableOpacity style={styles.editBtn} onPress={() => navigation.navigate('EditProfile')}>
-            <Ionicons name="pencil-outline" size={14} color={TEAL} />
-            <Text style={styles.editBtnText}>Edit Profile</Text>
-          </TouchableOpacity>
         </View>
 
         <View style={styles.avatarWrapper}>
@@ -131,7 +135,7 @@ export default function ProfileScreen({ navigation }) {
           </ScrollView>
         )}
 
-        <TouchableOpacity style={styles.logoutBtn} onPress={logout}>
+        <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
           <Ionicons name="log-out-outline" size={18} color={RED} />
           <Text style={styles.logoutText}>Logout</Text>
         </TouchableOpacity>
@@ -158,9 +162,7 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: LIGHT },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loadingText: { marginTop: 10, color: GRAY },
-  banner: { height: 130, backgroundColor: TEAL, justifyContent: 'flex-start', alignItems: 'flex-end', paddingHorizontal: 20, paddingTop: 16 },
-  editBtn: { flexDirection: 'row', alignItems: 'center', borderWidth: 1.5, borderColor: TEAL, backgroundColor: WHITE, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6, gap: 6 },
-  editBtnText: { fontSize: 13, color: TEAL, fontWeight: '600' },
+  banner: { height: 80, backgroundColor: TEAL, justifyContent: 'flex-start', alignItems: 'flex-end', paddingHorizontal: 20, paddingTop: 16 },
   avatarWrapper: { alignItems: 'center', marginTop: -50, marginBottom: 12 },
   avatarCircle: { width: 100, height: 100, borderRadius: 50, backgroundColor: DARK, borderWidth: 4, borderColor: WHITE, justifyContent: 'center', alignItems: 'center' },
   avatarText: { color: WHITE, fontSize: 38, fontWeight: '800' },

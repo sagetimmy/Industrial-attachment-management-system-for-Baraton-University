@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { protect } = require('../middleware/auth.middleware');
+const { getRolePermissions, requireRolePermission } = require('../utils/rolePermissions');
 const supabase = require('../config/db');
 
 // GET /api/host-orgs/dashboard
@@ -28,19 +29,24 @@ router.get('/dashboard', protect, async (req, res) => {
     // Flatten student fields onto each application
     const flat = applications.map(({ students, ...a }) => ({ ...a, ...students }));
 
-    const total = flat.length;
-    const pending = flat.filter(a => a.status === 'pending').length;
-    const ongoing = flat.filter(a => a.status === 'ongoing').length;
-    const completed = flat.filter(a => a.status === 'completed').length;
+    const permissions = await getRolePermissions(req.user.role);
+    const stats = permissions.viewAnalytics === false
+      ? null
+      : {
+          total: flat.length,
+          pending: flat.filter(a => a.status === 'pending').length,
+          ongoing: flat.filter(a => a.status === 'ongoing').length,
+          completed: flat.filter(a => a.status === 'completed').length,
+        };
 
-    res.json({ org, applications: flat, stats: { total, pending, ongoing, completed } });
+    res.json({ org, applications: flat, stats, permissions });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
 // PUT /api/host-orgs/profile
-router.put('/profile', protect, async (req, res) => {
+router.put('/profile', protect, requireRolePermission('editOrgProfile'), async (req, res) => {
   const { org_name, location, contact_person, phone, available_slots } = req.body;
 
   if (!org_name || !location || !contact_person || !phone)
@@ -181,6 +187,118 @@ router.get('/ongoing-attachments', protect, async (req, res) => {
 
     res.json(flat);
   } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// PUT /api/host-orgs/application/:attachmentId - Confirm or reject placement
+router.put('/application/:attachmentId', protect, async (req, res) => {
+  const { attachmentId } = req.params;
+  const { status } = req.body;
+
+  if (!status || !['approved', 'rejected'].includes(status)) {
+    return res.status(400).json({ message: 'Status must be either "approved" or "rejected"' });
+  }
+
+  try {
+    console.log('PUT /application/:attachmentId received:', { attachmentId, status, user_id: req.user.user_id });
+
+    // Verify attachment belongs to this organization
+    const { data: attachment, error: attachError } = await supabase
+      .from('attachments')
+      .select('attachment_id, org_id, student_id, host_organizations!attachments_org_id_fkey(user_id)')
+      .eq('attachment_id', attachmentId)
+      .single();
+
+    if (attachError || !attachment) {
+      console.error('Attachment lookup error:', attachError);
+      return res.status(404).json({ message: 'Attachment not found' });
+    }
+
+    // Check that the organization belongs to the logged-in user
+    if (attachment.host_organizations?.user_id !== req.user.user_id) {
+      return res.status(403).json({ message: 'Not authorized to update this application' });
+    }
+
+    // Update the attachment status
+    const { error: updateError } = await supabase
+      .from('attachments')
+      .update({ status })
+      .eq('attachment_id', attachmentId);
+
+    if (updateError) {
+      console.error('Attachment update error:', updateError);
+      throw updateError;
+    }
+
+    console.log('Application updated successfully:', { attachmentId, status });
+    res.json({ message: `Application ${status} successfully!` });
+  } catch (err) {
+    console.error('PUT /application error:', err);
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// POST /api/host-orgs/vacancies
+router.post('/vacancies', protect, requireRolePermission('postPlacements'), async (req, res) => {
+  try {
+    const { role_title, department, available_slots, application_deadline, description, requirements } = req.body;
+
+    console.log('POST /vacancies received:', { role_title, department, available_slots, application_deadline, description, requirements });
+
+    if (!role_title || !department || !available_slots || !application_deadline || !description)
+      return res.status(400).json({ message: 'All fields are required' });
+
+    if (available_slots < 1)
+      return res.status(400).json({ message: 'Must have at least 1 available slot' });
+
+    if (!Array.isArray(requirements) || requirements.length === 0)
+      return res.status(400).json({ message: 'At least one requirement is required' });
+
+    const { data: org, error: orgError } = await supabase
+      .from('host_organizations')
+      .select('org_id')
+      .eq('user_id', req.user.user_id)
+      .single();
+
+    if (orgError || !org) {
+      console.error('Organization lookup error:', orgError);
+      return res.status(404).json({ message: 'Organization not found' });
+    }
+
+    // Parse deadline from mm/dd/yyyy to YYYY-MM-DD format
+    let parsedDeadline = application_deadline;
+    if (typeof application_deadline === 'string' && application_deadline.includes('/')) {
+      const [month, day, year] = application_deadline.split('/');
+      parsedDeadline = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    }
+
+    console.log('Parsed deadline:', parsedDeadline);
+
+    const { data: vacancy, error } = await supabase
+      .from('vacancies')
+      .insert({
+        org_id: org.org_id,
+        role_title,
+        department,
+        available_slots,
+        application_deadline: parsedDeadline,
+        description,
+        requirements,
+        status: 'open',
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Database error inserting vacancy:', error);
+      throw error;
+    }
+
+    console.log('Vacancy created successfully:', vacancy);
+    res.status(201).json({ message: 'Vacancy posted successfully!', vacancy });
+  } catch (err) {
+    console.error('POST /vacancies error:', err);
     res.status(500).json({ message: err.message });
   }
 });

@@ -2,6 +2,12 @@ const express = require('express');
 const router = express.Router();
 const { protect, authorize } = require('../middleware/auth.middleware');
 const supabase = require('../config/db');
+const audit = require('../utils/audit');
+const {
+  ROLE_PERMISSION_KEYS,
+  pickRolePermissions,
+  normalizeRolePermissions,
+} = require('../utils/rolePermissions');
 
 const VALID_STATUSES = ['pending', 'approved', 'ongoing', 'completed', 'rejected'];
 
@@ -12,9 +18,10 @@ const parsePagination = (query) => {
 };
 
 // Helper: update attachment status + notify student
-const updateAttachmentStatus = async (attachmentId, status) => {
+const updateAttachmentStatus = async (attachmentId, status, actor, ip) => {
   const normalized = String(status || '').toLowerCase();
-  if (!VALID_STATUSES.includes(normalized)) throw Object.assign(new Error('Invalid attachment status'), { statusCode: 400 });
+  if (!VALID_STATUSES.includes(normalized))
+    throw Object.assign(new Error('Invalid attachment status'), { statusCode: 400 });
 
   const { data: att, error } = await supabase
     .from('attachments')
@@ -22,7 +29,8 @@ const updateAttachmentStatus = async (attachmentId, status) => {
     .eq('attachment_id', attachmentId)
     .single();
 
-  if (error || !att) throw Object.assign(new Error('Attachment not found'), { statusCode: 404 });
+  if (error || !att)
+    throw Object.assign(new Error('Attachment not found'), { statusCode: 404 });
 
   await supabase.from('attachments').update({ status: normalized }).eq('attachment_id', attachmentId);
   await supabase.from('notifications').insert({
@@ -30,12 +38,27 @@ const updateAttachmentStatus = async (attachmentId, status) => {
     message: `Your attachment status has been updated to: ${normalized}`,
   });
 
+  await audit(
+    actor,
+    'UPDATE_ATTACHMENT_STATUS',
+    'attachments',
+    attachmentId,
+    `Attachment ${attachmentId} status changed to "${normalized}"`,
+    { new_status: normalized },
+    ip
+  );
+
   return { message: `Attachment marked as ${normalized}` };
 };
 
 const handleStatusUpdate = async (req, res) => {
   try {
-    const result = await updateAttachmentStatus(req.params.id, req.body.status);
+    const result = await updateAttachmentStatus(
+      req.params.id,
+      req.body.status,
+      req.user,
+      req.ip
+    );
     res.json(result);
   } catch (err) {
     res.status(err.statusCode || 500).json({ message: err.message });
@@ -104,12 +127,77 @@ router.get('/dashboard', protect, authorize('admin'), async (req, res) => {
       students: undefined, host_organizations: undefined, supervisors: undefined,
     }));
 
+    // Audit: admin viewed dashboard
+    await audit(
+      req.user,
+      'VIEW_DASHBOARD',
+      'dashboard',
+      null,
+      `Admin ${req.user?.email} viewed the dashboard`,
+      {},
+      req.ip
+    );
+
     res.json({
       stats: { totalStudents, totalSupervisors, totalOrgs, totalAttachments, pendingOrgs, activeAttachments },
       recentUsers: flatRecentUsers,
       pendingOrgList: pendingOrgList || [],
       recentAttachments: flatAttachments,
     });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// GET /api/admin/role-permissions
+router.get('/role-permissions', protect, authorize('admin'), async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('role_permissions')
+      .select('role, permissions');
+    if (error) throw error;
+
+    const merged = normalizeRolePermissions();
+    (data || []).forEach((row) => {
+      if (!row?.role || !ROLE_PERMISSION_KEYS[row.role]) return;
+      merged[row.role] = {
+        ...merged[row.role],
+        ...pickRolePermissions(row.role, row.permissions || {}),
+      };
+    });
+
+    res.json({ permissions: merged });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// PUT /api/admin/role-permissions
+router.put('/role-permissions', protect, authorize('admin'), async (req, res) => {
+  try {
+    const normalized = normalizeRolePermissions(req.body?.permissions || req.body || {});
+    const rows = Object.entries(normalized).map(([role, permissions]) => ({
+      role,
+      permissions,
+      updated_at: new Date().toISOString(),
+    }));
+
+    const { error } = await supabase
+      .from('role_permissions')
+      .upsert(rows, { onConflict: 'role' });
+    if (error) throw error;
+
+    await audit(
+      req.user,
+      'UPDATE_ROLE_PERMISSIONS',
+      'role_permissions',
+      null,
+      `Role permissions updated by ${req.user?.email}`,
+      { roles: Object.keys(normalized) },
+      req.ip
+    );
+
+    res.json({ message: 'Role permissions updated', permissions: normalized });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -123,6 +211,17 @@ router.put('/approve-org/:id', protect, authorize('admin'), async (req, res) => 
       .update({ is_approved: true })
       .eq('org_id', req.params.id);
     if (error) throw error;
+
+    await audit(
+      req.user,
+      'APPROVE_ORG',
+      'host_organizations',
+      req.params.id,
+      `Organization (ID: ${req.params.id}) approved`,
+      {},
+      req.ip
+    );
+
     res.json({ message: 'Organization approved successfully!' });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -146,6 +245,17 @@ router.put('/reject-org/:id', protect, authorize('admin'), async (req, res) => {
     });
 
     await supabase.from('host_organizations').delete().eq('org_id', req.params.id);
+
+    await audit(
+      req.user,
+      'REJECT_ORG',
+      'host_organizations',
+      req.params.id,
+      `Organization (ID: ${req.params.id}) rejected. Reason: ${reason || 'N/A'}`,
+      { reason },
+      req.ip
+    );
+
     res.json({ message: 'Organization rejected' });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -392,6 +502,16 @@ router.put('/assign-supervisor', protect, authorize('admin'), async (req, res) =
       });
     }
 
+    await audit(
+      req.user,
+      'ASSIGN_SUPERVISOR',
+      'attachments',
+      attachment_id,
+      `Supervisor (ID: ${supervisor_id}) assigned to attachment ${attachment_id}`,
+      { supervisor_id, supervisor_name: att?.supervisors?.full_name },
+      req.ip
+    );
+
     res.json({ message: 'Supervisor assigned successfully!' });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -432,7 +552,7 @@ router.put('/toggle-user/:id', protect, authorize('admin'), async (req, res) => 
   try {
     const { data: user } = await supabase
       .from('users')
-      .select('is_active')
+      .select('is_active, email')
       .eq('user_id', req.params.id)
       .single();
 
@@ -440,6 +560,16 @@ router.put('/toggle-user/:id', protect, authorize('admin'), async (req, res) => 
       .from('users')
       .update({ is_active: !user.is_active })
       .eq('user_id', req.params.id);
+
+    await audit(
+      req.user,
+      user.is_active ? 'DEACTIVATE_USER' : 'ACTIVATE_USER',
+      'users',
+      req.params.id,
+      `User ${user.email} was ${user.is_active ? 'deactivated' : 'activated'}`,
+      { previous_status: user.is_active, new_status: !user.is_active },
+      req.ip
+    );
 
     res.json({ message: 'User status updated!' });
   } catch (err) {
@@ -450,8 +580,25 @@ router.put('/toggle-user/:id', protect, authorize('admin'), async (req, res) => 
 // DELETE /api/admin/delete-user/:id
 router.delete('/delete-user/:id', protect, authorize('admin'), async (req, res) => {
   try {
+    const { data: user } = await supabase
+      .from('users')
+      .select('email, role')
+      .eq('user_id', req.params.id)
+      .single();
+
     const { error } = await supabase.from('users').delete().eq('user_id', req.params.id);
     if (error) throw error;
+
+    await audit(
+      req.user,
+      'DELETE_USER',
+      'users',
+      req.params.id,
+      `User ${user?.email} (${user?.role}) was deleted`,
+      { deleted_email: user?.email, deleted_role: user?.role },
+      req.ip
+    );
+
     res.json({ message: 'User deleted successfully!' });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -481,14 +628,10 @@ router.get('/reports/summary', protect, authorize('admin'), async (req, res) => 
       `),
     ]);
 
-    // Status breakdown
     const statusMap = {};
-    (statusRows || []).forEach(a => {
-      statusMap[a.status] = (statusMap[a.status] || 0) + 1;
-    });
+    (statusRows || []).forEach(a => { statusMap[a.status] = (statusMap[a.status] || 0) + 1; });
     const statusBreakdown = Object.entries(statusMap).map(([status, count]) => ({ status, count }));
 
-    // Org breakdown
     const orgMap = {};
     (allAttachments || []).forEach(a => {
       const name = a.host_organizations?.org_name || 'Unknown';
@@ -499,7 +642,6 @@ router.get('/reports/summary', protect, authorize('admin'), async (req, res) => 
       .sort((a, b) => b.count - a.count)
       .slice(0, 5);
 
-    // Dept breakdown
     const deptMap = {};
     (allAttachments || []).forEach(a => {
       const dept = a.students?.department || 'Unspecified';
@@ -508,6 +650,16 @@ router.get('/reports/summary', protect, authorize('admin'), async (req, res) => 
     const deptBreakdown = Object.entries(deptMap)
       .map(([department, count]) => ({ department, count }))
       .sort((a, b) => b.count - a.count);
+
+    await audit(
+      req.user,
+      'VIEW_SUMMARY_REPORT',
+      'reports',
+      null,
+      `Admin ${req.user?.email} viewed the summary report`,
+      {},
+      req.ip
+    );
 
     res.json({ totalAttachments, totalStudents, totalSupervisors, totalOrgs, statusBreakdown, orgBreakdown, deptBreakdown });
   } catch (err) {
@@ -558,8 +710,48 @@ router.get('/reports/detailed', protect, authorize('admin'), async (req, res) =>
       };
     });
 
+    await audit(
+      req.user,
+      'VIEW_DETAILED_REPORT',
+      'reports',
+      null,
+      `Admin ${req.user?.email} viewed detailed report (page ${page})`,
+      { filters: { status: req.query.status, startDate: req.query.startDate, endDate: req.query.endDate } },
+      req.ip
+    );
+
     res.json({
       details,
+      pagination: { page, limit, total: count, pages: Math.max(Math.ceil(count / limit), 1) },
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// GET /api/admin/audit-logs
+// Used by the frontend AuditLogs screen in Settings
+router.get('/audit-logs', protect, authorize('admin'), async (req, res) => {
+  try {
+    const { page, limit, from } = parsePagination(req.query);
+
+    let query = supabase
+      .from('audit_logs')
+      .select('*', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(from, from + limit - 1);
+
+    if (req.query.action) query = query.eq('action', req.query.action);
+    if (req.query.actor_email) query = query.ilike('actor_email', `%${req.query.actor_email}%`);
+    if (req.query.entity) query = query.eq('entity', req.query.entity);
+    if (req.query.startDate) query = query.gte('created_at', req.query.startDate);
+    if (req.query.endDate) query = query.lte('created_at', req.query.endDate);
+
+    const { data, error, count } = await query;
+    if (error) throw error;
+
+    res.json({
+      logs: data || [],
       pagination: { page, limit, total: count, pages: Math.max(Math.ceil(count / limit), 1) },
     });
   } catch (err) {

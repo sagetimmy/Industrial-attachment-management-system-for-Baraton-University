@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, Alert, ActivityIndicator, RefreshControl
+  ScrollView, Alert, RefreshControl
 } from 'react-native';
 import { COLORS } from '../../constants/colors';
 import api from '../../api/axios';
+import Spinner from '../../components/Spinner';
 
 export default function FeedbackScreen({ navigation }) {
   const [feedback, setFeedback] = useState([]);
@@ -52,7 +53,7 @@ export default function FeedbackScreen({ navigation }) {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Spinner size="large" color={COLORS.primary} />
         <Text style={styles.loadingText}>Loading feedback...</Text>
       </View>
     );

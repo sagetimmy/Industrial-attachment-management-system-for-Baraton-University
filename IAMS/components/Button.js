@@ -1,4 +1,5 @@
-import { TouchableOpacity, Text, StyleSheet, ActivityIndicator, View } from 'react-native';
+import { TouchableOpacity, Text, StyleSheet, View } from 'react-native';
+import Spinner from './Spinner';
 
 /**
  * Reusable Button Component
@@ -81,7 +82,7 @@ export default function Button({
       ]}
     >
       {loading ? (
-        <ActivityIndicator color={variantStyle.textColor} size="small" />
+        <Spinner color={variantStyle.textColor} size="small" />
       ) : (
         <View style={styles.content}>
           {icon && <Text style={styles.icon}>{icon}</Text>}

@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
-  StyleSheet, Alert, ActivityIndicator, ScrollView,
+  StyleSheet, Alert, ScrollView,
   Dimensions
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import api from '../../api/axios';
+import Spinner from '../../components/Spinner';
 
 const { height } = Dimensions.get('window');
 
@@ -41,9 +42,17 @@ export default function RegisterScreen({ navigation }) {
   const handleChange = (key, value) => setForm({ ...form, [key]: value });
 
   const handleRegister = async () => {
-    if (!form.full_name || !form.email || !form.password) {
-      Alert.alert('Error', 'Please fill in all required fields');
-      return;
+    // Validation based on role
+    if (role === 'host_org') {
+      if (!form.email || !form.password || !form.org_name || !form.location) {
+        Alert.alert('Error', 'Please fill in all required fields');
+        return;
+      }
+    } else {
+      if (!form.full_name || !form.email || !form.password) {
+        Alert.alert('Error', 'Please fill in all required fields');
+        return;
+      }
     }
     
     if (form.password !== form.confirm_password) {
@@ -52,7 +61,7 @@ export default function RegisterScreen({ navigation }) {
     }
 
     if (!agreeTerms) {
-      Alert.alert('Error', 'Please agree to Terms & Conditions');
+      Alert.alert('Error', 'Please agree to Terms & Conditions and Privacy Policy');
       return;
     }
 
@@ -90,7 +99,12 @@ export default function RegisterScreen({ navigation }) {
         
         <View style={styles.headerContent}>
           <Text style={styles.headerTitle}>Create Account</Text>
-          <Text style={styles.headerSubtitle}>Join Learning Hub</Text>
+          <View style={styles.subtitleRow}>
+            <View style={styles.goldLine} />
+            <Text style={styles.subtitleText}>Industrial Attachment Management</Text>
+            <View style={styles.goldLine} />
+          </View>
+          <Text style={styles.headerAcronym}>IAMS</Text>
         </View>
 
         {/* Educational icon */}
@@ -110,7 +124,7 @@ export default function RegisterScreen({ navigation }) {
         showsVerticalScrollIndicator={false}
       >
         {/* Role Selection Dropdown */}
-        <Text style={styles.sectionLabel}>I am registering as:</Text>
+        <Text style={styles.sectionLabel}>Registering as:</Text>
         
         <TouchableOpacity
           style={styles.roleDropdown}
@@ -161,20 +175,25 @@ export default function RegisterScreen({ navigation }) {
           </View>
         )}
 
-        {/* Personal Information Section */}
-        <Text style={styles.sectionLabel}>Personal Information</Text>
+        {/* Personal Information Section - Hidden for Host Org */}
+        {role !== 'host_org' && (
+          <>
+            <Text style={styles.sectionLabel}>Personal Information</Text>
 
-        {/* Full Name */}
-        <View style={styles.inputWrap}>
-          <Ionicons name="person-outline" size={20} color={BLUE} style={styles.inputIcon} />
-          <TextInput
-            style={styles.input}
-            placeholder="Full Name"
-            placeholderTextColor={GRAY}
-            value={form.full_name}
-            onChangeText={(v) => handleChange('full_name', v)}
-          />
-        </View>
+            {/* Full Name */}
+            <View style={styles.inputWrap}>
+              <Ionicons name="person-outline" size={20} color={BLUE} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Full Name"
+                placeholderTextColor={GRAY}
+                underlineColorAndroid="transparent"
+                value={form.full_name}
+                onChangeText={(v) => handleChange('full_name', v)}
+              />
+            </View>
+          </>
+        )}
 
         {/* Email */}
         <View style={styles.inputWrap}>
@@ -183,6 +202,7 @@ export default function RegisterScreen({ navigation }) {
             style={styles.input}
             placeholder="Email"
             placeholderTextColor={GRAY}
+            underlineColorAndroid="transparent"
             value={form.email}
             onChangeText={(v) => handleChange('email', v)}
             keyboardType="email-address"
@@ -197,6 +217,7 @@ export default function RegisterScreen({ navigation }) {
             style={styles.input}
             placeholder="Password"
             placeholderTextColor={GRAY}
+            underlineColorAndroid="transparent"
             value={form.password}
             onChangeText={(v) => handleChange('password', v)}
             secureTextEntry
@@ -210,6 +231,7 @@ export default function RegisterScreen({ navigation }) {
             style={styles.input}
             placeholder="Confirm Password"
             placeholderTextColor={GRAY}
+            underlineColorAndroid="transparent"
             value={form.confirm_password}
             onChangeText={(v) => handleChange('confirm_password', v)}
             secureTextEntry
@@ -223,6 +245,7 @@ export default function RegisterScreen({ navigation }) {
             style={styles.input}
             placeholder="Phone Number"
             placeholderTextColor={GRAY}
+            underlineColorAndroid="transparent"
             value={form.phone}
             onChangeText={(v) => handleChange('phone', v)}
             keyboardType="phone-pad"
@@ -240,6 +263,7 @@ export default function RegisterScreen({ navigation }) {
                 style={styles.input}
                 placeholder="Registration Number"
                 placeholderTextColor={GRAY}
+                underlineColorAndroid="transparent"
                 value={form.reg_number}
                 onChangeText={(v) => handleChange('reg_number', v)}
                 autoCapitalize="characters"
@@ -252,6 +276,7 @@ export default function RegisterScreen({ navigation }) {
                 style={styles.input}
                 placeholder="Department"
                 placeholderTextColor={GRAY}
+                underlineColorAndroid="transparent"
                 value={form.department}
                 onChangeText={(v) => handleChange('department', v)}
               />
@@ -263,6 +288,7 @@ export default function RegisterScreen({ navigation }) {
                 style={styles.input}
                 placeholder="Year of Study"
                 placeholderTextColor={GRAY}
+                underlineColorAndroid="transparent"
                 value={form.year_of_study}
                 onChangeText={(v) => handleChange('year_of_study', v)}
                 keyboardType="numeric"
@@ -282,6 +308,7 @@ export default function RegisterScreen({ navigation }) {
                 style={styles.input}
                 placeholder="Department"
                 placeholderTextColor={GRAY}
+                underlineColorAndroid="transparent"
                 value={form.department}
                 onChangeText={(v) => handleChange('department', v)}
               />
@@ -300,6 +327,7 @@ export default function RegisterScreen({ navigation }) {
                 style={styles.input}
                 placeholder="Organization Name"
                 placeholderTextColor={GRAY}
+                underlineColorAndroid="transparent"
                 value={form.org_name}
                 onChangeText={(v) => handleChange('org_name', v)}
               />
@@ -311,6 +339,7 @@ export default function RegisterScreen({ navigation }) {
                 style={styles.input}
                 placeholder="Industry/Sector"
                 placeholderTextColor={GRAY}
+                underlineColorAndroid="transparent"
                 value={form.industry}
                 onChangeText={(v) => handleChange('industry', v)}
               />
@@ -322,6 +351,7 @@ export default function RegisterScreen({ navigation }) {
                 style={styles.input}
                 placeholder="Physical Address"
                 placeholderTextColor={GRAY}
+                underlineColorAndroid="transparent"
                 value={form.location}
                 onChangeText={(v) => handleChange('location', v)}
               />
@@ -333,6 +363,7 @@ export default function RegisterScreen({ navigation }) {
                 style={styles.input}
                 placeholder="Official Email"
                 placeholderTextColor={GRAY}
+                underlineColorAndroid="transparent"
                 value={form.official_email}
                 onChangeText={(v) => handleChange('official_email', v)}
                 keyboardType="email-address"
@@ -346,6 +377,7 @@ export default function RegisterScreen({ navigation }) {
                 style={styles.input}
                 placeholder="Website (optional)"
                 placeholderTextColor={GRAY}
+                underlineColorAndroid="transparent"
                 value={form.website}
                 onChangeText={(v) => handleChange('website', v)}
                 autoCapitalize="none"
@@ -362,10 +394,15 @@ export default function RegisterScreen({ navigation }) {
           <View style={[styles.checkbox, agreeTerms && styles.checkboxChecked]}>
             {agreeTerms && <Ionicons name="checkmark" size={12} color={WHITE} />}
           </View>
-          <Text style={styles.termsText}>I agree to </Text>
-          <TouchableOpacity>
-            <Text style={styles.termsLink}>Terms & Conditions</Text>
-          </TouchableOpacity>
+          <Text style={styles.termsText}>
+            I agree to the Terms & Conditions and{' '}
+            <Text
+              style={styles.termsLink}
+              onPress={() => navigation.navigate('PrivacyPolicy')}
+            >
+              Privacy Policy
+            </Text>
+          </Text>
         </TouchableOpacity>
 
         {/* Sign Up Button */}
@@ -376,7 +413,7 @@ export default function RegisterScreen({ navigation }) {
           activeOpacity={0.85}
         >
           {loading ? (
-            <ActivityIndicator color={WHITE} />
+            <Spinner color={WHITE} size="small" />
           ) : (
             <Text style={styles.signUpText}>Register</Text>
           )}
@@ -425,11 +462,33 @@ const styles = StyleSheet.create({
     color: WHITE,
     letterSpacing: 0.5,
   },
-  headerSubtitle: {
+  subtitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    gap: 8,
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+  },
+  subtitleText: {
     fontSize: 13,
-    color: BLUE,
-    fontWeight: '500',
-    marginTop: 4,
+    color: WHITE,
+    fontWeight: '600',
+    textAlign: 'center',
+    flexShrink: 1,
+  },
+  goldLine: {
+    height: 2,
+    backgroundColor: GOLD,
+    maxWidth: 50,
+    flex: 1,
+  },
+  headerAcronym: {
+    fontSize: 20,
+    fontWeight: '850',
+    color: WHITE,
+    letterSpacing: 5,
+    marginTop: 6,
   },
   headerIcon: {
     padding: 8,
@@ -437,15 +496,15 @@ const styles = StyleSheet.create({
 
   // Wave divider
   waveDivider: {
-    height: 24,
+    height:34,
     backgroundColor: NAVY,
-    borderBottomLeftRadius: 32,
-    borderBottomRightRadius: 32,
+    borderBottomLeftRadius: 1000,
+    borderBottomRightRadius: 1000,
   },
 
   // Form
   formContainer: {
-    flex: 1,
+    flex: 2,
     backgroundColor: WHITE,
   },
   formContent: {
@@ -494,9 +553,9 @@ const styles = StyleSheet.create({
   roleOption: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
+    paddingHorizontal:20,
+    paddingVertical: 15,
+    borderBottomWidth: 5,
     borderBottomColor: BORDER,
   },
   roleOptionSelected: {
@@ -517,27 +576,30 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: INPUT_BG,
-    borderWidth: 1.5,
-    borderColor: BLUE,
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    marginBottom: 14,
-    height: 56,
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 28,
+    paddingHorizontal: 20,
+    marginBottom: 16,
+    height: 66,
   },
   inputIcon: {
     marginRight: 12,
   },
   input: {
     flex: 1,
-    fontSize: 15,
+    fontSize: 16,
     color: NAVY,
     fontWeight: '500',
+    paddingVertical: 12,
+    paddingRight: 8,
+    textAlignVertical: 'center',
   },
 
   // Terms checkbox
   termsRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 24,
     gap: 10,
   },
@@ -558,6 +620,9 @@ const styles = StyleSheet.create({
   termsText: {
     fontSize: 14,
     color: NAVY,
+    flex: 1,
+    flexWrap: 'wrap',
+    lineHeight: 20,
   },
   termsLink: {
     fontSize: 14,

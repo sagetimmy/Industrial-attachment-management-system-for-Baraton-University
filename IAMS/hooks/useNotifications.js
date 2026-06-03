@@ -7,9 +7,11 @@ export const useNotifications = () => {
   const fetchUnreadCount = useCallback(async () => {
     try {
       const res = await api.get('/notifications/unread-count');
-      setUnreadCount(res.data.count);
+      setUnreadCount(res.data.count || 0);
     } catch (err) {
-      console.error('Failed to fetch unread count');
+      console.error('Failed to fetch unread count:', err.message);
+      // Silently fail - don't crash the app
+      setUnreadCount(0);
     }
   }, []);
 

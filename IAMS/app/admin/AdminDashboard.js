@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, Alert, ActivityIndicator,
+  ScrollView, Alert,
   RefreshControl, StatusBar, Dimensions,
   Modal, FlatList,
 } from 'react-native';
@@ -9,6 +9,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import api from '../../api/axios';
+import { useAuth } from '../../context/AuthContext';
+import Spinner from '../../components/Spinner';
 
 const NAVY      = '#0D1B2E';
 const NAVY_CARD = '#162338';
@@ -47,6 +49,36 @@ function ActionIcon({ name }) {
   };
   const icon = icons[name] || { name: 'dots-horizontal' };
   return <MaterialCommunityIcons name={icon.name} size={28} color={TEAL} />;
+}
+
+// ── User Menu Panel ────────────────────────────────────────────────────────
+function UserMenuPanel({ visible, user, onClose, onLogout }) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
+        <TouchableOpacity activeOpacity={1} style={styles.userMenuPanel}>
+          {/* Profile Section */}
+          <View style={styles.userMenuHeader}>
+            <View style={[styles.avatar, { backgroundColor: '#1A3A6E', width: 48, height: 48 }]}>
+              <Text style={styles.avatarText}>{user?.full_name?.charAt(0).toUpperCase() || 'A'}</Text>
+            </View>
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={styles.userMenuName}>{user?.full_name || 'Admin'}</Text>
+              <Text style={styles.userMenuEmail}>{user?.email}</Text>
+            </View>
+          </View>
+
+          <View style={styles.userMenuDivider} />
+
+          {/* Menu Items */}
+          <TouchableOpacity style={styles.userMenuItem} onPress={() => { onClose(); onLogout(); }}>
+            <MaterialCommunityIcons name="logout-variant" size={20} color={RED} />
+            <Text style={[styles.userMenuItemText, { color: RED }]}>Logout</Text>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
 }
 
 // ── Notification Panel ──────────────────────────────────────────────────────
@@ -101,6 +133,7 @@ function NotificationPanel({ visible, notifications, unreadCount, onClose, onMar
 }
 
 export default function AdminDashboard({ navigation }) {
+  const { user, logout } = useAuth();
   const [data, setData]               = useState(null);
   const [loading, setLoading]         = useState(true);
   const [refreshing, setRefreshing]   = useState(false);
@@ -110,6 +143,9 @@ export default function AdminDashboard({ navigation }) {
   const [notifications, setNotifications]   = useState([]);
   const [unreadCount, setUnreadCount]       = useState(0);
   const [notifVisible, setNotifVisible]     = useState(false);
+
+  // ── User menu state ──
+  const [userMenuVisible, setUserMenuVisible] = useState(false);
 
   const fetchDashboard = async () => {
     try {
@@ -151,6 +187,23 @@ export default function AdminDashboard({ navigation }) {
   const handleBellPress = () => {
     setNotifVisible(true);
     fetchNotifications(); // refresh on open
+  };
+
+  const handleLogout = () => {
+    Alert.alert('Logout', 'Are you sure you want to logout?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Logout',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await logout();
+          } catch (err) {
+            Alert.alert('Error', 'Failed to logout');
+          }
+        },
+      },
+    ]);
   };
 
   const handleMarkAllRead = async () => {
@@ -198,7 +251,7 @@ export default function AdminDashboard({ navigation }) {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={TEAL} />
+        <Spinner size="large" color={TEAL} />
         <Text style={styles.loadingText}>Loading dashboard...</Text>
       </View>
     );
@@ -328,22 +381,38 @@ export default function AdminDashboard({ navigation }) {
         onMarkRead={handleMarkRead}
       />
 
+      <UserMenuPanel
+        visible={userMenuVisible}
+        user={user}
+        onClose={() => setUserMenuVisible(false)}
+        onLogout={handleLogout}
+      />
+
       {/* ── DARK NAVY TOP SECTION ── */}
       <View style={styles.navySection}>
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Admin Dashboard</Text>
 
-          {/* Bell with live unread count badge */}
-          <TouchableOpacity style={styles.bellWrap} onPress={handleBellPress}>
-            <Ionicons name="notifications-outline" size={24} color={WHITE} />
-            {unreadCount > 0 && (
-              <View style={styles.bellBadge}>
-                <Text style={styles.bellBadgeText}>
-                  {unreadCount > 99 ? '99+' : unreadCount}
-                </Text>
+          <View style={styles.headerActions}>
+            {/* Bell with live unread count badge */}
+            <TouchableOpacity style={styles.bellWrap} onPress={handleBellPress}>
+              <Ionicons name="notifications-outline" size={24} color={WHITE} />
+              {unreadCount > 0 && (
+                <View style={styles.bellBadge}>
+                  <Text style={styles.bellBadgeText}>
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+
+            {/* User Profile Icon */}
+            <TouchableOpacity style={styles.profileWrap} onPress={() => setUserMenuVisible(true)}>
+              <View style={[styles.avatar, { width: 36, height: 36, backgroundColor: TEAL }]}>
+                <Text style={[styles.avatarText, { fontSize: 16 }]}>{user?.full_name?.charAt(0).toUpperCase() || 'A'}</Text>
               </View>
-            )}
-          </TouchableOpacity>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={styles.statsGrid}>
@@ -440,7 +509,7 @@ export default function AdminDashboard({ navigation }) {
         {/* Recent Activity */}
         <View style={styles.sectionRow}>
           <Text style={styles.sectionTitle}>Recent Activity</Text>
-          <TouchableOpacity style={styles.viewAllBtn} onPress={() => navigation.navigate('ManageUsers')}>
+          <TouchableOpacity style={styles.viewAllBtn} onPress={() => navigation.navigate('AdminActivities')}>
             <Text style={styles.viewAllText}>View All</Text>
             <Ionicons name="chevron-forward" size={14} color={GRAY} />
           </TouchableOpacity>
@@ -555,12 +624,14 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row', alignItems: 'center',
-    paddingTop: 8, paddingBottom: 20,
+    paddingTop: 8, paddingBottom: 20, justifyContent: 'space-between',
   },
-  headerTitle: { flex: 1, fontSize: 18, fontWeight: '700', color: WHITE },
+  headerTitle: { fontSize: 18, fontWeight: '700', color: WHITE },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 12 },
 
   // Bell with count badge
-  bellWrap: { position: 'relative', padding: 4, marginLeft: 12 },
+  bellWrap: { position: 'relative', padding: 4 },
+  profileWrap: { padding: 4 },
   bellBadge: {
     position: 'absolute', top: 0, right: 0,
     backgroundColor: RED, borderRadius: 10,
@@ -682,6 +753,26 @@ const styles = StyleSheet.create({
   notifMessageUnread: { color: DARK, fontWeight: '600' },
   notifTime: { fontSize: 11, color: GRAY, marginTop: 4 },
   notifDivider: { height: 1, backgroundColor: BORDER, marginHorizontal: 16 },
+
+  // User Menu Panel
+  userMenuPanel: {
+    backgroundColor: WHITE, borderRadius: 16,
+    width: width * 0.75, maxHeight: 240,
+    marginTop: 60, marginRight: 12,
+    elevation: 8, overflow: 'hidden',
+  },
+  userMenuHeader: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 16, paddingVertical: 16,
+  },
+  userMenuName: { fontSize: 15, fontWeight: '700', color: DARK },
+  userMenuEmail: { fontSize: 12, color: GRAY, marginTop: 2 },
+  userMenuDivider: { height: 1, backgroundColor: BORDER },
+  userMenuItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingHorizontal: 16, paddingVertical: 14,
+  },
+  userMenuItemText: { fontSize: 14, fontWeight: '600', color: DARK },
 
   tabBar: {
     flexDirection: 'row', backgroundColor: WHITE,

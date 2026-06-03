@@ -22,15 +22,21 @@ router.get('/', protect, async (req, res) => {
 // GET /api/notifications/unread-count
 router.get('/unread-count', protect, async (req, res) => {
   try {
-    const { count, error } = await supabase
+    const { data, error } = await supabase
       .from('notifications')
-      .select('*', { count: 'exact', head: true })
+      .select('*')
       .eq('user_id', req.user.user_id)
       .eq('is_read', false);
 
-    if (error) throw error;
+    if (error) {
+      console.error('Unread count query error:', error);
+      throw error;
+    }
+    
+    const count = data?.length || 0;
     res.json({ count });
   } catch (err) {
+    console.error('GET /unread-count error:', err.message);
     res.status(500).json({ message: err.message });
   }
 });

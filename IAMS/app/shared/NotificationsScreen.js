@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, Alert, ActivityIndicator, RefreshControl
+  ScrollView, Alert, RefreshControl
 } from 'react-native';
 import { COLORS } from '../../constants/colors';
 import api from '../../api/axios';
+import Spinner from '../../components/Spinner';
 
 export default function NotificationsScreen({ navigation }) {
   const [notifications, setNotifications] = useState([]);
@@ -110,7 +111,7 @@ export default function NotificationsScreen({ navigation }) {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Spinner size="large" color={COLORS.primary} />
         <Text style={styles.loadingText}>Loading notifications...</Text>
       </View>
     );

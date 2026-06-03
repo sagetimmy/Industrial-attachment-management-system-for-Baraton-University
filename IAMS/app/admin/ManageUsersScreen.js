@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, Alert, ActivityIndicator, RefreshControl, TextInput
+  ScrollView, Alert, RefreshControl, TextInput
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS } from '../../constants/colors';
 import api from '../../api/axios';
+import Spinner from '../../components/Spinner';
 
 export default function ManageUsersScreen({ navigation, route }) {
   const initialRole = route?.params?.role || 'student';
@@ -114,7 +115,7 @@ export default function ManageUsersScreen({ navigation, route }) {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#1B6B5A" />
+        <Spinner size="large" color="#1B6B5A" />
         <Text style={styles.loadingText}>Loading users...</Text>
       </View>
     );

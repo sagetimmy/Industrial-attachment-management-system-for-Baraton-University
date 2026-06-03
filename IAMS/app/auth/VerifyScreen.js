@@ -1,14 +1,23 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
-  StyleSheet, Alert, ActivityIndicator
+  StyleSheet, Alert, ScrollView,
 } from 'react-native';
-import { useTheme } from '../../context/ThemeContext';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
+import Spinner from '../../components/Spinner';
+
+// Educational theme colors
+const NAVY   = '#0D1B3E';
+const BLUE   = '#1A56DB';
+const GOLD   = '#D4A017';
+const WHITE  = '#FFFFFF';
+const GRAY   = '#9CA3AF';
+const INPUT_BG = '#F3F6FB';
+const BORDER   = '#D1D9E6';
 
 export default function VerifyScreen({ navigation, route }) {
   const { verifyEmail, resendVerificationCode } = useAuth();
-  const { theme } = useTheme();
   const { email } = route.params;
   const [code, setCode] = useState(['', '', '', '', '', '']);
   const [loading, setLoading] = useState(false);
@@ -27,7 +36,7 @@ export default function VerifyScreen({ navigation, route }) {
     const newCode = [...code];
     newCode[index] = text;
     setCode(newCode);
-    if (text && index < 5) inputs.current[index + 1].focus();
+    if (text && index < 5) inputs.current[index + 1]?.focus();
   };
 
   const handleBackspace = (e, index) => {
@@ -71,20 +80,37 @@ export default function VerifyScreen({ navigation, route }) {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <View style={[styles.header, { backgroundColor: theme.secondary }]}>
-        <Text style={styles.icon}>📧</Text>
-        <Text style={[styles.title, { color: theme.white }]}>Verify Your Email</Text>
-        <Text style={[styles.subtitle, { color: theme.gray }]}>
-          We sent a 6-digit code to:
-        </Text>
-        <Text style={[styles.email, { color: theme.primary }]}>{email}</Text>
+    <View style={styles.root}>
+      {/* ── Navy header section ── */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <Ionicons name="arrow-back" size={24} color={WHITE} />
+        </TouchableOpacity>
+
+        <View style={styles.headerContent}>
+          <Text style={styles.headerTitle}>Verify Email</Text>
+          <Text style={styles.headerSubtitle}>Enter the 6-digit code sent to</Text>
+          <Text style={styles.headerEmail}>{email}</Text>
+          <View style={styles.goldLine} />
+          <Text style={styles.headerAcronym}>IAMS</Text>
+        </View>
+
+        <View style={styles.headerIcon}>
+          <MaterialCommunityIcons name="email-check-outline" size={30} color={GOLD} />
+        </View>
       </View>
 
-      <View style={styles.body}>
-        <Text style={[styles.label, { color: theme.text }]}>Enter Verification Code</Text>
+      {/* ── Decorative wave divider ── */}
+      <View style={styles.waveDivider} />
 
-        {/* Code Input Boxes */}
+      <ScrollView
+        style={styles.formContainer}
+        contentContainerStyle={styles.formContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={styles.sectionLabel}>Verification Code</Text>
+
         <View style={styles.codeContainer}>
           {code.map((digit, index) => (
             <TextInput
@@ -92,11 +118,7 @@ export default function VerifyScreen({ navigation, route }) {
               ref={(ref) => (inputs.current[index] = ref)}
               style={[
                 styles.codeInput,
-                {
-                  borderColor: digit ? theme.primary : theme.gray,
-                  backgroundColor: digit ? `${theme.primary}15` : theme.surface,
-                  color: theme.text,
-                }
+                { borderColor: digit ? BLUE : BORDER }
               ]}
               value={digit}
               onChangeText={(text) => handleChange(text.slice(-1), index)}
@@ -109,72 +131,149 @@ export default function VerifyScreen({ navigation, route }) {
         </View>
 
         <TouchableOpacity
-          style={[styles.button, { backgroundColor: theme.primary }]}
+          style={[styles.primaryBtn, loading && { opacity: 0.7 }]}
           onPress={handleVerify}
           disabled={loading}
+          activeOpacity={0.85}
         >
-          {loading
-            ? <ActivityIndicator color={theme.white} />
-            : <Text style={styles.buttonText}>Verify Email ✓</Text>
-          }
+          {loading ? (
+            <Spinner color={WHITE} size="small" />
+          ) : (
+            <Text style={styles.primaryBtnText}>Verify Email</Text>
+          )}
         </TouchableOpacity>
 
-        {/* Resend */}
         <TouchableOpacity
-          style={[styles.resendBtn, countdown > 0 && styles.resendDisabled]}
+          style={styles.resendBtn}
           onPress={handleResend}
           disabled={countdown > 0 || resending}
         >
-          {resending
-            ? <ActivityIndicator color={theme.primary} size="small" />
-            : <Text style={[styles.resendText, countdown > 0 && { color: theme.textSecondary }]}>
-                {countdown > 0
-                  ? `Resend code in ${countdown}s`
-                  : 'Resend Code'
-                }
-              </Text>
-          }
+          {resending ? (
+            <Spinner color={BLUE} size="small" />
+          ) : (
+            <Text style={[styles.resendText, countdown > 0 && styles.resendDisabledText]}>
+              {countdown > 0 ? `Resend code in ${countdown}s` : 'Resend Code'}
+            </Text>
+          )}
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => navigation.navigate('Login')}>
-          <Text style={[styles.backText, { color: theme.secondary }]}>← Back to Login</Text>
-        </TouchableOpacity>
-      </View>
+        <View style={styles.signInRow}>
+          <Text style={styles.signInText}>Back to </Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Login')}>
+            <Text style={styles.signInLink}>Login</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  root: { flex: 1, backgroundColor: WHITE },
   header: {
-    paddingTop: 70, paddingBottom: 40,
+    backgroundColor: NAVY,
+    paddingTop: 40,
+    paddingBottom: 30,
+    paddingHorizontal: 20,
+    flexDirection: 'row',
     alignItems: 'center',
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
+    justifyContent: 'space-between',
   },
-  icon: { fontSize: 50, marginBottom: 10 },
-  title: { fontSize: 24, fontWeight: 'bold' },
-  subtitle: { fontSize: 14, marginTop: 8 },
-  email: { fontWeight: '700', fontSize: 15, marginTop: 4 },
-  body: { padding: 28, alignItems: 'center', marginTop: 20 },
-  label: { fontSize: 15, fontWeight: '600', marginBottom: 20 },
-  codeContainer: { flexDirection: 'row', justifyContent: 'center', gap: 10, marginBottom: 30 },
+  backBtn: { padding: 8 },
+  headerContent: { flex: 1, alignItems: 'center' },
+  headerTitle: {
+    fontSize: 26,
+    fontWeight: '900',
+    color: WHITE,
+    letterSpacing: 0.4,
+  },
+  headerSubtitle: {
+    fontSize: 13,
+    color: WHITE,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  headerEmail: {
+    fontSize: 13,
+    color: GOLD,
+    fontWeight: '700',
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  goldLine: {
+    height: 2,
+    backgroundColor: GOLD,
+    width: 150,
+    marginTop: 8,
+    borderRadius: 1,
+  },
+  headerAcronym: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: WHITE,
+    letterSpacing: 4,
+    marginTop: 6,
+  },
+  headerIcon: { padding: 8 },
+  waveDivider: {
+    height: 34,
+    backgroundColor: NAVY,
+    borderBottomLeftRadius: 1000,
+    borderBottomRightRadius: 1000,
+  },
+  formContainer: { flex: 1, backgroundColor: WHITE },
+  formContent: {
+    paddingHorizontal: 20,
+    paddingTop: 24,
+    paddingBottom: 40,
+  },
+  sectionLabel: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: NAVY,
+    marginBottom: 12,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  codeContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 10,
+    marginBottom: 24,
+  },
   codeInput: {
-    width: 48, height: 58,
-    borderWidth: 2,
-    borderRadius: 12, fontSize: 24,
-    fontWeight: 'bold',
+    width: 48,
+    height: 58,
+    borderWidth: 1.5,
+    borderRadius: 14,
+    fontSize: 22,
+    fontWeight: '700',
+    color: NAVY,
+    backgroundColor: INPUT_BG,
   },
-  button: {
-    paddingVertical: 15,
-    paddingHorizontal: 60,
-    borderRadius: 12,
-    width: '100%',
+  primaryBtn: {
+    backgroundColor: BLUE,
+    borderRadius: 14,
+    height: 56,
     alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    shadowColor: BLUE,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 6,
   },
-  buttonText: { color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' },
-  resendBtn: { marginTop: 20, padding: 10 },
-  resendDisabled: { opacity: 0.5 },
-  resendText: { fontSize: 14, fontWeight: '600' },
-  backText: { fontSize: 14, marginTop: 16 },
+  primaryBtnText: { color: WHITE, fontSize: 17, fontWeight: '700' },
+  resendBtn: { alignItems: 'center', paddingVertical: 6 },
+  resendText: { fontSize: 14, fontWeight: '600', color: BLUE },
+  resendDisabledText: { color: GRAY },
+  signInRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  signInText: { fontSize: 14, color: GRAY },
+  signInLink: { fontSize: 14, color: BLUE, fontWeight: '700' },
 });

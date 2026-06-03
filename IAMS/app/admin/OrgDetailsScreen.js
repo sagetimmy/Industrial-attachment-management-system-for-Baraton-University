@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, Alert, ActivityIndicator, TextInput
+  ScrollView, Alert, TextInput
 } from 'react-native';
 import { COLORS } from '../../constants/colors';
 import api from '../../api/axios';
+import Spinner from '../../components/Spinner';
 
 export default function OrgDetailsScreen({ navigation, route }) {
   const { orgId, orgName } = route.params;
@@ -73,7 +74,7 @@ export default function OrgDetailsScreen({ navigation, route }) {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Spinner size="large" color={COLORS.primary} />
       </View>
     );
   }
@@ -215,7 +216,7 @@ export default function OrgDetailsScreen({ navigation, route }) {
                   disabled={rejecting}
                 >
                   {rejecting
-                    ? <ActivityIndicator color={COLORS.white} size="small" />
+                    ? <Spinner color={COLORS.white} size="small" />
                     : <Text style={styles.confirmRejectText}>Confirm Reject</Text>
                   }
                 </TouchableOpacity>

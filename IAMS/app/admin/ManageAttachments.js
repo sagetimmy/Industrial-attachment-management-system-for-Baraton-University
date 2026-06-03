@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  ActivityIndicator,
   RefreshControl,
   TextInput,
   Modal,
@@ -15,6 +14,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import api from '../../api/axios';
 import { COLORS } from '../../constants/colors';
+import Spinner from '../../components/Spinner';
 
 const ManageAttachments = ({ navigation }) => {
   const { user } = useAuth();
@@ -164,7 +164,7 @@ const ManageAttachments = ({ navigation }) => {
 
         <ScrollView style={styles.detailsContent}>
           {detailsLoading ? (
-            <ActivityIndicator size="large" color={COLORS.primary} />
+            <Spinner size="large" color={COLORS.primary} />
           ) : attachmentDetails ? (
             <>
               {/* Main Info */}
@@ -344,7 +344,7 @@ const ManageAttachments = ({ navigation }) => {
       {/* Attachments List */}
       {loading && !refreshing ? (
         <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Spinner size="large" color={COLORS.primary} />
         </View>
       ) : attachments.length > 0 ? (
         <>

@@ -1,4 +1,5 @@
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
+import Spinner from './Spinner';
 
 /**
  * Reusable Loading Screen Component
@@ -9,7 +10,7 @@ export default function LoadingScreen({
 }) {
   return (
     <View style={styles.container}>
-      <ActivityIndicator size="large" color={color} />
+      <Spinner size="large" color={color} />
       <Text style={[styles.message, { color }]}>{message}</Text>
     </View>
   );

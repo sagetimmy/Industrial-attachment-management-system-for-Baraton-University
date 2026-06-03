@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
-  RefreshControl, ActivityIndicator, Alert,
+  RefreshControl, ActivityIndicator, Alert, TextInput, TouchableOpacity,
 } from 'react-native';
 import api from '../../api/axios';
 
@@ -16,10 +16,10 @@ const statusMeta = (status) => {
   switch (status) {
     case 'pending':
       return { label: 'PENDING', bg: '#FAEEDA', color: AMBER };
-    case 'ongoing':
+    case 'accepted':
       return { label: 'ACCEPTED', bg: '#E1F5EE', color: TEAL };
-    case 'completed':
-      return { label: 'COMPLETED', bg: '#E3F2FD', color: BLUE };
+    case 'more_info':
+      return { label: 'MORE INFO', bg: '#E3F2FD', color: BLUE };
     case 'rejected':
       return { label: 'REJECTED', bg: '#FCE8E8', color: RED };
     default:
@@ -31,10 +31,12 @@ export default function HostApplicants() {
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [responses, setResponses] = useState({});
+  const [submittingId, setSubmittingId] = useState(null);
 
   const fetchApplicants = async () => {
     try {
-      const res = await api.get('/host-orgs/dashboard');
+      const res = await api.get('/applications');
       setApplications(res.data?.applications || []);
     } catch (err) {
       Alert.alert('Error', err.response?.data?.message || 'Failed to load applicants');
@@ -51,9 +53,33 @@ export default function HostApplicants() {
     fetchApplicants();
   };
 
+  const handleRespond = async (app, status) => {
+    const message = (responses[app.application_id] || '').trim();
+    if (!message) {
+      Alert.alert('Message required', 'Please include a response message for the student.');
+      return;
+    }
+
+    setSubmittingId(app.application_id);
+    try {
+      await api.patch(`/applications/${app.application_id}/respond`, { status, message });
+      setApplications(prev => prev.map(item => (
+        item.application_id === app.application_id
+          ? { ...item, status, response_message: message, responded_at: new Date().toISOString() }
+          : item
+      )));
+      setResponses(prev => ({ ...prev, [app.application_id]: '' }));
+      Alert.alert('Response sent', 'Your response has been sent to the student.');
+    } catch (err) {
+      Alert.alert('Error', err.response?.data?.message || 'Failed to send response');
+    } finally {
+      setSubmittingId(null);
+    }
+  };
+
   const sortedApplications = useMemo(
     () => [...applications].sort((a, b) => {
-      const rank = { pending: 0, ongoing: 1, completed: 2, rejected: 3 };
+      const rank = { pending: 0, more_info: 1, accepted: 2, rejected: 3 };
       return (rank[a.status] ?? 9) - (rank[b.status] ?? 9);
     }),
     [applications]
@@ -90,20 +116,71 @@ export default function HostApplicants() {
         ) : (
           sortedApplications.map((app, index) => {
             const meta = statusMeta(app.status);
+            const isResponded = app.status === 'accepted' || app.status === 'rejected';
+            const isSubmitting = submittingId === app.application_id;
             return (
-              <View key={app.attachment_id ?? index} style={styles.card}>
-                <View style={styles.cardTop}>
-                  <Text style={styles.name}>{app.full_name || 'Applicant'}</Text>
-                  <View style={[styles.statusBadge, { backgroundColor: meta.bg }]}>
-                    <Text style={[styles.statusText, { color: meta.color }]}>{meta.label}</Text>
-                  </View>
+            <View key={app.application_id ?? index} style={styles.card}>
+              <View style={styles.cardTop}>
+                <Text style={styles.name}>{app.full_name || 'Applicant'}</Text>
+                <View style={[styles.statusBadge, { backgroundColor: meta.bg }]}>
+                  <Text style={[styles.statusText, { color: meta.color }]}>{meta.label}</Text>
                 </View>
-                <Text style={styles.detail}>Reg No: {app.reg_number || '—'}</Text>
-                <Text style={styles.detail}>Department: {app.department || '—'}</Text>
-                <Text style={styles.detail}>Year of Study: {app.year_of_study || '—'}</Text>
-                <Text style={styles.detail}>Phone: {app.phone || '—'}</Text>
               </View>
-            );
+              <Text style={styles.detail}>Reg No: {app.reg_number || '—'}</Text>
+              <Text style={styles.detail}>Department: {app.department || '—'}</Text>
+              <Text style={styles.detail}>Year of Study: {app.year_of_study || '—'}</Text>
+              <Text style={styles.detail}>Phone: {app.phone || '—'}</Text>
+              <Text style={styles.detail}>Period: {app.start_date} — {app.end_date}</Text>
+              <Text style={styles.detail}>Skills: {app.skills || '—'}</Text>
+              {!!app.supporting_info && (
+                <Text style={styles.detail}>Info: {app.supporting_info}</Text>
+              )}
+
+              {!!app.response_message && (
+                <View style={styles.responseBox}>
+                  <Text style={styles.responseLabel}>Latest Response</Text>
+                  <Text style={styles.responseText}>{app.response_message}</Text>
+                </View>
+              )}
+
+              <View style={styles.responseArea}>
+                <Text style={styles.responseTitle}>Respond to Applicant</Text>
+                <TextInput
+                  style={styles.responseInput}
+                  value={responses[app.application_id] || ''}
+                  onChangeText={(text) => setResponses(prev => ({ ...prev, [app.application_id]: text }))}
+                  placeholder="Write feedback or next steps..."
+                  placeholderTextColor={GRAY}
+                  multiline
+                  numberOfLines={3}
+                  editable={!isResponded && !isSubmitting}
+                />
+                <View style={styles.responseActions}>
+                  <TouchableOpacity
+                    style={[styles.actionBtn, styles.acceptBtn, (isResponded || isSubmitting) && styles.actionDisabled]}
+                    onPress={() => handleRespond(app, 'accepted')}
+                    disabled={isResponded || isSubmitting}
+                  >
+                    <Text style={styles.actionText}>Accept</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.actionBtn, styles.moreBtn, (isResponded || isSubmitting) && styles.actionDisabled]}
+                    onPress={() => handleRespond(app, 'more_info')}
+                    disabled={isResponded || isSubmitting}
+                  >
+                    <Text style={styles.actionText}>More Info</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.actionBtn, styles.rejectBtn, (isResponded || isSubmitting) && styles.actionDisabled]}
+                    onPress={() => handleRespond(app, 'rejected')}
+                    disabled={isResponded || isSubmitting}
+                  >
+                    <Text style={styles.actionText}>Reject</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          );
           })
         )}
         <View style={{ height: 28 }} />
@@ -150,4 +227,44 @@ const styles = StyleSheet.create({
   statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
   statusText: { fontSize: 11, fontWeight: '700' },
   detail: { color: GRAY, fontSize: 13, marginTop: 2 },
+  responseBox: {
+    marginTop: 10,
+    backgroundColor: '#F7F9FB',
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  responseLabel: { fontSize: 12, fontWeight: '700', color: DARK, marginBottom: 4 },
+  responseText: { fontSize: 12, color: GRAY },
+  responseArea: {
+    marginTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    paddingTop: 10,
+  },
+  responseTitle: { fontSize: 13, fontWeight: '700', color: DARK, marginBottom: 6 },
+  responseInput: {
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 10,
+    padding: 10,
+    minHeight: 70,
+    fontSize: 13,
+    color: DARK,
+    backgroundColor: '#FFFFFF',
+    textAlignVertical: 'top',
+  },
+  responseActions: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  actionBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  acceptBtn: { backgroundColor: TEAL },
+  moreBtn: { backgroundColor: BLUE },
+  rejectBtn: { backgroundColor: RED },
+  actionText: { color: '#FFFFFF', fontWeight: '700', fontSize: 12 },
+  actionDisabled: { opacity: 0.5 },
 });

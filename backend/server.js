@@ -21,6 +21,8 @@ app.use('/api/auth',          require('./routes/auth.routes'));
 app.use('/api/students',      require('./routes/student.routes'));
 app.use('/api/supervisors',   require('./routes/supervisor.routes'));
 app.use('/api/admin',         require('./routes/admin.routes'));
+app.use('/api/activities',    require('./routes/activities.routes'));
+app.use('/api/applications',  require('./routes/applications.routes'));
 app.use('/api/host-orgs',     require('./routes/hostOrg.routes'));
 app.use('/api/notifications', require('./routes/notifications.routes'));
 
@@ -30,4 +32,7 @@ app.get('/api/health', (req, res) => res.json({ status: 'IAMS API running ✅' }
 
 const PORT = process.env.PORT || 5000;
 const HOST = process.env.HOST || '0.0.0.0';
-app.listen(PORT, HOST, () => console.log(`Server running on http://${HOST}:${PORT}`));
+const server = app.listen(PORT, HOST, () => console.log(`Server running on http://${HOST}:${PORT}`));
+server.setTimeout(60000);
+server.keepAliveTimeout = 60000;
+server.headersTimeout = 65000;

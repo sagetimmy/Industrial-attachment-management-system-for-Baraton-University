@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
-  StyleSheet, Alert, ActivityIndicator, ScrollView,
+  StyleSheet, Alert, ScrollView,
   Dimensions
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
+import Spinner from '../../components/Spinner';
 
 const { height } = Dimensions.get('window');
 
@@ -29,7 +30,7 @@ export default function ForgotPasswordScreen({ navigation }) {
 
   const handleRequestCode = async () => {
     if (!email) {
-      Alert.alert('Error', 'Please enter your email address');
+      Alert.alert('Error', 'Please enter your email address !');
       return;
     }
 
@@ -83,10 +84,10 @@ export default function ForgotPasswordScreen({ navigation }) {
         </TouchableOpacity>
         
         <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>Reset Password</Text>
+          <Text style={styles.headerTitle}>Forgot your password?</Text>
           <Text style={styles.headerSubtitle}>
             {step === 1 
-              ? 'Enter your email to receive reset link' 
+              ? 'RESET YOUR PASSWORD' 
               : 'Enter the code sent to your email'}
           </Text>
         </View>
@@ -115,7 +116,7 @@ export default function ForgotPasswordScreen({ navigation }) {
         {step === 1 ? (
           <>
             <Text style={styles.instructionText}>
-              Enter your email address and we'll send you a password reset link
+              Enter an email address to receive a password reset code
             </Text>
 
             {/* Email input */}
@@ -135,7 +136,7 @@ export default function ForgotPasswordScreen({ navigation }) {
             {/* Helper text */}
             <View style={styles.helperBox}>
               <Ionicons name="shield-checkmark-outline" size={18} color={BLUE} />
-              <Text style={styles.helperText}>We will send you a password reset link via email</Text>
+              <Text style={styles.helperText}>We will send you a password reset code via email</Text>
             </View>
 
             {/* Send Reset Link button */}
@@ -146,10 +147,10 @@ export default function ForgotPasswordScreen({ navigation }) {
               activeOpacity={0.85}
             >
               {loading ? (
-                <ActivityIndicator color={WHITE} />
+                <Spinner color={WHITE} size="small" />
               ) : (
                 <>
-                  <Text style={styles.primaryBtnText}>Send Reset Link</Text>
+                  <Text style={styles.primaryBtnText}>Send Code</Text>
                   <Ionicons name="arrow-forward" size={20} color={WHITE} style={{ marginLeft: 8 }} />
                 </>
               )}
@@ -214,7 +215,7 @@ export default function ForgotPasswordScreen({ navigation }) {
               activeOpacity={0.85}
             >
               {loading ? (
-                <ActivityIndicator color={WHITE} />
+                <Spinner color={WHITE} size="small" />
               ) : (
                 <Text style={styles.primaryBtnText}>Reset Password</Text>
               )}
@@ -234,7 +235,7 @@ export default function ForgotPasswordScreen({ navigation }) {
 
         {/* Back to Login link */}
         <TouchableOpacity onPress={() => navigation.navigate('Login')}>
-          <Text style={styles.backToLoginLink}>Remember your password? Sign In</Text>
+          <Text style={styles.backToLoginLink}>Back to Login</Text>
         </TouchableOpacity>
 
         <View style={{ height: 40 }} />
@@ -252,8 +253,8 @@ const styles = StyleSheet.create({
   // Header
   header: {
     backgroundColor: NAVY,
-    paddingTop: 40,
-    paddingBottom: 30,
+    paddingTop: 45,
+    paddingBottom: 45,
     paddingHorizontal: 20,
     flexDirection: 'row',
     alignItems: 'center',
@@ -272,15 +273,15 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   headerSubtitle: {
-    fontSize: 13,
-    color: BLUE,
+    fontSize: 16,
+    color: WHITE,
     fontWeight: '500',
     marginTop: 4,
   },
 
   // Wave divider
   waveDivider: {
-    height: 24,
+    height: 25,
     backgroundColor: NAVY,
     borderBottomLeftRadius: 32,
     borderBottomRightRadius: 32,
@@ -309,7 +310,7 @@ const styles = StyleSheet.create({
 
   // Instruction text
   instructionText: {
-    fontSize: 15,
+    fontSize: 16,
     color: NAVY,
     textAlign: 'center',
     marginBottom: 24,
@@ -319,7 +320,7 @@ const styles = StyleSheet.create({
 
   // Email confirmation text (Step 2)
   emailConfirmText: {
-    fontSize: 15,
+    fontSize: 16,
     color: GRAY,
     textAlign: 'center',
     marginBottom: 8,
@@ -332,7 +333,7 @@ const styles = StyleSheet.create({
 
   // Input label
   inputLabel: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '600',
     color: NAVY,
     marginBottom: 8,

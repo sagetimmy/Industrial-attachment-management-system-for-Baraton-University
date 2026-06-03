@@ -1,11 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, Alert, ActivityIndicator, RefreshControl
+  ScrollView, Alert, ActivityIndicator, RefreshControl, Platform
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../api/axios';
 import { useNotifications } from '../../hooks/useNotifications';
+import { hasRolePermission } from '../../utils/permissions';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const TEAL = '#0F6E56';
 const TEAL_LIGHT = '#de210c';
@@ -15,13 +17,26 @@ const CORAL_LIGHT = '#b43b0f';
 const AMBER = '#BA7517';
 const AMBER_LIGHT = '#FAEEDA';
 
+const SETTINGS_KEY = 'iams_host_settings';
+const DEFAULT_SETTINGS = {
+  autoRefresh: true,
+  showAnalytics: true,
+};
+
+const Storage = {
+  getItem: async (key) => {
+    if (Platform.OS === 'web') return localStorage.getItem(key);
+    return AsyncStorage.getItem(key);
+  },
+};
+
 export default function HostDashboard({ navigation }) {
   const { user, logout } = useAuth();
   const { unreadCount } = useNotifications();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
 
   const fetchDashboard = async () => {
     try {
@@ -37,11 +52,31 @@ export default function HostDashboard({ navigation }) {
 
   useEffect(() => { fetchDashboard(); }, []);
 
+  const loadSettings = useCallback(async () => {
+    try {
+      const stored = await Storage.getItem(SETTINGS_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        setSettings({ ...DEFAULT_SETTINGS, ...parsed });
+      } else {
+        setSettings(DEFAULT_SETTINGS);
+      }
+    } catch {
+      setSettings(DEFAULT_SETTINGS);
+    }
+  }, []);
+
   useEffect(() => {
-    if (!autoRefreshEnabled) return;
+    loadSettings();
+    const unsubscribe = navigation.addListener('focus', loadSettings);
+    return unsubscribe;
+  }, [navigation, loadSettings]);
+
+  useEffect(() => {
+    if (!settings.autoRefresh) return;
     const interval = setInterval(() => { fetchDashboard(); }, 30000);
     return () => clearInterval(interval);
-  }, [autoRefreshEnabled]);
+  }, [settings.autoRefresh]);
 
   const handleLogout = () => {
     Alert.alert('Logout', 'Are you sure you want to logout?', [
@@ -51,7 +86,7 @@ export default function HostDashboard({ navigation }) {
   };
 
   const handleUpdateStatus = (attachmentId, studentName, newStatus) => {
-    const isAccepting = newStatus === 'ongoing';
+    const isAccepting = newStatus === 'approved';
     Alert.alert(
       isAccepting ? 'Confirm Placement' : 'Reject Application',
       isAccepting
@@ -64,10 +99,13 @@ export default function HostDashboard({ navigation }) {
           style: isAccepting ? 'default' : 'destructive',
           onPress: async () => {
             try {
+              console.log('Sending status update:', { attachmentId, status: newStatus });
               await api.put(`/host-orgs/application/${attachmentId}`, { status: newStatus });
               Alert.alert('Success!', `Application ${isAccepting ? 'accepted' : 'rejected'} successfully!`);
               fetchDashboard();
             } catch (err) {
+              console.error('Status update error:', err);
+              console.error('Error response:', err.response?.data);
               Alert.alert('Error', err.response?.data?.message || 'Failed to update application');
             }
           }
@@ -121,8 +159,13 @@ export default function HostDashboard({ navigation }) {
     );
   }
 
-  const activeStudents = data?.applications?.filter(a => a.status === 'ongoing') ?? [];
+  const activeStudents = data?.applications?.filter(a => ['approved', 'ongoing'].includes(a.status)) ?? [];
   const pendingApps    = data?.applications?.filter(a => a.status === 'pending') ?? [];
+  const effectiveUser = { ...user, permissions: data?.permissions || user?.permissions };
+  const canPostPlacements = hasRolePermission(effectiveUser, 'postPlacements');
+  const canViewAnalytics = hasRolePermission(effectiveUser, 'viewAnalytics');
+  const canEditOrgProfile = hasRolePermission(effectiveUser, 'editOrgProfile');
+  const analyticsVisible = canViewAnalytics && settings.showAnalytics;
   const ongoingCount = data?.stats?.ongoing ?? activeStudents.length;
   const pendingCount = data?.stats?.pending ?? pendingApps.length;
   const openVacancyCount = data?.org?.available_slots ?? 0;
@@ -170,8 +213,12 @@ export default function HostDashboard({ navigation }) {
             through our streamlined management suite.
           </Text>
           <TouchableOpacity
-            style={s.postBtn}
-            onPress={() => navigation.navigate('HostSlots')}
+            style={[s.postBtn, !canPostPlacements && { opacity: 0.55 }]}
+            onPress={() => (
+              canPostPlacements
+                ? navigation.navigate('PostVacancy')
+                : Alert.alert('Permission Disabled', 'Posting new vacancies is currently disabled.')
+            )}
           >
             <Text style={s.postBtnIcon}>⊕</Text>
             <Text style={s.postBtnText}>Post New Vacancy</Text>
@@ -179,7 +226,25 @@ export default function HostDashboard({ navigation }) {
         </View>
 
         {/* ── Stat cards ──────────────────────────────────────────────── */}
-        <View style={s.statCard}>
+        {!canViewAnalytics && (
+          <View style={s.permissionCard}>
+            <Text style={s.permissionTitle}>Analytics Disabled</Text>
+            <Text style={s.permissionText}>
+              Placement analytics are hidden for your organization account.
+            </Text>
+          </View>
+        )}
+
+        {canViewAnalytics && !settings.showAnalytics && (
+          <View style={s.permissionCard}>
+            <Text style={s.permissionTitle}>Analytics Hidden</Text>
+            <Text style={s.permissionText}>
+              Analytics cards are hidden in your Settings preferences.
+            </Text>
+          </View>
+        )}
+
+        {analyticsVisible && <View style={s.statCard}>
           <View style={s.statCardTop}>
             <Text style={s.statCardLabel}>CURRENT INTERNS</Text>
             <Text style={s.statCardIcon}>👥</Text>
@@ -188,9 +253,9 @@ export default function HostDashboard({ navigation }) {
           <Text style={s.statCardHint} numberOfLines={1}>
             <Text style={{ color: TEAL }}>{ongoingCount > 0 ? `${ongoingCount} active placement${ongoingCount === 1 ? '' : 's'}` : 'No active placements'}</Text>
           </Text>
-        </View>
+        </View>}
 
-        <View style={s.statCard}>
+        {analyticsVisible && <View style={s.statCard}>
           <View style={s.statCardTop}>
             <Text style={s.statCardLabel}>OPEN VACANCIES</Text>
             <Text style={s.statCardIcon}>💼</Text>
@@ -203,9 +268,9 @@ export default function HostDashboard({ navigation }) {
               ? `${openVacancyCount} slot${openVacancyCount === 1 ? '' : 's'} open`
               : 'No open vacancies'}
           </Text>
-        </View>
+        </View>}
 
-        <View style={s.statCard}>
+        {analyticsVisible && <View style={s.statCard}>
           <View style={s.statCardTop}>
             <Text style={s.statCardLabel}>PENDING APPS</Text>
             <Text style={s.statCardIcon}>📋</Text>
@@ -216,7 +281,7 @@ export default function HostDashboard({ navigation }) {
           <Text style={[s.statCardHint, { color: CORAL }]}>
             {pendingCount > 0 ? `${pendingCount} awaiting review` : 'All reviewed'}
           </Text>
-        </View>
+        </View>}
 
         {/* ── Active Interns Performance ───────────────────────────────── */}
         <View style={s.sectionHead}>
@@ -304,7 +369,7 @@ export default function HostDashboard({ navigation }) {
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={s.confirmBtn}
-                    onPress={() => handleUpdateStatus(app.attachment_id, app.full_name, 'ongoing')}
+                    onPress={() => handleUpdateStatus(app.attachment_id, app.full_name, 'approved')}
                   >
                     <Text style={s.confirmBtnText}>✓ Confirm Placement</Text>
                   </TouchableOpacity>
@@ -332,8 +397,12 @@ export default function HostDashboard({ navigation }) {
             </View>
           ))}
           <TouchableOpacity
-            style={s.editBtn}
-            onPress={() => navigation.navigate('HostProfile', { org: data?.org })}
+            style={[s.editBtn, !canEditOrgProfile && { opacity: 0.55 }]}
+            onPress={() => (
+              canEditOrgProfile
+                ? navigation.navigate('HostProfile', { org: data?.org })
+                : Alert.alert('Permission Disabled', 'Editing organization profile is currently disabled.')
+            )}
           >
             <Text style={s.editBtnText}>Edit Profile ✏️</Text>
           </TouchableOpacity>
@@ -539,6 +608,17 @@ const s = StyleSheet.create({
   },
   infoLabel: { fontSize: 13, color: '#888' },
   infoValue: { fontSize: 13, fontWeight: '600', color: '#222' },
+  permissionCard: {
+    backgroundColor: '#FFF8E1',
+    marginHorizontal: 16,
+    marginBottom: 12,
+    borderRadius: 16,
+    padding: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#D85A30',
+  },
+  permissionTitle: { fontSize: 15, fontWeight: '700', color: '#111', marginBottom: 4 },
+  permissionText: { fontSize: 13, color: '#666', lineHeight: 19 },
   editBtn: {
     backgroundColor: '#0F6E56',
     padding: 12, borderRadius: 10,

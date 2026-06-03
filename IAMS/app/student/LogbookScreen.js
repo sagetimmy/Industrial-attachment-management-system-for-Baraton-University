@@ -1,12 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ScrollView, Alert, ActivityIndicator, RefreshControl,
+  ScrollView, Alert, RefreshControl,
   FlatList,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import * as DocumentPicker from 'expo-document-picker';
+import { useAuth } from '../../context/AuthContext';
 import { COLORS } from '../../constants/colors';
-import api from '../../api/axios';
+import api, { requestWithRetry } from '../../api/axios';
+import { hasRolePermission } from '../../utils/permissions';
+import Spinner from '../../components/Spinner';
 
 const TEAL = '#0F6E56';
 const TEAL_LIGHT = '#E1F5EE';
@@ -24,6 +28,8 @@ function formatDateLabel(dateStr) {
 }
 
 export default function LogbookScreen({ navigation }) {
+  const { user } = useAuth();
+  const canEditLogbooks = hasRolePermission(user, 'editLogbooks');
   const [entries, setEntries] = useState([]);
   const [attachment, setAttachment] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -59,6 +65,11 @@ export default function LogbookScreen({ navigation }) {
   };
 
   useEffect(() => { fetchData(); }, []);
+  useFocusEffect(
+    useCallback(() => {
+      fetchData();
+    }, [])
+  );
 
   const pickDocument = async () => {
     try {
@@ -73,34 +84,61 @@ export default function LogbookScreen({ navigation }) {
   };
 
   const handleSubmit = async () => {
+    if (!canEditLogbooks) {
+      Alert.alert('Permission Disabled', 'Logbook submissions are currently disabled for students.');
+      return;
+    }
+
     if (!form.week_number || !form.description) {
       Alert.alert('Error', 'Week number and description are required');
       return;
     }
     setSubmitting(true);
     try {
-      const formData = new FormData();
-      formData.append('week_number', form.week_number);
-      formData.append('description', form.description);
-      formData.append('tasks_done', form.tasks_done);
-      formData.append('challenges', form.challenges);
-      if (document) {
-        formData.append('document', {
-          uri: document.uri,
-          name: document.name,
-          type: document.mimeType || 'application/octet-stream',
-        });
-      }
-      await api.post('/students/logbook', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      const buildFormData = () => {
+        const formData = new FormData();
+        formData.append('week_number', form.week_number);
+        formData.append('description', form.description);
+        formData.append('tasks_done', form.tasks_done);
+        formData.append('challenges', form.challenges);
+        if (document) {
+          formData.append('document', {
+            uri: document.uri,
+            name: document.name,
+            type: document.mimeType || 'application/octet-stream',
+          });
+        }
+        return formData;
+      };
+
+      await requestWithRetry(
+        () => api.post('/students/logbook', buildFormData(), {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          timeout: 45000,
+        }),
+        { retries: 3, baseDelay: 800 }
+      );
       Alert.alert('Success! 🎉', 'Logbook entry submitted successfully!');
       setForm({ week_number: '', description: '', tasks_done: '', challenges: '' });
       setDocument(null);
       setShowForm(false);
       fetchData();
     } catch (err) {
-      Alert.alert('Error', err.response?.data?.message || 'Failed to submit entry');
+      console.error('Logbook submit failed:', {
+        message: err.message,
+        status: err.response?.status,
+        data: err.response?.data,
+        url: err.config?.url,
+        baseURL: err.config?.baseURL,
+        timeout: err.config?.timeout,
+        fileSize: document?.size,
+        fileType: document?.mimeType,
+      });
+      const message = err.response?.data?.message
+        || (err.request && !err.response
+          ? 'Network error while submitting. Please check your connection and try again.'
+          : 'Failed to submit entry');
+      Alert.alert('Error', message);
     } finally {
       setSubmitting(false);
     }
@@ -122,7 +160,7 @@ export default function LogbookScreen({ navigation }) {
   if (loading) {
     return (
       <View style={s.loadingContainer}>
-        <ActivityIndicator size="large" color={TEAL} />
+        <Spinner size="large" color={TEAL} />
         <Text style={s.loadingText}>Loading logbook...</Text>
       </View>
     );
@@ -173,7 +211,15 @@ export default function LogbookScreen({ navigation }) {
       >
 
         {/* No active attachment */}
-        {!attachment || attachment.status !== 'ongoing' ? (
+        {!canEditLogbooks ? (
+          <View style={s.warningCard}>
+            <Text style={s.warningIcon}>🔒</Text>
+            <Text style={s.warningTitle}>Logbook Editing Disabled</Text>
+            <Text style={s.warningText}>
+              Students can view existing logbook entries, but new submissions are currently disabled.
+            </Text>
+          </View>
+        ) : !attachment || attachment.status !== 'ongoing' ? (
           <View style={s.warningCard}>
             <Text style={s.warningIcon}>⚠️</Text>
             <Text style={s.warningTitle}>No Active Attachment</Text>
@@ -260,7 +306,7 @@ export default function LogbookScreen({ navigation }) {
                   disabled={submitting}
                 >
                   {submitting
-                    ? <ActivityIndicator color="#fff" />
+                    ? <Spinner color="#fff" size="small" />
                     : <Text style={s.submitBtnText}>Submit Entry ✓</Text>
                   }
                 </TouchableOpacity>
@@ -288,7 +334,7 @@ export default function LogbookScreen({ navigation }) {
             <Text style={s.emptyText}>
               You have logged all activities for this week. Tap the button below to add a new session.
             </Text>
-            {attachment?.status === 'ongoing' && (
+            {canEditLogbooks && attachment?.status === 'ongoing' && (
               <TouchableOpacity style={s.addManuallyBtn} onPress={() => setShowForm(true)}>
                 <Text style={s.addManuallyText}>ADD MANUALLY</Text>
               </TouchableOpacity>
@@ -329,21 +375,28 @@ export default function LogbookScreen({ navigation }) {
                   s.statusBadge,
                   entry.status === 'approved' ? s.statusApproved
                   : entry.status === 'rejected' ? s.statusRejected
+                  : entry.status === 'revision' ? s.statusRevision
                   : s.statusPending,
                 ]}>
                   <Text style={[
                     s.statusText,
                     entry.status === 'approved' ? s.statusTextApproved
                     : entry.status === 'rejected' ? s.statusTextRejected
+                    : entry.status === 'revision' ? s.statusTextRevision
                     : s.statusTextPending,
                   ]}>
                     {entry.status === 'approved' ? '✓ APPROVED'
                       : entry.status === 'rejected' ? '✕ REJECTED'
+                      : entry.status === 'revision' ? '↺ REVISION REQUESTED'
                       : '⏳ PENDING'}
                   </Text>
                 </View>
                 <TouchableOpacity
-                  onPress={() => navigation.navigate('LogbookDetail', { entry })}
+                  onPress={() => navigation.navigate('LogbookDetail', {
+                    entry,
+                    attachment,
+                    totalEntries: entries.length,
+                  })}
                 >
                   <Text style={s.viewDetails}>View Details</Text>
                 </TouchableOpacity>
@@ -356,7 +409,7 @@ export default function LogbookScreen({ navigation }) {
       </ScrollView>
 
       {/* FAB */}
-      {attachment?.status === 'ongoing' && !showForm && (
+      {canEditLogbooks && attachment?.status === 'ongoing' && !showForm && (
         <TouchableOpacity style={s.fab} onPress={() => setShowForm(true)}>
           <Text style={s.fabIcon}>+</Text>
         </TouchableOpacity>
@@ -543,10 +596,12 @@ const s = StyleSheet.create({
   statusApproved: { backgroundColor: TEAL_LIGHT },
   statusPending: { backgroundColor: CORAL_LIGHT },
   statusRejected: { backgroundColor: '#FCE8E8' },
+  statusRevision: { backgroundColor: AMBER_LIGHT },
   statusText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.3 },
   statusTextApproved: { color: TEAL },
   statusTextPending: { color: CORAL },
   statusTextRejected: { color: '#C62828' },
+  statusTextRevision: { color: AMBER },
   viewDetails: {
     fontSize: 13, color: '#333', fontWeight: '600',
     textDecorationLine: 'underline',

@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, Alert, StatusBar, ActivityIndicator, RefreshControl,
+  ScrollView, Alert, StatusBar, RefreshControl,
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useNotifications } from '../../hooks/useNotifications';
 import api from '../../api/axios';
+import Spinner from '../../components/Spinner';
 
 const TEAL = '#0F6E56';
 const TEAL_LIGHT = '#E1F5EE';
@@ -22,18 +23,29 @@ export default function StudentDashboard({ navigation }) {
 
   const [attachment, setAttachment] = useState(null);
   const [logbookEntries, setLogbookEntries] = useState([]);
+  const [applications, setApplications] = useState([]);
+  const [latestApplication, setLatestApplication] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchData = async () => {
     try {
-      const [attachRes, logbookRes] = await Promise.all([
+      console.log('Fetching student dashboard data...');
+      const [attachRes, logbookRes, appsRes] = await Promise.all([
         api.get('/students/my-attachment'),
         api.get('/students/logbook'),
+        api.get('/applications'),
       ]);
+      console.log('Attachment data:', attachRes.data);
+      console.log('Logbook entries:', logbookRes.data);
       setAttachment(attachRes.data);
       setLogbookEntries(logbookRes.data ?? []);
+      const apps = appsRes.data?.applications || [];
+      setApplications(apps);
+      setLatestApplication(apps[0] || null);
     } catch (err) {
+      console.error('Dashboard fetch error:', err.message);
+      console.error('Error response:', err.response?.data);
       Alert.alert('Error', 'Failed to load dashboard data');
     } finally {
       setLoading(false);
@@ -89,6 +101,7 @@ export default function StudentDashboard({ navigation }) {
       title: 'Notifications', icon: '🔔', screen: 'Notifications', color: '#6A1B9A',
       badge: unreadCount,
     },
+    { title: 'Settings',            icon: '⚙️', screen: 'StudentSettings', color: '#0F6E56' },
   ];
 
   const statusColor = (status) => {
@@ -102,6 +115,16 @@ export default function StudentDashboard({ navigation }) {
     }
   };
 
+  const applicationMeta = (status) => {
+    switch (status) {
+      case 'accepted':  return { label: 'ACCEPTED', bg: TEAL_LIGHT, text: TEAL };
+      case 'rejected':  return { label: 'REJECTED', bg: '#FCE8E8', text: '#C62828' };
+      case 'more_info': return { label: 'MORE INFO', bg: '#E3F2FD', text: '#185FA5' };
+      case 'pending':
+      default:          return { label: 'PENDING', bg: AMBER_LIGHT, text: AMBER };
+    }
+  };
+
   const timeAgo = (dateStr) => {
     if (!dateStr) return '';
     const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000);
@@ -111,10 +134,19 @@ export default function StudentDashboard({ navigation }) {
     return `${Math.floor(diff / 86400)}d ago`;
   };
 
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good morning';
+    if (hour < 18) return 'Good afternoon';
+    return 'Good evening';
+  };
+
+  const firstName = (user?.full_name ?? '').trim().split(/\s+/)[0] || 'Student';
+
   if (loading) {
     return (
       <View style={[s.loadingContainer, { backgroundColor: theme.surface }]}>
-        <ActivityIndicator size="large" color={TEAL} />
+        <Spinner size="large" color={TEAL} />
         <Text style={[s.loadingText, { color: theme.textSecondary }]}>Loading dashboard...</Text>
       </View>
     );
@@ -139,7 +171,7 @@ export default function StudentDashboard({ navigation }) {
               </Text>
             </View>
             <Text style={[s.greetingText, { color: theme.text }]}>
-              Good morning, {user?.full_name?.split(' ')[0] ?? 'Student'} 👋
+              {getGreeting()}, {firstName} 👋
             </Text>
           </View>
           <TouchableOpacity
@@ -185,6 +217,30 @@ export default function StudentDashboard({ navigation }) {
                 </View>
                 <Text style={s.daysRemainingText}>{daysLeft} days remaining</Text>
               </>
+            )}
+          </View>
+        ) : latestApplication ? (
+          <View style={s.applicationCard}>
+            <View style={s.heroTop}>
+              <View style={{ flex: 1, marginRight: 10 }}>
+                <Text style={s.heroCompany}>{latestApplication.org_name ?? 'Preferred Organization'}</Text>
+                <Text style={s.heroRole}>
+                  {latestApplication.start_date && latestApplication.end_date
+                    ? `Period: ${new Date(latestApplication.start_date).toLocaleDateString()} — ${new Date(latestApplication.end_date).toLocaleDateString()}`
+                    : 'Attachment period submitted'}
+                </Text>
+              </View>
+              <View style={[s.statusPill, { backgroundColor: applicationMeta(latestApplication.status).bg }]}>
+                <Text style={[s.statusPillText, { color: applicationMeta(latestApplication.status).text }]}>
+                  {applicationMeta(latestApplication.status).label}
+                </Text>
+              </View>
+            </View>
+            {!!latestApplication.response_message && (
+              <View style={s.responseBox}>
+                <Text style={s.responseLabel}>Host Organization Response</Text>
+                <Text style={s.responseText}>{latestApplication.response_message}</Text>
+              </View>
             )}
           </View>
         ) : (
@@ -311,7 +367,6 @@ export default function StudentDashboard({ navigation }) {
         {[
           { label: 'HOME',    icon: '🏠', screen: null },
           { label: 'LOGBOOK', icon: '📖', screen: 'Logbook' },
-          { label: 'REPORTS', icon: '📄', screen: 'Reports' },
           { label: 'PROFILE', icon: '👤', screen: 'Profile' },
         ].map((tab) => (
           <TouchableOpacity
@@ -370,6 +425,14 @@ const s = StyleSheet.create({
     backgroundColor: TEAL,
     borderRadius: 18, padding: 20,
   },
+  applicationCard: {
+    margin: 16, marginTop: 4,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.08)',
+  },
   heroTop: {
     flexDirection: 'row', justifyContent: 'space-between',
     alignItems: 'flex-start', marginBottom: 20,
@@ -388,6 +451,14 @@ const s = StyleSheet.create({
   progressTrack: { height: 6, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 3 },
   progressFill: { height: 6, backgroundColor: '#5DCAA5', borderRadius: 3 },
   daysRemainingText: { color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 8 },
+  responseBox: {
+    marginTop: 12,
+    backgroundColor: '#F7F9FB',
+    borderRadius: 12,
+    padding: 12,
+  },
+  responseLabel: { fontSize: 12, fontWeight: '700', color: '#5A6B7A', marginBottom: 4 },
+  responseText: { fontSize: 13, color: '#2B3B49', lineHeight: 18 },
 
   noAttachCard: {
     margin: 16, marginTop: 4,

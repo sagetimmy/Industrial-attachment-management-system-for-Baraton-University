@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
-  StyleSheet, Alert, ActivityIndicator,
+  StyleSheet, Alert,
   ImageBackground, ScrollView, Dimensions,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { getApiBaseUrl } from '../../api/axios';
+import Spinner from '../../components/Spinner';
 
 const { height } = Dimensions.get('window');
 
@@ -143,10 +144,10 @@ export default function LoginScreen({ navigation }) {
           activeOpacity={0.85}
         >
           {loading ? (
-            <ActivityIndicator color={WHITE} />
+            <Spinner color={WHITE} size="small" />
           ) : (
             <>
-              <Text style={styles.signInText}>Sign In</Text>
+              <Text style={styles.signInText}>log In</Text>
               <Ionicons name="arrow-forward" size={20} color={WHITE} style={{ marginLeft: 8 }} />
             </>
           )}
