@@ -78,7 +78,7 @@ const FullScreenLoader = () => {
   );
 };
 
-// ── Host Org Drawer Navigator ────────────────────────────────────────────
+// ── Host Org Drawer Navigator ─────────
 function HostOrgDrawerNavigator({ route }) {
   const { logout } = useAuth();
   const orgData = route.params?.orgData;
