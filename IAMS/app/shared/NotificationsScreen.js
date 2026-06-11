@@ -1,16 +1,35 @@
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, Alert, RefreshControl
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  Alert,
+  RefreshControl,
+  Platform,
 } from 'react-native';
-import { COLORS } from '../../constants/colors';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import api from '../../api/axios';
 import Spinner from '../../components/Spinner';
+
+// Modern Teal Theme Colors
+const PRIMARY = '#1b4332';
+const PRIMARY_LIGHT = '#99f3e0';
+const SECONDARY = '#ffb690';
+const BG = '#F8FAFB';
+const SURFACE = '#FFFFFF';
+const TEXT = '#1A1A2E';
+const TEXT_SUB = '#5A6A7A';
+const OUTLINE = '#dfe3e1';
+const ERROR = '#C62828';
 
 export default function NotificationsScreen({ navigation }) {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [filter, setFilter] = useState('All');
 
   const fetchNotifications = async () => {
     try {
@@ -24,13 +43,15 @@ export default function NotificationsScreen({ navigation }) {
     }
   };
 
-  useEffect(() => { fetchNotifications(); }, []);
+  useEffect(() => {
+    fetchNotifications();
+  }, []);
 
   const handleMarkRead = async (id) => {
     try {
       await api.put(`/notifications/${id}/read`);
-      setNotifications(prev =>
-        prev.map(n => n.notif_id === id ? { ...n, is_read: true } : n)
+      setNotifications((prev) =>
+        prev.map((n) => (n.notif_id === id ? { ...n, is_read: true } : n))
       );
     } catch (err) {
       console.error('Failed to mark as read');
@@ -40,7 +61,7 @@ export default function NotificationsScreen({ navigation }) {
   const handleMarkAllRead = async () => {
     try {
       await api.put('/notifications/read-all');
-      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+      setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
     } catch (err) {
       Alert.alert('Error', 'Failed to mark all as read');
     }
@@ -49,7 +70,7 @@ export default function NotificationsScreen({ navigation }) {
   const handleDelete = async (id) => {
     try {
       await api.delete(`/notifications/${id}`);
-      setNotifications(prev => prev.filter(n => n.notif_id !== id));
+      setNotifications((prev) => prev.filter((n) => n.notif_id !== id));
     } catch (err) {
       Alert.alert('Error', 'Failed to delete notification');
     }
@@ -83,15 +104,20 @@ export default function NotificationsScreen({ navigation }) {
   };
 
   const getNotifIcon = (message) => {
-    if (message.includes('🎉') || message.includes('confirmed')) return '🎉';
-    if (message.includes('❌') || message.includes('rejected')) return '❌';
-    if (message.includes('👨‍🏫') || message.includes('supervisor')) return '👨‍🏫';
-    if (message.includes('📋') || message.includes('logbook')) return '📖';
-    if (message.includes('⭐') || message.includes('evaluation')) return '⭐';
-    if (message.includes('🗓') || message.includes('visit')) return '🗓️';
-    if (message.includes('✅') || message.includes('approved')) return '✅';
-    if (message.includes('⚠️')) return '⚠️';
-    return '🔔';
+    const msg = message.toLowerCase();
+    if (msg.includes('deadline') || msg.includes('due') || msg.includes('schedule')) {
+      return { name: 'clock-outline', color: '#f97316', bg: '#fff7ed' };
+    }
+    if (msg.includes('approved') || msg.includes('confirmed') || msg.includes('success')) {
+      return { name: 'check-circle-outline', color: PRIMARY, bg: PRIMARY_LIGHT };
+    }
+    if (msg.includes('rejected') || msg.includes('error') || msg.includes('failed')) {
+      return { name: 'close-circle-outline', color: ERROR, bg: '#fee2e2' };
+    }
+    if (msg.includes('update') || msg.includes('feature') || msg.includes('new')) {
+      return { name: 'auto-fix', color: '#7c3aed', bg: '#f5f3ff' };
+    }
+    return { name: 'bell-outline', color: '#64748b', bg: '#f1f5f9' };
   };
 
   const getTimeAgo = (dateStr) => {
@@ -106,223 +132,392 @@ export default function NotificationsScreen({ navigation }) {
     return date.toLocaleDateString();
   };
 
-  const unreadCount = notifications.filter(n => !n.is_read).length;
+  const isToday = (dateStr) => {
+    const today = new Date();
+    const date = new Date(dateStr);
+    return (
+      date.getDate() === today.getDate() &&
+      date.getMonth() === today.getMonth() &&
+      date.getFullYear() === today.getFullYear()
+    );
+  };
+
+  const isYesterday = (dateStr) => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const date = new Date(dateStr);
+    return (
+      date.getDate() === yesterday.getDate() &&
+      date.getMonth() === yesterday.getMonth() &&
+      date.getFullYear() === yesterday.getFullYear()
+    );
+  };
+
+  const filteredNotifications = useMemo(() => {
+    let list = notifications;
+    if (filter === 'Alerts') {
+      list = notifications.filter(n => 
+        n.message.toLowerCase().includes('deadline') || 
+        n.message.toLowerCase().includes('due') ||
+        n.message.toLowerCase().includes('warning') ||
+        n.message.toLowerCase().includes('urgent')
+      );
+    }
+    return list;
+  }, [notifications, filter]);
+
+  const groupedNotifications = useMemo(() => {
+    const groups = {
+      Today: [],
+      Yesterday: [],
+      Earlier: [],
+    };
+
+    filteredNotifications.forEach((notif) => {
+      if (isToday(notif.created_at)) {
+        groups.Today.push(notif);
+      } else if (isYesterday(notif.created_at)) {
+        groups.Yesterday.push(notif);
+      } else {
+        groups.Earlier.push(notif);
+      }
+    });
+
+    return groups;
+  }, [filteredNotifications]);
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <Spinner size="large" color={COLORS.primary} />
+        <Spinner size="large" color={PRIMARY} />
         <Text style={styles.loadingText}>Loading notifications...</Text>
       </View>
     );
   }
 
-  return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backText}>← Back</Text>
-        </TouchableOpacity>
-        <View style={styles.headerRow}>
-          <View>
-            <Text style={styles.title}>Notifications 🔔</Text>
-            <Text style={styles.subtitle}>
-              {unreadCount > 0 ? `${unreadCount} unread` : 'All caught up!'}
-            </Text>
-          </View>
-          {notifications.length > 0 && (
-            <View style={styles.headerActions}>
-              {unreadCount > 0 && (
-                <TouchableOpacity
-                  style={styles.markAllBtn}
-                  onPress={handleMarkAllRead}
-                >
-                  <Text style={styles.markAllText}>Mark all read</Text>
+  const renderNotifCard = (notif) => {
+    const iconConfig = getNotifIcon(notif.message);
+    const unread = !notif.is_read;
+
+    return (
+      <View key={notif.notif_id} style={styles.cardWrapper}>
+        <TouchableOpacity
+          style={styles.notifCard}
+          onPress={() => handleMarkRead(notif.notif_id)}
+          activeOpacity={0.7}
+        >
+          {unread && <View style={styles.unreadDot} />}
+          <View style={styles.cardContent}>
+            <View style={[styles.iconContainer, { backgroundColor: iconConfig.bg }]}>
+              <MaterialCommunityIcons name={iconConfig.name} size={24} color={iconConfig.color} />
+            </View>
+            <View style={styles.textContainer}>
+              <View style={styles.cardHeader}>
+                <Text style={styles.notifTitle} numberOfLines={1}>
+                  {notif.message.split('.')[0]}
+                </Text>
+                <Text style={styles.notifTime}>{getTimeAgo(notif.created_at)}</Text>
+              </View>
+              <Text style={styles.notifMessage} numberOfLines={3}>
+                {notif.message}
+              </Text>
+              {notif.message.toLowerCase().includes('logbook') && (
+                <TouchableOpacity style={styles.actionLink}>
+                  <Text style={styles.actionText}>VIEW LOGBOOK</Text>
+                  <MaterialCommunityIcons name="chevron-right" size={16} color={PRIMARY} />
                 </TouchableOpacity>
               )}
-              <TouchableOpacity
-                style={styles.clearBtn}
-                onPress={handleClearAll}
-              >
-                <Text style={styles.clearText}>Clear all</Text>
-              </TouchableOpacity>
             </View>
-          )}
+          </View>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.deleteBtn} 
+          onPress={() => handleDelete(notif.notif_id)}
+        >
+          <MaterialCommunityIcons name="close" size={18} color={TEXT_SUB} />
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  return (
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+            <Ionicons name="arrow-back" size={20} color={PRIMARY} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Notifications</Text>
+        </View>
+        <View style={styles.headerRight}>
+          <TouchableOpacity onPress={handleMarkAllRead} style={styles.headerAction}>
+            <Text style={styles.headerActionText}>MARK ALL READ</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleClearAll} style={styles.headerAction}>
+            <Text style={[styles.headerActionText, { color: ERROR }]}>CLEAR ALL</Text>
+          </TouchableOpacity>
         </View>
       </View>
 
       <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
+        {/* Filter Tabs */}
+        <View style={styles.filterContainer}>
+          <TouchableOpacity
+            style={[styles.filterTab, filter === 'All' && styles.filterTabActive]}
+            onPress={() => setFilter('All')}
+          >
+            <Text style={[styles.filterTabText, filter === 'All' && styles.filterTabTextActive]}>All</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.filterTab, filter === 'Alerts' && styles.filterTabActive]}
+            onPress={() => setFilter('Alerts')}
+          >
+            <Text style={[styles.filterTabText, filter === 'Alerts' && styles.filterTabTextActive]}>Alerts</Text>
+          </TouchableOpacity>
+        </View>
+
         {notifications.length === 0 ? (
-          <View style={styles.emptyCard}>
-            <Text style={styles.emptyIcon}>🔔</Text>
-            <Text style={styles.emptyTitle}>No Notifications</Text>
-            <Text style={styles.emptyText}>
-              You're all caught up! Notifications will appear here.
-            </Text>
+          <View style={styles.emptyContainer}>
+            <View style={styles.emptyIconCircle}>
+              <MaterialCommunityIcons name="bell-off-outline" size={60} color={OUTLINE} />
+            </View>
+            <Text style={styles.emptyText}>No more notifications for today</Text>
           </View>
         ) : (
           <>
-            {/* Unread */}
-            {notifications.filter(n => !n.is_read).length > 0 && (
-              <Text style={styles.sectionLabel}>NEW</Text>
-            )}
-            {notifications
-              .filter(n => !n.is_read)
-              .map((notif, index) => (
-                <TouchableOpacity
-                  key={index}
-                  style={[styles.notifCard, styles.notifUnread]}
-                  onPress={() => handleMarkRead(notif.notif_id)}
-                >
-                  <View style={styles.notifIcon}>
-                    <Text style={styles.notifIconText}>
-                      {getNotifIcon(notif.message)}
-                    </Text>
+            {Object.entries(groupedNotifications).map(([title, items]) => {
+              if (items.length === 0) return null;
+              return (
+                <View key={title} style={styles.section}>
+                  <Text style={styles.sectionTitle}>{title.toUpperCase()}</Text>
+                  <View style={styles.sectionContent}>
+                    {items.map(renderNotifCard)}
                   </View>
-                  <View style={styles.notifContent}>
-                    <Text style={styles.notifMessage}>{notif.message}</Text>
-                    <Text style={styles.notifTime}>
-                      {getTimeAgo(notif.created_at)}
-                    </Text>
-                  </View>
-                  <View style={styles.unreadDot} />
-                  <TouchableOpacity
-                    style={styles.deleteBtn}
-                    onPress={() => handleDelete(notif.notif_id)}
-                  >
-                    <Text style={styles.deleteText}>✕</Text>
-                  </TouchableOpacity>
-                </TouchableOpacity>
-              ))
-            }
-
-            {/* Read */}
-            {notifications.filter(n => n.is_read).length > 0 && (
-              <Text style={styles.sectionLabel}>EARLIER</Text>
-            )}
-            {notifications
-              .filter(n => n.is_read)
-              .map((notif, index) => (
-                <View key={index} style={styles.notifCard}>
-                  <View style={[styles.notifIcon, styles.notifIconRead]}>
-                    <Text style={styles.notifIconText}>
-                      {getNotifIcon(notif.message)}
-                    </Text>
-                  </View>
-                  <View style={styles.notifContent}>
-                    <Text style={[styles.notifMessage, styles.notifMessageRead]}>
-                      {notif.message}
-                    </Text>
-                    <Text style={styles.notifTime}>
-                      {getTimeAgo(notif.created_at)}
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    style={styles.deleteBtn}
-                    onPress={() => handleDelete(notif.notif_id)}
-                  >
-                    <Text style={styles.deleteText}>✕</Text>
-                  </TouchableOpacity>
                 </View>
-              ))
-            }
+              );
+            })}
           </>
         )}
-        <View style={{ height: 40 }} />
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F4F4F4' },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { marginTop: 10, color: COLORS.gray },
+  safe: {
+    flex: 1,
+    backgroundColor: BG,
+  },
   header: {
-    backgroundColor: COLORS.secondary,
-    paddingTop: 55, paddingBottom: 25,
-    paddingHorizontal: 20,
-    borderBottomLeftRadius: 25,
-    borderBottomRightRadius: 25,
-  },
-  backBtn: { marginBottom: 10 },
-  backText: { color: COLORS.primary, fontSize: 14, fontWeight: '600' },
-  headerRow: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    backgroundColor: BG,
+    borderBottomWidth: 1,
+    borderBottomColor: OUTLINE,
   },
-  title: { color: COLORS.white, fontSize: 24, fontWeight: 'bold' },
-  subtitle: { color: '#8899AA', fontSize: 13, marginTop: 4 },
-  headerActions: { alignItems: 'flex-end', gap: 6 },
-  markAllBtn: {
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    paddingHorizontal: 12, paddingVertical: 6,
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  backBtn: {
+    width: 40,
+    height: 40,
     borderRadius: 20,
+    backgroundColor: PRIMARY_LIGHT,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  markAllText: { color: COLORS.white, fontSize: 12, fontWeight: '600' },
-  clearBtn: {
-    backgroundColor: 'rgba(200,121,65,0.3)',
-    paddingHorizontal: 12, paddingVertical: 6,
-    borderRadius: 20,
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: PRIMARY,
   },
-  clearText: { color: COLORS.primary, fontSize: 12, fontWeight: '600' },
-  sectionLabel: {
-    fontSize: 11, fontWeight: '700',
-    color: COLORS.gray, letterSpacing: 1,
-    marginLeft: 16, marginTop: 16, marginBottom: 8,
+  headerAction: {
+    paddingVertical: 4,
   },
-  emptyCard: {
-    backgroundColor: COLORS.white,
-    margin: 16, padding: 40,
-    borderRadius: 16, alignItems: 'center', elevation: 2,
-    marginTop: 40,
+  headerActionText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: PRIMARY,
+    letterSpacing: 0.5,
   },
-  emptyIcon: { fontSize: 50, marginBottom: 16 },
-  emptyTitle: { fontSize: 18, fontWeight: '700', color: COLORS.darkGray },
-  emptyText: {
-    fontSize: 14, color: COLORS.gray,
-    textAlign: 'center', marginTop: 8, lineHeight: 20,
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 20,
+    paddingBottom: 40,
+  },
+  filterContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#ebefec',
+    borderRadius: 25,
+    padding: 4,
+    marginBottom: 24,
+  },
+  filterTab: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: 21,
+  },
+  filterTabActive: {
+    backgroundColor: PRIMARY,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  filterTabText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: TEXT_SUB,
+  },
+  filterTabTextActive: {
+    color: '#FFFFFF',
+  },
+  section: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: TEXT_SUB,
+    letterSpacing: 1.5,
+    marginBottom: 12,
+    marginLeft: 4,
+  },
+  sectionContent: {
+    gap: 12,
+  },
+  cardWrapper: {
+    position: 'relative',
+    marginBottom: 4,
   },
   notifCard: {
-    backgroundColor: COLORS.white,
-    marginHorizontal: 16, marginBottom: 8,
-    padding: 14, borderRadius: 16,
-    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: SURFACE,
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: OUTLINE,
+    shadowColor: '#1b4332',
+    shadowOpacity: 0.05,
+    shadowRadius: 15,
+    shadowOffset: { width: 0, height: 4 },
     elevation: 1,
   },
-  notifUnread: {
-    backgroundColor: '#FFF9F5',
-    borderLeftWidth: 3,
-    borderLeftColor: COLORS.primary,
-    elevation: 3,
-  },
-  notifIcon: {
-    width: 44, height: 44, borderRadius: 22,
-    backgroundColor: '#FFF3E0',
-    justifyContent: 'center', alignItems: 'center',
-    marginRight: 12,
-  },
-  notifIconRead: { backgroundColor: '#F4F4F4' },
-  notifIconText: { fontSize: 20 },
-  notifContent: { flex: 1 },
-  notifMessage: {
-    fontSize: 13, color: COLORS.darkGray,
-    lineHeight: 19, fontWeight: '600',
-  },
-  notifMessageRead: { fontWeight: '400', color: COLORS.gray },
-  notifTime: { fontSize: 11, color: COLORS.gray, marginTop: 4 },
   unreadDot: {
-    width: 8, height: 8, borderRadius: 4,
-    backgroundColor: COLORS.primary,
-    marginRight: 8,
+    position: 'absolute',
+    top: 16,
+    right: 40, // Adjusted for delete button
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: SECONDARY,
+    zIndex: 10,
   },
   deleteBtn: {
-    padding: 6,
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    padding: 4,
+    zIndex: 20,
   },
-  deleteText: { color: COLORS.gray, fontSize: 14, fontWeight: '600' },
+  cardContent: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  iconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  textContainer: {
+    flex: 1,
+    paddingRight: 20, // Space for delete button
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  notifTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: TEXT,
+    flex: 1,
+    marginRight: 8,
+  },
+  notifTime: {
+    fontSize: 10,
+    fontWeight: '500',
+    color: TEXT_SUB,
+  },
+  notifMessage: {
+    fontSize: 13,
+    color: TEXT_SUB,
+    lineHeight: 18,
+  },
+  actionLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  actionText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: PRIMARY,
+    letterSpacing: 0.5,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 60,
+    opacity: 0.4,
+  },
+  emptyIconCircle: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#ebefec',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  emptyText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: TEXT_SUB,
+    textAlign: 'center',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: BG,
+  },
+  loadingText: {
+    marginTop: 12,
+    color: TEXT_SUB,
+    fontSize: 14,
+  },
 });
