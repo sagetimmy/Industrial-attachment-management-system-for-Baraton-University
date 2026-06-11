@@ -71,6 +71,10 @@ export default function ProfileScreen({ navigation }) {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[TEAL]} />}
       >
         <View style={styles.banner}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+            <Ionicons name="arrow-back" size={20} color={WHITE} />
+            <Text style={styles.backText}>Back</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.avatarWrapper}>
@@ -162,7 +166,9 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: LIGHT },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loadingText: { marginTop: 10, color: GRAY },
-  banner: { height: 80, backgroundColor: TEAL, justifyContent: 'flex-start', alignItems: 'flex-end', paddingHorizontal: 20, paddingTop: 16 },
+  banner: { height: 80, backgroundColor: TEAL, justifyContent: 'flex-end', alignItems: 'flex-start', paddingHorizontal: 16, paddingBottom: 12 },
+  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  backText: { color: WHITE, fontSize: 15, fontWeight: '600' },
   avatarWrapper: { alignItems: 'center', marginTop: -50, marginBottom: 12 },
   avatarCircle: { width: 100, height: 100, borderRadius: 50, backgroundColor: DARK, borderWidth: 4, borderColor: WHITE, justifyContent: 'center', alignItems: 'center' },
   avatarText: { color: WHITE, fontSize: 38, fontWeight: '800' },

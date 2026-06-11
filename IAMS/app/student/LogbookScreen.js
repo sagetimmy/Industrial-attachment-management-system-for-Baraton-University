@@ -6,6 +6,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import * as DocumentPicker from 'expo-document-picker';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { COLORS } from '../../constants/colors';
 import api, { requestWithRetry } from '../../api/axios';
@@ -146,13 +147,11 @@ export default function LogbookScreen({ navigation }) {
 
   const onRefresh = () => { setRefreshing(true); fetchData(); };
 
-  // Get unique weeks for the date strip
   const weekDates = entries.map((e) => ({
     week_number: e.week_number,
     submitted_at: e.submitted_at,
   }));
 
-  // Entries filtered by selected week
   const filteredEntries = selectedWeek
     ? entries.filter((e) => e.week_number === selectedWeek)
     : entries;
@@ -171,8 +170,9 @@ export default function LogbookScreen({ navigation }) {
 
       {/* Header */}
       <View style={s.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={s.menuIcon}>☰</Text>
+        <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()}>
+          <Ionicons name="arrow-back" size={20} color="#333" />
+          <Text style={s.backText}>Back</Text>
         </TouchableOpacity>
         <Text style={s.headerTitle}>Logbook</Text>
         <TouchableOpacity onPress={() => navigation.navigate('Profile')}>
@@ -210,7 +210,6 @@ export default function LogbookScreen({ navigation }) {
         contentContainerStyle={s.scrollContent}
       >
 
-        {/* No active attachment */}
         {!canEditLogbooks ? (
           <View style={s.warningCard}>
             <Text style={s.warningIcon}>🔒</Text>
@@ -229,7 +228,6 @@ export default function LogbookScreen({ navigation }) {
           </View>
         ) : (
           <>
-            {/* Attachment info */}
             <View style={s.attachCard}>
               <Text style={s.attachOrg}>{attachment.org_name}</Text>
               <Text style={s.attachDetails}>
@@ -237,14 +235,12 @@ export default function LogbookScreen({ navigation }) {
               </Text>
             </View>
 
-            {/* New entry button */}
             {!showForm && (
               <TouchableOpacity style={s.newEntryBtn} onPress={() => setShowForm(true)}>
                 <Text style={s.newEntryBtnText}>+ Submit Week {entries.length + 1} Entry</Text>
               </TouchableOpacity>
             )}
 
-            {/* Form */}
             {showForm && (
               <View style={s.formCard}>
                 <Text style={s.formTitle}>Week {entries.length + 1} Entry</Text>
@@ -326,13 +322,12 @@ export default function LogbookScreen({ navigation }) {
           </>
         )}
 
-        {/* Entries list */}
         {filteredEntries.length === 0 ? (
           <View style={s.emptyCard}>
             <Text style={s.emptyIcon}>📝</Text>
-            <Text style={s.emptyTitle}>End of Entries</Text>
+            <Text style={s.emptyTitle}>No Entries Found</Text>
             <Text style={s.emptyText}>
-              You have logged all activities for this week. Tap the button below to add a new session.
+              Tap the button below to add a new entry.
             </Text>
             {canEditLogbooks && attachment?.status === 'ongoing' && (
               <TouchableOpacity style={s.addManuallyBtn} onPress={() => setShowForm(true)}>
@@ -343,7 +338,6 @@ export default function LogbookScreen({ navigation }) {
         ) : (
           filteredEntries.map((entry, index) => (
             <View key={index} style={s.entryCard}>
-              {/* Entry top row */}
               <View style={s.entryTopRow}>
                 <View style={s.entryDateBadge}>
                   <Text style={s.entryDateText}>
@@ -361,15 +355,12 @@ export default function LogbookScreen({ navigation }) {
                 ) : null}
               </View>
 
-              {/* Title */}
               <Text style={s.entryTitle}>
                 Week {entry.week_number} — {attachment?.org_name ?? 'Logbook Entry'}
               </Text>
 
-              {/* Description */}
               <Text style={s.entryDesc} numberOfLines={3}>{entry.description}</Text>
 
-              {/* Status + View Details */}
               <View style={s.entryFooter}>
                 <View style={[
                   s.statusBadge,
@@ -414,28 +405,6 @@ export default function LogbookScreen({ navigation }) {
           <Text style={s.fabIcon}>+</Text>
         </TouchableOpacity>
       )}
-
-      {/* Bottom nav */}
-      <View style={s.bottomNav}>
-        {[
-          { label: 'Home', icon: '🏠', screen: 'StudentDashboard' },
-          { label: 'Logbook', icon: '📖', screen: null },
-          { label: 'Stats', icon: '📊', screen: 'Stats' },
-          { label: 'Profile', icon: '👤', screen: 'Profile' },
-        ].map((tab) => (
-          <TouchableOpacity
-            key={tab.label}
-            style={s.navTab}
-            onPress={() => tab.screen && navigation.navigate(tab.screen)}
-          >
-            <Text style={s.navIcon}>{tab.icon}</Text>
-            <Text style={[s.navLabel, !tab.screen && { color: TEAL, fontWeight: '600' }]}>
-              {tab.label}
-            </Text>
-            {!tab.screen && <View style={s.navActiveDot} />}
-          </TouchableOpacity>
-        ))}
-      </View>
     </View>
   );
 }
@@ -453,7 +422,8 @@ const s = StyleSheet.create({
     backgroundColor: '#F0F4F3',
     borderBottomWidth: 0.5, borderBottomColor: 'rgba(0,0,0,0.08)',
   },
-  menuIcon: { fontSize: 22, color: '#333' },
+  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  backText: { fontSize: 15, fontWeight: '600', color: '#333' },
   headerTitle: { fontSize: 18, fontWeight: '600', color: '#111' },
   profileIcon: { fontSize: 22 },
 
@@ -609,23 +579,11 @@ const s = StyleSheet.create({
 
   // FAB
   fab: {
-    position: 'absolute', bottom: 90, right: 20,
+    position: 'absolute', bottom: 100, right: 10,
     width: 54, height: 54, borderRadius: 27,
     backgroundColor: CORAL,
     alignItems: 'center', justifyContent: 'center',
     elevation: 4,
   },
   fabIcon: { color: '#fff', fontSize: 28, fontWeight: '300', lineHeight: 32 },
-
-  // bottom nav
-  bottomNav: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
-    borderTopWidth: 0.5, borderTopColor: 'rgba(0,0,0,0.08)',
-    paddingTop: 10, paddingBottom: 24,
-  },
-  navTab: { flex: 1, alignItems: 'center', gap: 3 },
-  navIcon: { fontSize: 22 },
-  navLabel: { fontSize: 10, color: '#888', letterSpacing: 0.3 },
-  navActiveDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: TEAL },
 });
