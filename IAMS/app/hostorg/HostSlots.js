@@ -7,556 +7,386 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
-  Dimensions,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { COLORS } from '../../constants/colors';
 import api from '../../api/axios';
 
-const { width } = Dimensions.get('window');
+const TEAL = '#0F6E56';
+const BG = '#F0F5F4';
 
 const HostSlots = ({ navigation }) => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [slotsData, setSlotsData] = useState(null);
   const [attachments, setAttachments] = useState([]);
-  const [updating, setUpdating] = useState(false);
+  const [updating, setUpdating] = useState(null); // attachment_id being updated
 
   useEffect(() => {
-    fetchSlotData();
+    fetchData();
   }, []);
 
-  const fetchSlotData = async () => {
+  const fetchData = async () => {
     try {
       setLoading(true);
-      const slotsResponse = await api.get('/host-orgs/available-slots');
-      setSlotsData(slotsResponse.data);
-
-      const attachmentsResponse = await api.get('/host-orgs/ongoing-attachments');
-      setAttachments(attachmentsResponse.data);
+      const res = await api.get('/host-orgs/ongoing-attachments');
+      setAttachments(res.data);
     } catch (error) {
-      Alert.alert('Error', 'Failed to load slot data');
-      console.error(error);
+      Alert.alert('Error', 'Failed to load placements');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleIncreaseSlots = async () => {
-    try {
-      setUpdating(true);
-      const newSlots = (slotsData?.available_slots || 0) + 1;
-      await api.put('/host-orgs/profile', {
-        org_name: user?.org_name,
-        location: user?.location,
-        contact_person: user?.contact_person,
-        phone: user?.phone,
-        available_slots: newSlots,
-      });
-
-      setSlotsData(prev => ({
-        ...prev,
-        available_slots: newSlots,
-      }));
-      Alert.alert('Success', 'Slot increased!');
-    } catch (error) {
-      Alert.alert('Error', 'Failed to update slots');
-    } finally {
-      setUpdating(false);
-    }
-  };
-
-  const renderSlotVisualization = () => {
-    const available = slotsData?.available_slots || 0;
-    const used = slotsData?.used_slots || 0;
-    const total = available + used;
-
-    const slotWidth = (width - 64) / Math.max(total, 5);
-
-    return (
-      <View style={styles.visualization}>
-        <View style={styles.slotsContainer}>
-          {/* Used Slots */}
-          {Array.from({ length: used }).map((_, i) => (
-            <View
-              key={`used-${i}`}
-              style={[
-                styles.slot,
-                { width: slotWidth },
-                styles.slotUsed,
-              ]}
-            >
-              <Text style={styles.slotText}>👤</Text>
-            </View>
-          ))}
-
-          {/* Available Slots */}
-          {Array.from({ length: available }).map((_, i) => (
-            <View
-              key={`available-${i}`}
-              style={[
-                styles.slot,
-                { width: slotWidth },
-                styles.slotAvailable,
-              ]}
-            >
-              <Text style={styles.slotText}>+</Text>
-            </View>
-          ))}
-
-          {/* Empty state if no slots */}
-          {total === 0 && (
-            <Text style={styles.noSlotText}>No slots defined. Add slots to accept students.</Text>
-          )}
-        </View>
-
-        <View style={styles.legend}>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendDot, styles.slotUsed]} />
-            <Text style={styles.legendText}>{used} Occupied</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendDot, styles.slotAvailable]} />
-            <Text style={styles.legendText}>{available} Available</Text>
-          </View>
-        </View>
-      </View>
+  const handleUpdateStatus = (attachmentId, studentName, newStatus) => {
+    const isApproving = newStatus === 'approved';
+    Alert.alert(
+      isApproving ? 'Confirm Placement' : 'Reject Application',
+      isApproving
+        ? `Accept ${studentName}'s application?`
+        : `Reject ${studentName}'s application?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: isApproving ? 'Confirm ✓' : 'Reject ✗',
+          style: isApproving ? 'default' : 'destructive',
+          onPress: async () => {
+            try {
+              setUpdating(attachmentId);
+              await api.put(`/host-orgs/application/${attachmentId}`, { status: newStatus });
+              Alert.alert('Success!', `Application ${isApproving ? 'approved' : 'rejected'} successfully!`);
+              fetchData();
+            } catch (err) {
+              Alert.alert('Error', err.response?.data?.message || 'Failed to update application');
+            } finally {
+              setUpdating(null);
+            }
+          },
+        },
+      ]
     );
   };
 
-  const renderStatCard = (label, value, color) => (
-    <View style={[styles.statCard, { borderLeftColor: color }]}>
-      <Text style={styles.statLabel}>{label}</Text>
-      <Text style={[styles.statValue, { color }]}>{value}</Text>
-    </View>
-  );
+  const formatDate = (dateStr) => {
+    if (!dateStr) return '—';
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+
+  const getInitials = (name) => {
+    if (!name) return '?';
+    const parts = name.trim().split(' ');
+    return parts.length >= 2
+      ? (parts[0][0] + parts[1][0]).toUpperCase()
+      : parts[0][0].toUpperCase();
+  };
+
+  const pendingAttachments = attachments.filter(a => a.status === 'pending');
 
   if (loading) {
     return (
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Text style={styles.backButton}>← Back</Text>
+      <SafeAreaView style={s.safeArea} edges={['top']}>
+        <View style={s.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={s.headerBack}>
+            <Text style={s.headerBackIcon}>←</Text>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Available Slots</Text>
-          <View style={{ width: 60 }} />
+          <Text style={s.headerTitle}>Placement Matching</Text>
+          <View style={s.headerRight} />
         </View>
-        <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
+        <View style={s.centered}>
+          <ActivityIndicator size="large" color={TEAL} />
         </View>
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.backButton}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Available Slots</Text>
-        <TouchableOpacity onPress={() => navigation.navigate('HostProfile')}>
-          <Text style={styles.editButton}>Edit ✏️</Text>
-        </TouchableOpacity>
-      </View>
+    <SafeAreaView style={s.safeArea} edges={['top']}>
+      <View style={s.root}>
 
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Overview Cards */}
-        <View style={styles.cardsContainer}>
-          {renderStatCard('Available', slotsData?.available_slots || 0, COLORS.primary)}
-          {renderStatCard('Occupied', slotsData?.used_slots || 0, '#2E7D32')}
-          {renderStatCard('Capacity', slotsData?.total_capacity || 0, COLORS.secondary)}
+        {/* Header */}
+        <View style={s.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={s.headerBack}>
+            <Text style={s.headerBackIcon}>←</Text>
+          </TouchableOpacity>
+          <Text style={s.headerTitle}>Placement Matching</Text>
+          <TouchableOpacity style={s.headerRight} onPress={() => navigation.navigate('Notifications')}>
+            <Text style={s.bellIcon}>🔔</Text>
+          </TouchableOpacity>
         </View>
 
-        {/* Visualization */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>📊 Slot Status</Text>
-          {renderSlotVisualization()}
-        </View>
+        <ScrollView
+          style={s.scroll}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={s.scrollContent}
+        >
 
-        {/* Increase Slots Action */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>➕ Add More Slots</Text>
-          <View style={styles.actionCard}>
-            <View style={styles.actionContent}>
-              <Text style={styles.actionTitle}>Increase Your Capacity</Text>
-              <Text style={styles.actionDescription}>
-                Currently accepting {slotsData?.available_slots || 0} student{slotsData?.available_slots !== 1 ? 's' : ''}.
-              </Text>
-              <Text style={styles.actionSubtext}>
-                💡 Increase your slots to accept more students for industrial attachment.
-              </Text>
-            </View>
-            <TouchableOpacity
-              style={[styles.increaseButton, updating && styles.buttonDisabled]}
-              onPress={handleIncreaseSlots}
-              disabled={updating}
-            >
-              <Text style={styles.increaseButtonText}>
-                {updating ? '...' : '+1'}
-              </Text>
-            </TouchableOpacity>
+          {/* Section heading */}
+          <View style={s.sectionRow}>
+            <Text style={s.sectionTitle}>
+              Pending Placements ({pendingAttachments.length})
+            </Text>
+            {pendingAttachments.length > 0 && (
+              <View style={s.actionBadge}>
+                <Text style={s.actionBadgeText}>ACTION REQUIRED</Text>
+              </View>
+            )}
           </View>
-        </View>
 
-        {/* Current Placements */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>👥 Current Placements</Text>
-          {attachments.length > 0 ? (
-            attachments.map((attachment, index) => (
-              <View key={index} style={styles.placementCard}>
-                <View style={styles.placementHeader}>
-                  <View style={styles.placementInfo}>
-                    <Text style={styles.placementName}>{attachment.full_name}</Text>
-                    <Text style={styles.placementReg}>{attachment.reg_number}</Text>
+          {/* Cards */}
+          {pendingAttachments.length === 0 ? (
+            <View style={s.emptyCard}>
+              <Text style={s.emptyIcon}>📭</Text>
+              <Text style={s.emptyTitle}>No Pending Placements</Text>
+              <Text style={s.emptyText}>All applications have been reviewed.</Text>
+            </View>
+          ) : (
+            pendingAttachments.map((app, index) => (
+              <View key={app.attachment_id ?? index} style={s.card}>
+
+                {/* Student row */}
+                <View style={s.studentRow}>
+                  <View style={s.avatar}>
+                    <Text style={s.avatarText}>{getInitials(app.full_name)}</Text>
                   </View>
-                  <View
-                    style={[
-                      styles.statusBadge,
-                      {
-                        backgroundColor:
-                          attachment.status === 'ongoing' ? '#E8F5E9' : '#E3F2FD',
-                      },
-                    ]}
+                  <View style={s.studentInfo}>
+                    <Text style={s.studentName}>{app.full_name}</Text>
+                    <Text style={s.studentDept}>{app.department || 'Unknown Department'}</Text>
+                  </View>
+                  <View style={s.pendingBadge}>
+                    <Text style={s.pendingBadgeText}>PENDING{'\n'}APPROVAL</Text>
+                  </View>
+                </View>
+
+                <View style={s.divider} />
+
+                {/* Target company row */}
+                <View style={s.companyRow}>
+                  <View style={s.companyLogoBox}>
+                    <Text style={s.companyLogoText}>🏢</Text>
+                  </View>
+                  <View style={s.companyInfo}>
+                    <Text style={s.companyLabel}>TARGET COMPANY</Text>
+                    <Text style={s.companyName}>
+                      {app.org_name ? `${app.org_name} — ${app.role || 'Intern'}` : 'Not specified'}
+                    </Text>
+                  </View>
+                  <View style={s.appliedBox}>
+                    <Text style={s.appliedLabel}>Applied</Text>
+                    <Text style={s.appliedDate}>{formatDate(app.created_at)}</Text>
+                  </View>
+                </View>
+
+                <View style={s.divider} />
+
+                {/* Action buttons */}
+                <View style={s.actions}>
+                  <TouchableOpacity
+                    style={s.rejectBtn}
+                    onPress={() => handleUpdateStatus(app.attachment_id, app.full_name, 'rejected')}
+                    disabled={updating === app.attachment_id}
                   >
-                    <Text
-                      style={[
-                        styles.statusText,
-                        {
-                          color:
-                            attachment.status === 'ongoing' ? '#2E7D32' : COLORS.secondary,
-                        },
-                      ]}
-                    >
-                      {attachment.status.charAt(0).toUpperCase() + attachment.status.slice(1)}
-                    </Text>
-                  </View>
+                    <Text style={s.rejectBtnText}>✕  REJECT</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={s.approveBtn}
+                    onPress={() => handleUpdateStatus(app.attachment_id, app.full_name, 'approved')}
+                    disabled={updating === app.attachment_id}
+                  >
+                    {updating === app.attachment_id
+                      ? <ActivityIndicator size="small" color="#fff" />
+                      : <Text style={s.approveBtnText}>✓  APPROVE</Text>
+                    }
+                  </TouchableOpacity>
                 </View>
 
-                <View style={styles.placementDetails}>
-                  <Text style={styles.placementDetail}>📚 {attachment.department}</Text>
-                  {attachment.rating && (
-                    <Text style={styles.placementDetail}>
-                      ⭐ Rating: {attachment.rating}/5
-                    </Text>
-                  )}
-                </View>
-
-                {attachment.comments && (
-                  <View style={styles.commentsBox}>
-                    <Text style={styles.commentsLabel}>Feedback:</Text>
-                    <Text style={styles.commentsText}>{attachment.comments}</Text>
-                  </View>
-                )}
               </View>
             ))
-          ) : (
-            <View style={styles.emptyCard}>
-              <Text style={styles.emptyIcon}>📭</Text>
-              <Text style={styles.emptyTitle}>No Active Placements</Text>
-              <Text style={styles.emptyText}>
-                Students you've accepted will appear here.
-              </Text>
-            </View>
           )}
+
+          <View style={{ height: 40 }} />
+        </ScrollView>
+
+        {/* Bottom nav */}
+        <View style={s.bottomNav}>
+          {[
+            { label: 'Home',    icon: '🏠', screen: 'HostDashboard' },
+            { label: 'Users',   icon: '👥', screen: 'HostApplicants' },
+            { label: 'Orgs',    icon: '🏢', screen: null },
+            { label: 'Profile', icon: '👤', screen: 'HostProfile' },
+          ].map((tab) => (
+            <TouchableOpacity
+              key={tab.label}
+              style={s.navTab}
+              onPress={() => tab.screen && navigation.navigate(tab.screen)}
+            >
+              <Text style={s.navIcon}>{tab.icon}</Text>
+              <Text style={[s.navLabel, !tab.screen && s.navLabelActive]}>{tab.label}</Text>
+              {!tab.screen && <View style={s.navDot} />}
+            </TouchableOpacity>
+          ))}
         </View>
 
-        {/* Info Section */}
-        <View style={styles.section}>
-          <View style={styles.infoBox}>
-            <Text style={styles.infoTitle}>ℹ️ How Slots Work</Text>
-            <Text style={styles.infoText}>
-              • Each student you accept occupies one slot{'\n'}
-              • Slots are decremented when you confirm a placement{'\n'}
-              • You can increase slots anytime to accept more students{'\n'}
-              • Rejected applications do not use slots
-            </Text>
-          </View>
-        </View>
-
-        <View style={{ height: 40 }} />
-      </ScrollView>
-    </View>
+      </View>
+    </SafeAreaView>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F5F5F5',
-  },
+const s = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: '#fff' },
+  root: { flex: 1, backgroundColor: BG },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+
+  // header
   header: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: COLORS.secondary,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    paddingTop: 16,
+    backgroundColor: '#fff',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: 0.5,
+    borderBottomColor: 'rgba(0,0,0,0.06)',
   },
-  headerTitle: {
-    color: 'white',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  backButton: {
-    color: 'white',
-    fontSize: 16,
-  },
-  editButton: {
-    color: 'white',
-    fontSize: 14,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  centerContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  cardsContainer: {
+  headerBack: { width: 36 },
+  headerBackIcon: { fontSize: 22, color: TEAL, fontWeight: '600' },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: TEAL },
+  headerRight: { width: 36, alignItems: 'flex-end' },
+  bellIcon: { fontSize: 20 },
+
+  scroll: { flex: 1 },
+  scrollContent: { padding: 16 },
+
+  // section heading
+  sectionRow: {
     flexDirection: 'row',
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    gap: 8,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: 'white',
-    borderLeftWidth: 4,
-    borderRadius: 8,
-    padding: 12,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#888',
-    marginBottom: 6,
-  },
-  statValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  section: {
-    backgroundColor: 'white',
-    marginHorizontal: 12,
-    marginVertical: 8,
-    borderRadius: 8,
-    padding: 16,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: COLORS.secondary,
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 16,
   },
-  visualization: {
-    marginVertical: 12,
-  },
-  slotsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 12,
-    paddingVertical: 12,
-    minHeight: 80,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  slot: {
-    height: 50,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginVertical: 4,
-  },
-  slotUsed: {
-    backgroundColor: '#C8E6C9',
-    borderWidth: 2,
-    borderColor: '#2E7D32',
-  },
-  slotAvailable: {
-    backgroundColor: '#FFF9C4',
-    borderWidth: 2,
-    borderColor: COLORS.primary,
-  },
-  slotText: {
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  noSlotText: {
-    fontSize: 14,
-    color: '#999',
-    textAlign: 'center',
-  },
-  legend: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 24,
-    paddingVertical: 8,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  legendDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-  legendText: {
-    fontSize: 12,
-    color: '#666',
-  },
-  actionCard: {
-    backgroundColor: '#FFF8E1',
-    borderLeftWidth: 4,
-    borderLeftColor: COLORS.primary,
-    borderRadius: 8,
-    padding: 12,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  actionContent: {
-    flex: 1,
-  },
-  actionTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: COLORS.secondary,
-    marginBottom: 4,
-  },
-  actionDescription: {
-    fontSize: 13,
-    color: '#666',
-    marginBottom: 4,
-  },
-  actionSubtext: {
-    fontSize: 12,
-    color: COLORS.primary,
-    fontStyle: 'italic',
-  },
-  increaseButton: {
-    backgroundColor: COLORS.primary,
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 12,
-  },
-  increaseButtonText: {
-    color: 'white',
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  placementCard: {
-    backgroundColor: '#F9F9F9',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 10,
-    borderLeftWidth: 4,
-    borderLeftColor: COLORS.primary,
-  },
-  placementHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  placementInfo: {
-    flex: 1,
-  },
-  placementName: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: COLORS.secondary,
-  },
-  placementReg: {
-    fontSize: 12,
-    color: '#888',
-    marginTop: 2,
-  },
-  statusBadge: {
-    paddingHorizontal: 10,
+  sectionTitle: { fontSize: 18, fontWeight: '800', color: '#111' },
+  actionBadge: {
+    backgroundColor: '#FDECEA',
+    paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 12,
+    borderRadius: 20,
   },
-  statusText: {
-    fontSize: 11,
-    fontWeight: '600',
+  actionBadgeText: { fontSize: 11, fontWeight: '700', color: '#C0392B', letterSpacing: 0.4 },
+
+  // card
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  placementDetails: {
+
+  // student row
+  studentRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 8,
-  },
-  placementDetail: {
-    fontSize: 12,
-    color: '#666',
-  },
-  commentsBox: {
-    backgroundColor: 'white',
-    borderRadius: 6,
-    padding: 8,
-    marginTop: 8,
-    borderLeftWidth: 3,
-    borderLeftColor: COLORS.primary,
-  },
-  commentsLabel: {
-    fontSize: 11,
-    fontWeight: 'bold',
-    color: COLORS.secondary,
-    marginBottom: 4,
-  },
-  commentsText: {
-    fontSize: 12,
-    color: '#666',
-    lineHeight: 18,
-  },
-  emptyCard: {
     alignItems: 'center',
-    paddingVertical: 40,
+    marginBottom: 14,
   },
-  emptyIcon: {
-    fontSize: 40,
-    marginBottom: 12,
+  avatar: {
+    width: 52, height: 52, borderRadius: 26,
+    backgroundColor: '#D8EEE9',
+    alignItems: 'center', justifyContent: 'center',
+    marginRight: 12,
   },
-  emptyTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: COLORS.secondary,
-    marginBottom: 4,
+  avatarText: { fontSize: 18, fontWeight: '800', color: TEAL },
+  studentInfo: { flex: 1 },
+  studentName: { fontSize: 16, fontWeight: '800', color: '#111', marginBottom: 2 },
+  studentDept: { fontSize: 13, color: '#888', lineHeight: 18 },
+  pendingBadge: {
+    backgroundColor: '#FDF0E8',
+    paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: 20, alignItems: 'center',
   },
-  emptyText: {
-    fontSize: 13,
-    color: '#888',
+  pendingBadgeText: {
+    fontSize: 10, fontWeight: '700', color: '#C0392B',
+    textAlign: 'center', letterSpacing: 0.3, lineHeight: 14,
   },
-  infoBox: {
-    backgroundColor: '#F0F7FF',
-    borderLeftWidth: 4,
-    borderLeftColor: COLORS.secondary,
-    borderRadius: 8,
-    padding: 12,
+
+  divider: { height: 1, backgroundColor: '#F0F0F0', marginVertical: 12 },
+
+  // company row
+  companyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  infoTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: COLORS.secondary,
-    marginBottom: 8,
+  companyLogoBox: {
+    width: 40, height: 40, borderRadius: 10,
+    backgroundColor: '#F4F4F4',
+    alignItems: 'center', justifyContent: 'center',
+    marginRight: 12,
+    borderWidth: 1, borderColor: '#eee',
   },
-  infoText: {
-    fontSize: 12,
-    color: '#666',
-    lineHeight: 18,
+  companyLogoText: { fontSize: 18 },
+  companyInfo: { flex: 1 },
+  companyLabel: {
+    fontSize: 10, fontWeight: '700', color: TEAL,
+    letterSpacing: 0.6, marginBottom: 3,
   },
+  companyName: { fontSize: 14, fontWeight: '600', color: '#111', lineHeight: 20 },
+  appliedBox: { alignItems: 'flex-end' },
+  appliedLabel: { fontSize: 11, color: '#aaa', marginBottom: 2 },
+  appliedDate: { fontSize: 14, fontWeight: '800', color: '#111', lineHeight: 20 },
+
+  // action buttons
+  actions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+  },
+  rejectBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 30,
+    borderWidth: 2,
+    borderColor: '#C0392B',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rejectBtnText: { color: '#C0392B', fontWeight: '700', fontSize: 13, letterSpacing: 0.5 },
+  approveBtn: {
+    flex: 1.6,
+    paddingVertical: 14,
+    borderRadius: 30,
+    backgroundColor: TEAL,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  approveBtnText: { color: '#fff', fontWeight: '700', fontSize: 13, letterSpacing: 0.5 },
+
+  // empty
+  emptyCard: {
+    backgroundColor: '#fff',
+    borderRadius: 18, padding: 40,
+    alignItems: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05, shadowRadius: 8, elevation: 2,
+  },
+  emptyIcon: { fontSize: 40, marginBottom: 12 },
+  emptyTitle: { fontSize: 16, fontWeight: '800', color: '#333', marginBottom: 4 },
+  emptyText: { fontSize: 13, color: '#888', textAlign: 'center' },
+
+  // bottom nav
+  bottomNav: {
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    borderTopWidth: 0.5, borderTopColor: 'rgba(0,0,0,0.08)',
+    paddingTop: 10, paddingBottom: 24,
+  },
+  navTab: { flex: 1, alignItems: 'center', gap: 3 },
+  navIcon: { fontSize: 22 },
+  navLabel: { fontSize: 10, color: '#888', letterSpacing: 0.3 },
+  navLabelActive: { color: TEAL, fontWeight: '700' },
+  navDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: TEAL },
 });
 
 export default HostSlots;
