@@ -30,24 +30,15 @@ function timeAgo(dateStr) {
   return `${Math.floor(diff / 86400)} days ago`;
 }
 
-function deadlineLabel(dateStr) {
-  if (!dateStr) return null;
-  const diff = Math.floor((new Date(dateStr) - Date.now()) / 1000 / 3600);
-  if (diff < 0)   return { label: 'OVERDUE', urgent: true };
-  if (diff < 24)  return { label: `DEADLINE: ${diff}H`, urgent: true };
-  if (diff < 48)  return { label: 'DEADLINE: 1D', urgent: false };
-  return { label: `DEADLINE: ${Math.floor(diff / 24)}D`, urgent: false };
-}
-
 export default function ReviewLogbooksScreen({ navigation, route }) {
   const { attachmentId, studentName } = route.params || {};
   const { user } = useAuth();
   const canEditLogbooks = hasRolePermission(user, 'editLogbooks');
   const { width } = useWindowDimensions();
-  const [entries, setEntries]     = useState([]);
-  const [loading, setLoading]     = useState(true);
+  const [entries, setEntries]       = useState([]);
+  const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [expanded, setExpanded]   = useState(null);
+  const [expanded, setExpanded]     = useState(null);
 
   const fetchLogbooks = async () => {
     try {
@@ -57,7 +48,6 @@ export default function ReviewLogbooksScreen({ navigation, route }) {
         : res.data;
       setEntries(filtered);
     } catch (err) {
-      console.error('Logbooks fetch error:', err);
       Alert.alert('Error', err.response?.data?.message || 'Failed to load logbooks');
     } finally {
       setLoading(false);
@@ -77,7 +67,6 @@ export default function ReviewLogbooksScreen({ navigation, route }) {
       Alert.alert('Permission Disabled', 'Logbook review actions are currently disabled for supervisors.');
       return;
     }
-
     Alert.alert(
       'Reject Entry',
       `Reject Week ${entry.week_number} entry from ${entry.full_name}?`,
@@ -92,20 +81,17 @@ export default function ReviewLogbooksScreen({ navigation, route }) {
               Alert.alert('Rejected', 'Entry has been rejected.');
               fetchLogbooks();
             } catch (err) {
-              console.error('Reject error:', err);
               Alert.alert('Error', err.response?.data?.message || 'Failed to reject entry');
             }
-          }
-        }
+          },
+        },
       ]
     );
   };
 
   useEffect(() => { fetchLogbooks(); }, []);
   useFocusEffect(
-    useCallback(() => {
-      fetchLogbooks();
-    }, [attachmentId])
+    useCallback(() => { fetchLogbooks(); }, [attachmentId])
   );
   const onRefresh = () => { setRefreshing(true); fetchLogbooks(); };
 
@@ -113,10 +99,20 @@ export default function ReviewLogbooksScreen({ navigation, route }) {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={TEAL} />
-        <Text style={styles.loadingText}>Loading reviews...</Text>
-      </View>
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+            <Ionicons name="arrow-back" size={22} color={TEAL} />
+            <Text style={styles.backText}>Back</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerBrand}>IAMS</Text>
+          <View style={{ width: 70 }} />
+        </View>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={TEAL} />
+          <Text style={styles.loadingText}>Loading reviews...</Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
@@ -125,13 +121,12 @@ export default function ReviewLogbooksScreen({ navigation, route }) {
 
       {/* ── HEADER ── */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.menuBtn}>
-          <Ionicons name="menu" size={24} color={DARK} />
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <Ionicons name="arrow-back" size={22} color={TEAL} />
+          <Text style={styles.backText}>Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerBrand}>IAMS</Text>
-        <View style={styles.avatarSmall}>
-          <Ionicons name="person" size={18} color={WHITE} />
-        </View>
+        <View style={{ width: 70 }} />
       </View>
 
       {/* ── PAGE TITLE ── */}
@@ -173,10 +168,7 @@ export default function ReviewLogbooksScreen({ navigation, route }) {
             return (
               <View
                 key={index}
-                style={[
-                  styles.card,
-                  isTablet && { width: '48%' },
-                ]}
+                style={[styles.card, isTablet && { width: '48%' }]}
               >
                 {/* Student Row */}
                 <View style={styles.studentRow}>
@@ -196,11 +188,7 @@ export default function ReviewLogbooksScreen({ navigation, route }) {
                   activeOpacity={0.8}
                 >
                   <View style={styles.entryIconBox}>
-                    <MaterialCommunityIcons
-                      name="text-box-outline"
-                      size={20}
-                      color={TEAL}
-                    />
+                    <MaterialCommunityIcons name="text-box-outline" size={20} color={TEAL} />
                   </View>
                   <View style={styles.entryMeta}>
                     <Text style={styles.entryType}>{entryType}</Text>
@@ -243,51 +231,67 @@ export default function ReviewLogbooksScreen({ navigation, route }) {
                   </View>
                 )}
 
-                {/* Action Buttons */}
-                <View style={styles.actionRow}>
-                  <TouchableOpacity
-                    style={styles.reviewBtn}
-                    onPress={() => handleReview(entry)}
-                    activeOpacity={0.85}
-                  >
-                    <Ionicons name="checkmark-circle-outline" size={18} color={WHITE} />
-                    <Text style={styles.reviewBtnText}>Review</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.rejectBtn}
-                    onPress={() => handleReject(entry)}
-                    activeOpacity={0.85}
-                  >
-                    <Ionicons name="close-circle-outline" size={18} color={RED} />
-                    <Text style={styles.rejectBtnText}>Reject</Text>
-                  </TouchableOpacity>
-                </View>
+                {/* Action Buttons or Reviewed Badge */}
+                {entry.status === 'pending' || !entry.status ? (
+                  <View style={styles.actionRow}>
+                    <TouchableOpacity
+                      style={styles.reviewBtn}
+                      onPress={() => handleReview(entry)}
+                      activeOpacity={0.85}
+                    >
+                      <Ionicons name="checkmark-circle-outline" size={18} color={WHITE} />
+                      <Text style={styles.reviewBtnText}>Review</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.rejectBtn}
+                      onPress={() => handleReject(entry)}
+                      activeOpacity={0.85}
+                    >
+                      <Ionicons name="close-circle-outline" size={18} color={RED} />
+                      <Text style={styles.rejectBtnText}>Reject</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View style={[
+                    styles.reviewedBadgeRow,
+                    entry.status === 'approved'  && styles.reviewedBadgeApproved,
+                    entry.status === 'rejected'  && styles.reviewedBadgeRejected,
+                    entry.status === 'revision'  && styles.reviewedBadgeRevision,
+                  ]}>
+                    <Ionicons
+                      name={
+                        entry.status === 'approved' ? 'checkmark-circle' :
+                        entry.status === 'rejected' ? 'close-circle' :
+                        'refresh-circle'
+                      }
+                      size={18}
+                      color={
+                        entry.status === 'approved' ? TEAL :
+                        entry.status === 'rejected' ? RED :
+                        '#BA7517'
+                      }
+                    />
+                    <Text style={[
+                      styles.reviewedBadgeText,
+                      entry.status === 'approved' && { color: TEAL },
+                      entry.status === 'rejected' && { color: RED },
+                      entry.status === 'revision' && { color: '#BA7517' },
+                    ]}>
+                      {entry.status === 'approved' ? 'APPROVED'  :
+                       entry.status === 'rejected' ? 'REJECTED'  :
+                       'REVISION REQUESTED'}
+                    </Text>
+                    <TouchableOpacity onPress={() => handleReview(entry)}>
+                      <Text style={styles.reviewedViewLink}>View</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
               </View>
             );
           })
         )}
-        <View style={{ height: 100 }} />
+        <View style={{ height: 40 }} />
       </ScrollView>
-
-      {/* ── BOTTOM TAB BAR ── */}
-      <View style={styles.tabBar}>
-        {[
-          { label: 'Home',     icon: 'home-outline',        screen: 'SupervisorDashboard' },
-          { label: 'Students', icon: 'people-outline',      screen: 'MyStudents' },
-          { label: 'Reviews',  icon: 'document-text-outline', active: true },
-          { label: 'Reports',  icon: 'bar-chart-outline',   screen: 'Reports' },
-        ].map((t, i) => (
-          <TouchableOpacity
-            key={i}
-            style={styles.tabItem}
-            onPress={() => t.screen && navigation.navigate(t.screen)}
-          >
-            <Ionicons name={t.icon} size={22} color={t.active ? TEAL : GRAY} />
-            <Text style={[styles.tabLabel, t.active && styles.tabLabelActive]}>{t.label}</Text>
-            {t.active && <View style={styles.tabDot} />}
-          </TouchableOpacity>
-        ))}
-      </View>
 
     </SafeAreaView>
   );
@@ -295,7 +299,7 @@ export default function ReviewLogbooksScreen({ navigation, route }) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: LIGHT },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: LIGHT },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loadingText: { marginTop: 10, color: GRAY, fontSize: 14 },
 
   // Header
@@ -307,13 +311,14 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     backgroundColor: LIGHT,
   },
-  menuBtn: { padding: 4 },
-  headerBrand: { fontSize: 22, fontWeight: '800', color: TEAL },
-  avatarSmall: {
-    width: 38, height: 38, borderRadius: 19,
-    backgroundColor: TEAL,
-    justifyContent: 'center', alignItems: 'center',
+  backBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
+  backText: { fontSize: 15, fontWeight: '600', color: TEAL },
+  headerBrand: { fontSize: 22, fontWeight: '800', color: TEAL },
+
 
   // Page Title
   pageTitleSection: {
@@ -368,17 +373,6 @@ const styles = StyleSheet.create({
   studentInfo: { flex: 1 },
   studentName: { fontSize: 16, fontWeight: '800', color: DARK },
   studentDept: { fontSize: 13, color: GRAY, marginTop: 2 },
-  deadlineBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F3F4F6',
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  deadlineBadgeUrgent: { backgroundColor: '#FEF2F2' },
-  deadlineText: { fontSize: 10, fontWeight: '700', color: GRAY, letterSpacing: 0.3 },
-  deadlineTextUrgent: { color: RED },
 
   // Entry Row
   entryRow: {
@@ -450,6 +444,24 @@ const styles = StyleSheet.create({
   },
   rejectBtnText: { color: RED, fontWeight: '700', fontSize: 15 },
 
+  // Reviewed badge
+  reviewedBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  reviewedBadgeApproved: { backgroundColor: '#E8F5F1' },
+  reviewedBadgeRejected: { backgroundColor: '#FCE8E8' },
+  reviewedBadgeRevision: { backgroundColor: '#FAEEDA' },
+  reviewedBadgeText: { flex: 1, fontSize: 13, fontWeight: '700', letterSpacing: 0.4 },
+  reviewedViewLink: {
+    fontSize: 13, fontWeight: '600', color: GRAY,
+    textDecorationLine: 'underline',
+  },
+
   // Empty
   emptyCard: {
     backgroundColor: WHITE,
@@ -461,21 +473,4 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { fontSize: 16, fontWeight: '800', color: DARK },
   emptyText: { fontSize: 13, color: GRAY, textAlign: 'center' },
-
-  // Tab Bar
-  tabBar: {
-    flexDirection: 'row',
-    backgroundColor: WHITE,
-    borderTopWidth: 1,
-    borderTopColor: BORDER,
-    paddingVertical: 10,
-    paddingHorizontal: '2%',
-  },
-  tabItem: { flex: 1, alignItems: 'center', paddingVertical: 4 },
-  tabLabel: { fontSize: 11, color: GRAY, marginTop: 3, fontWeight: '500' },
-  tabLabelActive: { color: TEAL, fontWeight: '700' },
-  tabDot: {
-    width: 5, height: 5, borderRadius: 3,
-    backgroundColor: TEAL, marginTop: 3,
-  },
 });
