@@ -100,11 +100,11 @@ export default function RegisterScreen({ navigation }) {
         
         <View style={styles.headerContent}>
           <Text style={styles.headerTitle}>Create Account</Text>
-          <div style={styles.subtitleRow}>
+          <View style={styles.subtitleRow}>
             <View style={styles.goldLine} />
             <Text style={styles.subtitleText}>Industrial Attachment Management</Text>
             <View style={styles.goldLine} />
-          </div>
+          </View>
           <Text style={styles.headerAcronym}>IAMS</Text>
         </View>
 
