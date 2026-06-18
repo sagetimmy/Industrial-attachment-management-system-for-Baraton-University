@@ -1,112 +1,138 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform } from 'react-native';
+import { supabase } from '../lib/supabase';
 import api from '../api/axios';
-
-// ─── Storage helper: localStorage on web, AsyncStorage on mobile ───
-const Storage = {
-  getItem: async (key) => {
-    if (Platform.OS === 'web') return localStorage.getItem(key);
-    return AsyncStorage.getItem(key);
-  },
-  setItem: async (key, value) => {
-    if (Platform.OS === 'web') return localStorage.setItem(key, value);
-    return AsyncStorage.setItem(key, value);
-  },
-  removeItem: async (key) => {
-    if (Platform.OS === 'web') return localStorage.removeItem(key);
-    return AsyncStorage.removeItem(key);
-  },
-};
-
-const storeAccessToken = async (data) => {
-  const token = data?.accessToken || data?.token;
-  if (!token) {
-    throw new Error('Authentication token missing from server response');
-  }
-  await Storage.setItem('iams_token', token);
-  return token;
-};
 
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(null);
+  const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const loadUser = async () => {
-      const storedToken = await Storage.getItem('iams_token');
-      if (storedToken) {
-        setToken(storedToken);
-        try {
-          const res = await api.get('/auth/me');
-          setUser(res.data);
-        } catch {
-          await Storage.removeItem('iams_token');
-          setUser(null);
-          setToken(null);
-        }
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session) {
+        fetchUserProfile(session.user);
+      } else {
+        setLoading(false);
       }
-      setLoading(false);
-    };
-    loadUser();
+    });
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      if (session) {
+        fetchUserProfile(session.user);
+      } else {
+        setUser(null);
+        setLoading(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  const login = async (email, password) => {
-    const { data } = await api.post('/auth/login', { email, password });
-    const newToken = await storeAccessToken(data);
-    setToken(newToken);
+  const fetchUserProfile = async (supabaseUser) => {
     try {
-      const me = await api.get('/auth/me');
-      setUser(me.data);
-      return me.data;
-    } catch {
-      const fallbackUser = { email, role: data.role };
-      setUser(fallbackUser);
-      return fallbackUser;
+      // We still need to fetch the extended profile from our backend
+      // which now uses the Supabase user_id as the primary key.
+      const res = await api.get('/auth/me');
+      setUser(res.data);
+    } catch (error) {
+      console.error('Error fetching user profile:', error);
+      // Fallback to basic info if backend profile fetch fails
+      setUser({
+        user_id: supabaseUser.id,
+        email: supabaseUser.email,
+        role: supabaseUser.user_metadata?.role || 'student',
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
+  const login = async (email, password) => {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (error) throw error;
+    return data.user;
+  };
+
   const register = async (formData) => {
-    const { data } = await api.post('/auth/register', formData);
+    const { email, password, role, ...metadata } = formData;
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          role: role || 'student',
+          ...metadata,
+        },
+      },
+    });
+    if (error) throw error;
+    
+    // Note: In Supabase, if email confirmation is enabled, the user
+    // will need to verify their email before they can fully sign in.
     return data;
   };
 
   const verifyEmail = async (email, code) => {
-    const { data } = await api.post('/auth/verify', { email, code });
-    const newToken = await storeAccessToken(data);
-    setToken(newToken);
-    const me = await api.get('/auth/me');
-    setUser(me.data);
-    return { ...data, user: me.data };
+    const { data, error } = await supabase.auth.verifyOtp({
+      email,
+      token: code,
+      type: 'signup',
+    });
+    if (error) throw error;
+    return data;
   };
 
   const resendVerificationCode = async (email) => {
-    const { data } = await api.post('/auth/resend-code', { email });
+    const { data, error } = await supabase.auth.resend({
+      type: 'signup',
+      email,
+    });
+    if (error) throw error;
     return data;
   };
 
   const forgotPassword = async (email) => {
-    const { data } = await api.post('/auth/forgot-password', { email });
+    const { data, error } = await supabase.auth.resetPasswordForEmail(email);
+    if (error) throw error;
     return data;
   };
 
   const resetPassword = async (email, code, password) => {
-    const { data } = await api.post('/auth/reset-password', { email, code, password });
-    return data;
+    // For Supabase, resetting password usually involves a code/token
+    // that redirects to a site. If using OTP for reset:
+    const { data, error: verifyError } = await supabase.auth.verifyOtp({
+      email,
+      token: code,
+      type: 'recovery',
+    });
+    if (verifyError) throw verifyError;
+
+    const { data: updateData, error: updateError } = await supabase.auth.updateUser({
+      password: password,
+    });
+    if (updateError) throw updateError;
+    return updateData;
   };
 
   const logout = async () => {
-    await Storage.removeItem('iams_token');
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
     setUser(null);
-    setToken(null);
+    setSession(null);
   };
 
   return (
     <AuthContext.Provider value={{
-      user, loading, token, login, register, verifyEmail,
+      user, loading, token: session?.access_token, login, register, verifyEmail,
       resendVerificationCode, forgotPassword, resetPassword, logout,
     }}>
       {children}

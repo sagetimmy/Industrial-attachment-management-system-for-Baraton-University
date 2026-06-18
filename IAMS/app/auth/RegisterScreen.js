@@ -5,7 +5,7 @@ import {
   Dimensions
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import api from '../../api/axios';
+import { useAuth } from '../../context/AuthContext';
 import Spinner from '../../components/Spinner';
 
 const { height } = Dimensions.get('window');
@@ -20,6 +20,7 @@ const INPUT_BG = '#F3F6FB';
 const BORDER   = '#D1D9E6';
 
 export default function RegisterScreen({ navigation }) {
+  const { register } = useAuth();
   const [role, setRole] = useState('student');
   const [showRoleDropdown, setShowRoleDropdown] = useState(false);
   const [form, setForm] = useState({
@@ -72,10 +73,10 @@ export default function RegisterScreen({ navigation }) {
 
     setLoading(true);
     try {
-      await api.post('/auth/register', { ...form, role });
+      await register({ ...form, role });
       navigation.navigate('Verify', { email: form.email });
     } catch (err) {
-      Alert.alert('Registration Failed', err.response?.data?.message || 'Something went wrong');
+      Alert.alert('Registration Failed', err.message || 'Something went wrong');
     } finally {
       setLoading(false);
     }
@@ -99,11 +100,11 @@ export default function RegisterScreen({ navigation }) {
         
         <View style={styles.headerContent}>
           <Text style={styles.headerTitle}>Create Account</Text>
-          <View style={styles.subtitleRow}>
+          <div style={styles.subtitleRow}>
             <View style={styles.goldLine} />
             <Text style={styles.subtitleText}>Industrial Attachment Management</Text>
             <View style={styles.goldLine} />
-          </View>
+          </div>
           <Text style={styles.headerAcronym}>IAMS</Text>
         </View>
 
@@ -415,113 +416,114 @@ export default function RegisterScreen({ navigation }) {
           {loading ? (
             <Spinner color={WHITE} size="small" />
           ) : (
-            <Text style={styles.signUpText}>Register</Text>
+            <>
+              <Text style={styles.signUpText}>Create Account</Text>
+              <Ionicons name="person-add-outline" size={20} color={WHITE} style={{ marginLeft: 8 }} />
+            </>
           )}
         </TouchableOpacity>
 
-        {/* Sign In Link */}
-        <View style={styles.signInRow}>
-          <Text style={styles.signInText}>Already have an account? </Text>
+        {/* Login Link */}
+        <View style={styles.loginRow}>
+          <Text style={styles.loginText}>Already have an account? </Text>
           <TouchableOpacity onPress={() => navigation.navigate('Login')}>
-            <Text style={styles.signInLink}>Sign In</Text>
+            <Text style={styles.loginLink}>Log In</Text>
           </TouchableOpacity>
         </View>
-
-        <View style={{ height: 40 }} />
       </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: WHITE,
-  },
-
-  // Header
+  root: { flex: 1, backgroundColor: WHITE },
   header: {
     backgroundColor: NAVY,
+    height: 180,
     paddingTop: 40,
-    paddingBottom: 30,
-    paddingHorizontal: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
   },
   backBtn: {
-    padding: 8,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerContent: {
-    flex: 1,
+    marginTop: 10,
     alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 28,
-    fontWeight: '900',
+    fontSize: 24,
+    fontWeight: '700',
     color: WHITE,
-    letterSpacing: 0.5,
   },
   subtitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 4,
     gap: 8,
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-  },
-  subtitleText: {
-    fontSize: 13,
-    color: WHITE,
-    fontWeight: '600',
-    textAlign: 'center',
-    flexShrink: 1,
   },
   goldLine: {
-    height: 2,
+    height: 1.5,
     backgroundColor: GOLD,
-    maxWidth: 50,
-    flex: 1,
+    width: 30,
+  },
+  subtitleText: {
+    color: WHITE,
+    fontSize: 11,
+    fontWeight: '600',
+    opacity: 0.8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   headerAcronym: {
-    fontSize: 20,
-    fontWeight: '850',
-    color: WHITE,
-    letterSpacing: 5,
-    marginTop: 6,
+    fontSize: 16,
+    fontWeight: '800',
+    color: GOLD,
+    marginTop: 2,
+    letterSpacing: 2,
   },
   headerIcon: {
-    padding: 8,
-  },
-
-  // Wave divider
-  waveDivider: {
-    height:34,
-    backgroundColor: NAVY,
-    borderBottomLeftRadius: 1000,
-    borderBottomRightRadius: 1000,
-  },
-
-  // Form
-  formContainer: {
-    flex: 2,
+    position: 'absolute',
+    bottom: -16,
+    right: 32,
     backgroundColor: WHITE,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+  },
+  waveDivider: {
+    height: 20,
+  },
+  formContainer: {
+    flex: 1,
   },
   formContent: {
-    paddingHorizontal: 20,
-    paddingTop: 24,
+    paddingHorizontal: 24,
+    paddingTop: 20,
     paddingBottom: 40,
   },
-
   sectionLabel: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
     color: NAVY,
     marginBottom: 12,
     marginTop: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-
-  // Role Dropdown
   roleDropdown: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -530,8 +532,8 @@ const styles = StyleSheet.create({
     borderColor: BLUE,
     borderRadius: 14,
     paddingHorizontal: 16,
-    paddingVertical: 14,
-    marginBottom: 16,
+    height: 56,
+    marginBottom: 8,
   },
   roleIcon: {
     marginRight: 12,
@@ -544,22 +546,26 @@ const styles = StyleSheet.create({
   },
   roleDropdownMenu: {
     backgroundColor: WHITE,
-    borderWidth: 1.5,
-    borderColor: BLUE,
-    borderRadius: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: BORDER,
     marginBottom: 16,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
     overflow: 'hidden',
   },
   roleOption: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal:20,
-    paddingVertical: 15,
-    borderBottomWidth: 5,
-    borderBottomColor: BORDER,
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
   },
   roleOptionSelected: {
-    backgroundColor: '#E3F2FD',
+    backgroundColor: '#EEF2FF',
   },
   roleOptionText: {
     fontSize: 14,
@@ -570,98 +576,83 @@ const styles = StyleSheet.create({
     color: BLUE,
     fontWeight: '700',
   },
-
-  // Input fields
   inputWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: INPUT_BG,
-    borderWidth: 1,
-    borderColor: BORDER,
-    borderRadius: 28,
-    paddingHorizontal: 20,
+    borderRadius: 14,
+    paddingHorizontal: 16,
     marginBottom: 16,
-    height: 66,
+    height: 56,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
   inputIcon: {
     marginRight: 12,
   },
   input: {
     flex: 1,
-    fontSize: 16,
+    fontSize: 15,
     color: NAVY,
     fontWeight: '500',
-    paddingVertical: 12,
-    paddingRight: 8,
-    textAlignVertical: 'center',
   },
-
-  // Terms checkbox
   termsRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     marginBottom: 24,
-    gap: 10,
+    marginTop: 8,
   },
   checkbox: {
-    width: 22,
-    height: 22,
+    width: 20,
+    height: 20,
     borderRadius: 6,
-    borderWidth: 1.5,
+    borderWidth: 2,
     borderColor: BLUE,
+    marginRight: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: WHITE,
   },
   checkboxChecked: {
     backgroundColor: BLUE,
-    borderColor: BLUE,
   },
   termsText: {
-    fontSize: 14,
-    color: NAVY,
+    fontSize: 13,
+    color: '#6B7280',
     flex: 1,
-    flexWrap: 'wrap',
-    lineHeight: 20,
   },
   termsLink: {
-    fontSize: 14,
     color: BLUE,
     fontWeight: '700',
-    textDecorationLine: 'underline',
   },
-
-  // Sign up button
   signUpBtn: {
     backgroundColor: BLUE,
     borderRadius: 14,
     height: 56,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 20,
+    marginBottom: 24,
     shadowColor: BLUE,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
+    shadowOpacity: 0.3,
     shadowRadius: 8,
-    elevation: 6,
+    elevation: 4,
   },
   signUpText: {
     color: WHITE,
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '700',
   },
-
-  // Sign in link
-  signInRow: {
+  loginRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  signInText: {
+  loginText: {
     fontSize: 14,
-    color: GRAY,
+    color: '#6B7280',
   },
-  signInLink: {
+  loginLink: {
     fontSize: 14,
     color: BLUE,
     fontWeight: '700',
