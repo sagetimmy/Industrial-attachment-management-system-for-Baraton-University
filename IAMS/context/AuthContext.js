@@ -66,12 +66,32 @@ export const AuthProvider = ({ children }) => {
     return data.user;
   };
 
-  // register() calls the backend which handles both Supabase Auth signUp
-  // AND inserts into the users/role tables in one transaction
+  // register() uses a two-step flow so that all Supabase Auth calls go through
+  // the backend (which can reach Supabase), bypassing campus network restrictions.
+  //
+  // Step 1 — POST /auth/register:
+  //   Backend calls supabase.auth.signUp() and returns { auth_id, user }.
+  //
+  // Step 2 — POST /auth/register-profile:
+  //   Frontend sends auth_id + profile fields so the backend can insert the
+  //   role-specific profile row (students / supervisors / host_organizations).
   const register = async (formData) => {
     try {
-      const res = await api.post('/auth/register', formData);
-      return res.data;
+      // Step 1: create the Supabase Auth account on the backend
+      const { data: { auth_id } } = await api.post('/auth/register', {
+        email:     formData.email,
+        password:  formData.password,
+        role:      formData.role,
+        full_name: formData.full_name || '',
+      });
+
+      // Step 2: persist the role-specific profile row
+      const profileRes = await api.post('/auth/register-profile', {
+        ...formData,
+        auth_id,
+      });
+
+      return profileRes.data;
     } catch (err) {
       // Surface the backend error message to the UI
       const message = err.response?.data?.message || err.message || 'Registration failed';
