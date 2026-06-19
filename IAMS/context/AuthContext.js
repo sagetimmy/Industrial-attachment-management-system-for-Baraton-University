@@ -5,26 +5,24 @@ import api from '../api/axios';
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
+  const [user, setUser]       = useState(null);
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       if (session) {
-        fetchUserProfile(session.user);
+        fetchUserProfile();
       } else {
         setLoading(false);
       }
     });
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
       if (session) {
-        fetchUserProfile(session.user);
+        fetchUserProfile();
       } else {
         setUser(null);
         setLoading(false);
@@ -34,51 +32,51 @@ export const AuthProvider = ({ children }) => {
     return () => subscription.unsubscribe();
   }, []);
 
-  const fetchUserProfile = async (supabaseUser) => {
+  const fetchUserProfile = async () => {
     try {
-      // We still need to fetch the extended profile from our backend
-      // which now uses the Supabase user_id as the primary key.
       const res = await api.get('/auth/me');
       setUser(res.data);
     } catch (error) {
-      console.error('Error fetching user profile:', error);
-      // Fallback to basic info if backend profile fetch fails
-      setUser({
-        user_id: supabaseUser.id,
-        email: supabaseUser.email,
-        role: supabaseUser.user_metadata?.role || 'student',
-      });
+      console.error('Error fetching user profile:', error.message);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        const role = session.user.user_metadata?.role;
+        if (role) {
+          setUser({
+            user_id: session.user.id,
+            email:   session.user.email,
+            role,
+          });
+        } else {
+          console.warn('Role unknown in session metadata, logging out');
+          await supabase.auth.signOut();
+          setUser(null);
+        }
+      } else {
+        setUser(null);
+      }
     } finally {
       setLoading(false);
     }
   };
 
   const login = async (email, password) => {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
     return data.user;
   };
 
+  // register() calls the backend which handles both Supabase Auth signUp
+  // AND inserts into the users/role tables in one transaction
   const register = async (formData) => {
-    const { email, password, role, ...metadata } = formData;
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          role: role || 'student',
-          ...metadata,
-        },
-      },
-    });
-    if (error) throw error;
-    
-    // Note: In Supabase, if email confirmation is enabled, the user
-    // will need to verify their email before they can fully sign in.
-    return data;
+    try {
+      const res = await api.post('/auth/register', formData);
+      return res.data;
+    } catch (err) {
+      // Surface the backend error message to the UI
+      const message = err.response?.data?.message || err.message || 'Registration failed';
+      throw new Error(message);
+    }
   };
 
   const verifyEmail = async (email, code) => {
@@ -107,8 +105,6 @@ export const AuthProvider = ({ children }) => {
   };
 
   const resetPassword = async (email, code, password) => {
-    // For Supabase, resetting password usually involves a code/token
-    // that redirects to a site. If using OTP for reset:
     const { data, error: verifyError } = await supabase.auth.verifyOtp({
       email,
       token: code,
@@ -116,9 +112,7 @@ export const AuthProvider = ({ children }) => {
     });
     if (verifyError) throw verifyError;
 
-    const { data: updateData, error: updateError } = await supabase.auth.updateUser({
-      password: password,
-    });
+    const { data: updateData, error: updateError } = await supabase.auth.updateUser({ password });
     if (updateError) throw updateError;
     return updateData;
   };
@@ -126,14 +120,22 @@ export const AuthProvider = ({ children }) => {
   const logout = async () => {
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
-    setUser(null);
-    setSession(null);
   };
 
   return (
     <AuthContext.Provider value={{
-      user, loading, token: session?.access_token, login, register, verifyEmail,
-      resendVerificationCode, forgotPassword, resetPassword, logout,
+      user,
+      loading,
+      session,
+      token: session?.access_token,
+      login,
+      register,
+      verifyEmail,
+      resendVerificationCode,
+      forgotPassword,
+      resetPassword,
+      logout,
+      fetchUserProfile,
     }}>
       {children}
     </AuthContext.Provider>
