@@ -27,6 +27,43 @@ const retry = async (fn, retries = 3, delay = 1000) => {
   }
 };
 
+// POST /api/auth/register
+// Calls supabase.auth.signUp() on the backend (bypasses campus firewall)
+// Returns auth_id and user so the frontend can follow up with /register-profile
+router.post('/register', async (req, res) => {
+  const { email, password, role, full_name } = req.body;
+
+  if (!email || !password || !role) {
+    return res.status(400).json({ message: 'email, password, and role are required' });
+  }
+
+  try {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { role, full_name: full_name || '' },
+      },
+    });
+
+    if (error) {
+      console.error('❌ Supabase signUp error:', error.message);
+      return res.status(400).json({ message: error.message });
+    }
+
+    const auth_id = data.user?.id;
+    if (!auth_id) {
+      return res.status(500).json({ message: 'Sign-up succeeded but no user ID was returned' });
+    }
+
+    console.log(`✅ Supabase Auth signUp successful for ${email} (auth_id: ${auth_id})`);
+    return res.status(201).json({ auth_id, user: data.user });
+  } catch (err) {
+    console.error('❌ /register unexpected error:', err.message);
+    return res.status(500).json({ message: err.message });
+  }
+});
+
 // POST /api/auth/register-profile
 router.post('/register-profile', async (req, res) => {
   const {
