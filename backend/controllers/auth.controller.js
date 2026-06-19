@@ -1,109 +1,137 @@
+// backend/controllers/auth.controller.js
 const supabase = require('../config/db');
-const { getRolePermissions } = require('../utils/rolePermissions');
 
-/**
- * Since authentication is now handled by Supabase Auth on the frontend,
- * the backend controllers mainly focus on retrieving user profiles
- * and managing application-specific user data.
- */
+// Helper: get role permissions
+const getRolePermissions = (role) => {
+  // Define permissions based on role
+  const permissions = {
+    admin: ['view_all', 'edit_all', 'manage_users', 'manage_attachments', 'manage_orgs', 'view_reports'],
+    supervisor: ['view_students', 'review_logbooks', 'manage_evaluations', 'view_reports'],
+    student: ['view_own_profile', 'submit_logbook', 'apply_attachment', 'view_feedback'],
+    host_org: ['view_own_org', 'manage_slots', 'view_applications', 'manage_placements']
+  };
+  return permissions[role] || [];
+};
 
 // GET /api/auth/me
 const getMe = async (req, res) => {
   try {
-    // 1. Check if the user exists in our custom 'users' table
-    let { data: user, error } = await supabase
+    const userId = req.user.user_id;
+    const userEmail = req.user.email;
+    const userRole = req.user.role;
+
+    console.log('👤 getMe called for user:', { userId, email: userEmail, role: userRole });
+
+    // 1. Get the user from the users table (no joins)
+    const { data: user, error: userError } = await supabase
       .from('users')
-      .select(`
-        user_id, email, role,
-        students!students_user_id_fkey (full_name, reg_number, department, year_of_study, phone),
-        supervisors!supervisors_user_id_fkey (full_name, department, phone),
-        host_organizations!host_organizations_user_id_fkey (org_name, location, contact_person, available_slots)
-      `)
-      .eq('user_id', req.user.user_id)
+      .select('user_id, email, role, is_verified, is_active, created_at')
+      .eq('user_id', userId)
       .maybeSingle();
 
-    if (error) {
-      console.error('Error fetching user from DB:', error.message);
+    if (userError) {
+      console.error('Error fetching user:', userError.message);
       return res.status(500).json({ message: 'Database error' });
     }
 
-    // 2. If user doesn't exist, they were likely created via Supabase Auth directly
-    // We need to sync them to our 'users' table and potentially a profile table
-    if (!user) {
-      console.log('User not found in custom users table, syncing...', req.user.user_id);
-      
-      // Get full user info from Supabase Auth (already verified by middleware)
-      const role = req.user.role || 'student';
-      
-      // Insert into our custom users table
+    let profile = {};
+    let profileError = null;
+
+    if (user) {
+      // 2. Fetch profile based on role
+      if (userRole === 'student') {
+        const { data, error } = await supabase
+          .from('students')
+          .select('*')
+          .eq('user_id', userId)
+          .maybeSingle();
+        profile = data || {};
+        profileError = error;
+      } else if (userRole === 'supervisor') {
+        const { data, error } = await supabase
+          .from('supervisors')
+          .select('*')
+          .eq('user_id', userId)
+          .maybeSingle();
+        profile = data || {};
+        profileError = error;
+      } else if (userRole === 'host_org') {
+        const { data, error } = await supabase
+          .from('host_organizations')
+          .select('*')
+          .eq('user_id', userId)
+          .maybeSingle();
+        profile = data || {};
+        profileError = error;
+      }
+
+      if (profileError) {
+        console.error('Error fetching profile:', profileError.message);
+        // Continue without profile if not found
+      }
+    } else {
+      // 3. User not found in users table – sync from Supabase Auth
+      console.log('User not in DB, creating sync entry...');
+
+      // Insert into users table
       const { data: newUser, error: insertError } = await supabase
         .from('users')
         .insert({
-          user_id: req.user.user_id,
-          email: req.user.email,
-          role: role,
-          is_verified: true, // They are authenticated via Supabase, so they are verified
+          user_id: userId,
+          email: userEmail,
+          role: userRole || 'student',
+          is_verified: true,
+          is_active: true
         })
         .select()
         .single();
 
       if (insertError) {
-        console.error('Error syncing user to DB:', insertError.message);
-        return res.status(500).json({ message: 'Failed to sync user profile' });
+        console.error('Error inserting user:', insertError.message);
+        return res.status(500).json({ message: 'Failed to sync user' });
       }
 
-      user = newUser;
-
-      // Also create an empty profile record if it's a student/supervisor/host
-      if (role === 'student') {
-        await supabase.from('students').insert({ user_id: user.user_id, full_name: '', reg_number: '' });
-      } else if (role === 'supervisor') {
-        await supabase.from('supervisors').insert({ user_id: user.user_id, full_name: '' });
-      } else if (role === 'host_org') {
-        await supabase.from('host_organizations').insert({ user_id: user.user_id, org_name: '' });
+      // Insert empty profile record
+      if (userRole === 'student') {
+        await supabase.from('students').insert({ user_id: userId, full_name: '', reg_number: '' });
+      } else if (userRole === 'supervisor') {
+        await supabase.from('supervisors').insert({ user_id: userId, full_name: '' });
+      } else if (userRole === 'host_org') {
+        await supabase.from('host_organizations').insert({ user_id: userId, org_name: '' });
       }
-      
-      // Re-fetch to get the profile structure
-      const { data: syncedUser } = await supabase
-        .from('users')
-        .select(`
-          user_id, email, role,
-          students!students_user_id_fkey (full_name, reg_number, department, year_of_study, phone),
-          supervisors!supervisors_user_id_fkey (full_name, department, phone),
-          host_organizations!host_organizations_user_id_fkey (org_name, location, contact_person, available_slots)
-        `)
-        .eq('user_id', req.user.user_id)
-        .single();
-      user = syncedUser;
+
+      // Return the synced user (without re-fetching)
+      return res.json({
+        user_id: userId,
+        email: userEmail,
+        role: userRole || 'student',
+        permissions: getRolePermissions(userRole || 'student'),
+      });
     }
 
-    const profile =
-      user.students?.[0] ||
-      user.supervisors?.[0] ||
-      user.host_organizations?.[0] ||
-      {};
-
-    const permissions = await getRolePermissions(user.role);
-
-    res.json({ 
-      user_id: user.user_id, 
-      email: user.email, 
-      role: user.role, 
-      permissions, 
-      ...profile 
+    // 4. Build response
+    const permissions = getRolePermissions(user.role);
+    res.json({
+      user_id: user.user_id,
+      email: user.email,
+      role: user.role,
+      is_verified: user.is_verified,
+      is_active: user.is_active,
+      permissions,
+      ...profile
     });
   } catch (err) {
     console.error('getMe error:', err.message);
-    res.status(500).json({ message: err.message });
+    console.error('Stack:', err.stack);
+    res.status(500).json({ message: 'Internal server error' });
   }
 };
 
-// Placeholder for other routes that might be called from the frontend
-// but are now handled by Supabase client directly.
+// Placeholder for other routes (keep as-is)
 const register = async (req, res) => res.status(410).json({ message: 'Use Supabase Auth client for registration' });
-const login = async (req, res) => res.status(410).json({ message: 'Use Supabase Auth client for login' });
 const verifyEmail = async (req, res) => res.status(410).json({ message: 'Use Supabase Auth client for verification' });
 const resendCode = async (req, res) => res.status(410).json({ message: 'Use Supabase Auth client for resending code' });
+const login = async (req, res) => res.status(410).json({ message: 'Use Supabase Auth client for login' });
 const refresh = async (req, res) => res.status(410).json({ message: 'Session refresh handled by Supabase client' });
 const logout = async (req, res) => res.status(410).json({ message: 'Logout handled by Supabase client' });
 const forgotPassword = async (req, res) => res.status(410).json({ message: 'Use Supabase Auth client for password reset' });
