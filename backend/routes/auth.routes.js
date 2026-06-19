@@ -27,140 +27,40 @@ const retry = async (fn, retries = 3, delay = 1000) => {
   }
 };
 
-// POST /api/auth/register
-router.post('/register', async (req, res) => {
-  const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  console.log(`[register:${requestId}] Starting registration`);
+// POST /api/auth/register-profile
+router.post('/register-profile', async (req, res) => {
+  const {
+    auth_id, email, role, full_name, reg_number,
+    department, year_of_study, phone,
+    org_name, location, contact_person
+  } = req.body;
 
   try {
-    const {
-      email, password, role, full_name, reg_number,
-      department, year_of_study, phone,
-      org_name, location, contact_person
-    } = req.body;
-
-    if (!email || !password || !role) {
-      return res.status(400).json({ message: 'Email, password, and role are required' });
-    }
-
-    console.log(`[register:${requestId}] Calling Supabase Auth signUp with retries...`);
-
-    const { data, error: authError } = await retry(
-      () => supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: { role, full_name },
-          emailRedirectTo: 'http://localhost:3000/verify'
-        }
-      }),
-      3,
-      2000
-    );
-
-    if (authError) {
-      console.error(`[register:${requestId}] Supabase Auth error:`, authError);
-      if (authError.message.includes('User already registered')) {
-        return res.status(409).json({ message: 'Email already registered. Please log in.' });
-      }
-      return res.status(400).json({ message: authError.message });
-    }
-
-    if (!data.user) {
-      console.error(`[register:${requestId}] No user returned from auth`);
-      return res.status(500).json({ message: 'Failed to create user in authentication system' });
-    }
-
-    console.log(`[register:${requestId}] Auth user created:`, data.user.id);
-
     const { data: newUser, error: dbError } = await supabase
       .from('users')
-      .insert({
-        email,
-        password: 'supabase_auth_managed',
-        role,
-        auth_id: data.user.id,
-        is_verified: false,
-        is_active: true
-      })
+      .insert({ email, password: 'supabase_auth_managed', role, auth_id, is_verified: false, is_active: true })
       .select()
       .single();
 
-    if (dbError) {
-      console.error(`[register:${requestId}] Database insert error:`, dbError);
-      try { await supabase.auth.admin.deleteUser(data.user.id); } catch (e) {}
-      return res.status(500).json({ message: 'Failed to create user profile', error: dbError.message });
-    }
-
-    console.log(`[register:${requestId}] User inserted into users table:`, newUser.user_id);
-
-    let roleData = null;
+    if (dbError) return res.status(500).json({ message: dbError.message });
 
     if (role === 'student') {
-      if (!reg_number) {
-        return res.status(400).json({ message: 'Registration number is required for students' });
-      }
-      const { data: student, error: studentError } = await supabase
-        .from('students')
-        .insert({ user_id: newUser.user_id, full_name, reg_number, department, year_of_study: year_of_study || 1, phone })
-        .select()
-        .single();
-
-      if (studentError) {
-        console.error(`[register:${requestId}] Student insert error:`, studentError);
-        await supabase.from('users').delete().eq('user_id', newUser.user_id);
-        try { await supabase.auth.admin.deleteUser(data.user.id); } catch (e) {}
-        return res.status(500).json({ message: 'Failed to create student record', error: studentError.message });
-      }
-      roleData = student;
-
+      const { error } = await supabase.from('students')
+        .insert({ user_id: newUser.user_id, full_name, reg_number, department, year_of_study: year_of_study || 1, phone });
+      if (error) throw error;
     } else if (role === 'supervisor') {
-      const { data: supervisor, error: supError } = await supabase
-        .from('supervisors')
-        .insert({ user_id: newUser.user_id, full_name, department, phone })
-        .select()
-        .single();
-
-      if (supError) {
-        console.error(`[register:${requestId}] Supervisor insert error:`, supError);
-        await supabase.from('users').delete().eq('user_id', newUser.user_id);
-        try { await supabase.auth.admin.deleteUser(data.user.id); } catch (e) {}
-        return res.status(500).json({ message: 'Failed to create supervisor record', error: supError.message });
-      }
-      roleData = supervisor;
-
+      const { error } = await supabase.from('supervisors')
+        .insert({ user_id: newUser.user_id, full_name, department, phone });
+      if (error) throw error;
     } else if (role === 'host_org') {
-      if (!org_name) {
-        return res.status(400).json({ message: 'Organization name is required for host organizations' });
-      }
-      const { data: org, error: orgError } = await supabase
-        .from('host_organizations')
-        .insert({ user_id: newUser.user_id, org_name, location, contact_person, phone, is_approved: false, available_slots: 0 })
-        .select()
-        .single();
-
-      if (orgError) {
-        console.error(`[register:${requestId}] Host org insert error:`, orgError);
-        await supabase.from('users').delete().eq('user_id', newUser.user_id);
-        try { await supabase.auth.admin.deleteUser(data.user.id); } catch (e) {}
-        return res.status(500).json({ message: 'Failed to create host organization record', error: orgError.message });
-      }
-      roleData = org;
+      const { error } = await supabase.from('host_organizations')
+        .insert({ user_id: newUser.user_id, org_name, location, contact_person, phone, available_slots: 0 });
+      if (error) throw error;
     }
 
-    console.log(`[register:${requestId}] Registration successful for ${email}`);
-    res.status(201).json({
-      message: 'User registered successfully. Please verify your email.',
-      user: newUser,
-      role_data: roleData
-    });
-
+    res.status(201).json({ message: 'Profile created successfully' });
   } catch (err) {
-    console.error(`[register:${requestId}] Unhandled error:`, err);
-    if (err.message && err.message.includes('timeout')) {
-      return res.status(504).json({ message: 'Registration service is temporarily unavailable. Please try again later.' });
-    }
-    res.status(500).json({ message: err.message || 'Registration failed' });
+    res.status(500).json({ message: err.message });
   }
 });
 
