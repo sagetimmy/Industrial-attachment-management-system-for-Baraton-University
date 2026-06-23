@@ -27,7 +27,6 @@ router.post('/register', async (req, res) => {
   }
 
   try {
-    // Use admin API to bypass Auth flow timeout issues
     const { data, error } = await supabase.auth.admin.createUser({
       email,
       password,
@@ -47,27 +46,24 @@ router.post('/register', async (req, res) => {
 
     console.log(`✅ Auth user created for ${email} (auth_id: ${auth_id})`);
 
-    // Generate OTP and store in password_reset_codes
+    // Generate OTP and store
     const otp = generateOTP();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
     await supabase.from('password_reset_codes').delete().eq('email', email);
-
-    const { error: otpError } = await supabase.from('password_reset_codes').insert({
+    await supabase.from('password_reset_codes').insert({
       email,
       code: otp,
       expires_at: expiresAt.toISOString(),
     });
 
-    if (otpError) {
-      console.error('❌ OTP insert error:', otpError.message);
-      return res.status(500).json({ message: 'Failed to generate verification code' });
-    }
+    // Respond immediately — send email in background
+    res.status(201).json({ auth_id, user: data.user });
 
-    // Send verification email
-    await sendVerificationEmail(email, full_name || 'User', otp);
+    sendVerificationEmail(email, full_name || 'User', otp)
+      .then(() => console.log(`✅ Verification email sent to ${email}`))
+      .catch(err => console.error(`❌ Email send failed: ${err.message}`));
 
-    return res.status(201).json({ auth_id, user: data.user });
   } catch (err) {
     console.error('❌ /register unexpected error:', err.message);
     return res.status(500).json({ message: err.message });
@@ -204,9 +200,13 @@ router.post('/resend-code', async (req, res) => {
       if (student?.full_name) fullName = student.full_name;
     }
 
-    await sendVerificationEmail(email, fullName, otp);
+    // Send in background
+    res.status(200).json({ message: 'Verification code resent' });
 
-    return res.status(200).json({ message: 'Verification code resent' });
+    sendVerificationEmail(email, fullName, otp)
+      .then(() => console.log(`✅ Resend email sent to ${email}`))
+      .catch(err => console.error(`❌ Resend email failed: ${err.message}`));
+
   } catch (err) {
     console.error('❌ /resend-code error:', err.message);
     return res.status(500).json({ message: err.message });

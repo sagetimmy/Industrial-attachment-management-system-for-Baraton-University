@@ -10,7 +10,6 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Always start fresh — sign out any persisted session on app load
     supabase.auth.signOut().then(() => {
       setSession(null);
       setUser(null);
@@ -51,7 +50,6 @@ export const AuthProvider = ({ children }) => {
       console.error('Error fetching user profile:', error.message);
       console.error('Status:', error.response?.status);
 
-      // Retry on network errors (Railway cold start / intermittent drop)
       if (!error.response && attempt < 3) {
         console.warn(`Retrying /auth/me (attempt ${attempt + 1}/3)...`);
         await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
@@ -75,7 +73,12 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, password) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
+    if (error) {
+      if (error.message.toLowerCase().includes('email not confirmed')) {
+        throw { response: { data: { requiresVerification: true } } };
+      }
+      throw error;
+    }
     return data.user;
   };
 
