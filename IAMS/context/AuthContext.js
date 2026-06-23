@@ -21,6 +21,11 @@ export const AuthProvider = ({ children }) => {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
+      if (event === 'SIGNED_OUT') {
+        setUser(null);
+        setLoading(false);
+        return;
+      }
       if (session) {
         fetchUserProfile();
       } else {
@@ -38,18 +43,17 @@ export const AuthProvider = ({ children }) => {
       setUser(res.data);
     } catch (error) {
       console.error('Error fetching user profile:', error.message);
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        const role = session.user.user_metadata?.role;
-        if (role) {
-          setUser({
-            user_id: session.user.id,
-            email:   session.user.email,
-            role,
-          });
+      console.error('Status:', error.response?.status);
+      console.error('Response data:', error.response?.data);
+
+      // Only sign out if it's a 401 AND there's genuinely no valid session
+      if (error.response?.status === 401) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          setUser(null);
         } else {
-          console.warn('Role unknown in session metadata, logging out');
-          await supabase.auth.signOut();
+          // Session exists but backend rejected — likely a backend issue, don't boot the user
+          console.warn('Backend returned 401 but session exists — check /auth/me on backend');
           setUser(null);
         }
       } else {
@@ -66,18 +70,8 @@ export const AuthProvider = ({ children }) => {
     return data.user;
   };
 
-  // register() uses a two-step flow so that all Supabase Auth calls go through
-  // the backend (which can reach Supabase), bypassing campus network restrictions.
-  //
-  // Step 1 — POST /auth/register:
-  //   Backend calls supabase.auth.signUp() and returns { auth_id, user }.
-  //
-  // Step 2 — POST /auth/register-profile:
-  //   Frontend sends auth_id + profile fields so the backend can insert the
-  //   role-specific profile row (students / supervisors / host_organizations).
   const register = async (formData) => {
     try {
-      // Step 1: create the Supabase Auth account on the backend
       const { data: { auth_id } } = await api.post('/auth/register', {
         email:     formData.email,
         password:  formData.password,
@@ -85,7 +79,6 @@ export const AuthProvider = ({ children }) => {
         full_name: formData.full_name || '',
       });
 
-      // Step 2: persist the role-specific profile row
       const profileRes = await api.post('/auth/register-profile', {
         ...formData,
         auth_id,
@@ -93,7 +86,6 @@ export const AuthProvider = ({ children }) => {
 
       return profileRes.data;
     } catch (err) {
-      // Surface the backend error message to the UI
       const message = err.response?.data?.message || err.message || 'Registration failed';
       throw new Error(message);
     }

@@ -29,26 +29,49 @@ const protect = async (req, res, next) => {
 
     const token = authHeader.split(' ')[1];
 
-    let user;
+    let authUser;
     try {
       const { data, error } = await getUserWithRetry(token);
       if (error || !data?.user) {
         return res.status(401).json({ message: 'Invalid or expired token' });
       }
-      user = data.user;
+      authUser = data.user;
     } catch (err) {
       console.error('Auth getUser failed after retries:', err.message);
       return res.status(503).json({ message: 'Authentication service temporarily unavailable. Please retry.' });
     }
 
-    // Fetch user from your users table
-    const { data: dbUser, error: dbError } = await supabase
+    // Try lookup by auth_id first
+    let { data: dbUser, error: dbError } = await supabase
       .from('users')
       .select('user_id, email, role, is_active, is_verified')
-      .eq('auth_id', user.id)
+      .eq('auth_id', authUser.id)
       .maybeSingle();
 
-    if (dbError || !dbUser) {
+    // Fallback: lookup by email (handles rows where auth_id was never set)
+    if (!dbUser) {
+      console.warn(`User not found by auth_id (${authUser.id}), trying email fallback...`);
+      const { data: emailUser, error: emailError } = await supabase
+        .from('users')
+        .select('user_id, email, role, is_active, is_verified')
+        .eq('email', authUser.email)
+        .maybeSingle();
+
+      if (emailUser) {
+        dbUser = emailUser;
+
+        // Backfill auth_id so future lookups work
+        await supabase
+          .from('users')
+          .update({ auth_id: authUser.id })
+          .eq('email', authUser.email);
+
+        console.log(`Backfilled auth_id for user: ${authUser.email}`);
+      }
+    }
+
+    if (!dbUser) {
+      console.error(`User not found in DB — auth_id: ${authUser.id}, email: ${authUser.email}`);
       return res.status(401).json({ message: 'User not found in database' });
     }
 
