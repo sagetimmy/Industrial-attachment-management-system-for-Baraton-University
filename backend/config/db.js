@@ -4,8 +4,12 @@ const ws = require('ws');
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-// Custom fetch with timeout (30 seconds)
+// Custom fetch with timeout — only applies signal if none already provided
 const customFetch = (url, options = {}) => {
+  if (options.signal) {
+    // Supabase Auth already has its own signal, don't override it
+    return fetch(url, options);
+  }
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 30000);
   return fetch(url, {

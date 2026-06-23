@@ -10,25 +10,30 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      if (session) {
-        fetchUserProfile();
-      } else {
-        setLoading(false);
-      }
+    // Always start fresh — sign out any persisted session on app load
+    supabase.auth.signOut().then(() => {
+      setSession(null);
+      setUser(null);
+      setLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
+
       if (event === 'SIGNED_OUT') {
         setUser(null);
         setLoading(false);
         return;
       }
-      if (session) {
-        fetchUserProfile();
-      } else {
+
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        if (session) {
+          fetchUserProfile();
+        }
+        return;
+      }
+
+      if (!session) {
         setUser(null);
         setLoading(false);
       }
@@ -37,29 +42,33 @@ export const AuthProvider = ({ children }) => {
     return () => subscription.unsubscribe();
   }, []);
 
-  const fetchUserProfile = async () => {
+  const fetchUserProfile = async (attempt = 0) => {
     try {
       const res = await api.get('/auth/me');
       setUser(res.data);
+      setLoading(false);
     } catch (error) {
       console.error('Error fetching user profile:', error.message);
       console.error('Status:', error.response?.status);
-      console.error('Response data:', error.response?.data);
 
-      // Only sign out if it's a 401 AND there's genuinely no valid session
+      // Retry on network errors (Railway cold start / intermittent drop)
+      if (!error.response && attempt < 3) {
+        console.warn(`Retrying /auth/me (attempt ${attempt + 1}/3)...`);
+        await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
+        return fetchUserProfile(attempt + 1);
+      }
+
       if (error.response?.status === 401) {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
           setUser(null);
         } else {
-          // Session exists but backend rejected — likely a backend issue, don't boot the user
           console.warn('Backend returned 401 but session exists — check /auth/me on backend');
           setUser(null);
         }
       } else {
         setUser(null);
       }
-    } finally {
       setLoading(false);
     }
   };

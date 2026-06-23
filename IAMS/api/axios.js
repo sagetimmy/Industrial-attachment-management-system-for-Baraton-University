@@ -77,16 +77,37 @@ const api = axios.create({
 export const getApiBaseUrl = () => activeBaseUrl;
 
 // ─── Request interceptor: attach Supabase session token ───────────
+const PUBLIC_ROUTES = ['/auth/register', '/auth/register-profile', '/auth/login'];
+
 api.interceptors.request.use(async (config) => {
   console.log('🟢 Making request to:', config.baseURL + config.url);
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.access_token) {
-      config.headers.Authorization = `Bearer ${session.access_token}`;
+
+  const isPublic = PUBLIC_ROUTES.some(route => config.url?.includes(route));
+
+  if (!isPublic) {
+    try {
+      let session = null;
+      const { data } = await supabase.auth.getSession();
+      session = data?.session;
+
+      // Retry once after a short delay if session not ready yet
+      if (!session) {
+        await new Promise(r => setTimeout(r, 1000));
+        const { data: retryData } = await supabase.auth.getSession();
+        session = retryData?.session;
+      }
+
+      if (session?.access_token) {
+        config.headers.Authorization = `Bearer ${session.access_token}`;
+        console.log('🔑 Token attached');
+      } else {
+        console.warn('⚠️ No session available for request:', config.url);
+      }
+    } catch {
+      // If getSession fails, proceed without a token — the backend will 401
     }
-  } catch {
-    // If getSession fails, proceed without a token — the backend will 401
   }
+
   return config;
 });
 
