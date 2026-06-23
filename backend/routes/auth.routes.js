@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { protect } = require('../middleware/auth.middleware');
 const supabase = require('../config/db');
+const { sendVerificationEmail } = require('../config/mailer');
 
 // Helper: get role permissions
 const getRolePermissions = (role) => {
@@ -14,22 +15,10 @@ const getRolePermissions = (role) => {
   return permissions[role] || [];
 };
 
-// Helper: retry async function
-const retry = async (fn, retries = 3, delay = 1000) => {
-  for (let i = 0; i < retries; i++) {
-    try {
-      return await fn();
-    } catch (error) {
-      if (i === retries - 1) throw error;
-      console.log(`⚠️ Retry ${i + 1}/${retries} after ${delay}ms`);
-      await new Promise(resolve => setTimeout(resolve, delay * (i + 1)));
-    }
-  }
-};
+// Helper: generate 6-digit OTP
+const generateOTP = () => Math.floor(100000 + Math.random() * 900000).toString();
 
 // POST /api/auth/register
-// Calls supabase.auth.signUp() on the backend (bypasses campus firewall)
-// Returns auth_id and user so the frontend can follow up with /register-profile
 router.post('/register', async (req, res) => {
   const { email, password, role, full_name } = req.body;
 
@@ -38,25 +27,46 @@ router.post('/register', async (req, res) => {
   }
 
   try {
-    const { data, error } = await supabase.auth.signUp({
+    // Use admin API to bypass Auth flow timeout issues
+    const { data, error } = await supabase.auth.admin.createUser({
       email,
       password,
-      options: {
-        data: { role, full_name: full_name || '' },
-      },
+      email_confirm: false,
+      user_metadata: { role, full_name: full_name || '' },
     });
 
     if (error) {
-      console.error('❌ Supabase signUp error:', error.message);
+      console.error('❌ Admin createUser error:', error.message);
       return res.status(400).json({ message: error.message });
     }
 
     const auth_id = data.user?.id;
     if (!auth_id) {
-      return res.status(500).json({ message: 'Sign-up succeeded but no user ID was returned' });
+      return res.status(500).json({ message: 'User created but no ID returned' });
     }
 
-    console.log(`✅ Supabase Auth signUp successful for ${email} (auth_id: ${auth_id})`);
+    console.log(`✅ Auth user created for ${email} (auth_id: ${auth_id})`);
+
+    // Generate OTP and store in password_reset_codes
+    const otp = generateOTP();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    await supabase.from('password_reset_codes').delete().eq('email', email);
+
+    const { error: otpError } = await supabase.from('password_reset_codes').insert({
+      email,
+      code: otp,
+      expires_at: expiresAt.toISOString(),
+    });
+
+    if (otpError) {
+      console.error('❌ OTP insert error:', otpError.message);
+      return res.status(500).json({ message: 'Failed to generate verification code' });
+    }
+
+    // Send verification email
+    await sendVerificationEmail(email, full_name || 'User', otp);
+
     return res.status(201).json({ auth_id, user: data.user });
   } catch (err) {
     console.error('❌ /register unexpected error:', err.message);
@@ -101,6 +111,108 @@ router.post('/register-profile', async (req, res) => {
   }
 });
 
+// POST /api/auth/verify-email
+router.post('/verify-email', async (req, res) => {
+  const { email, code } = req.body;
+
+  if (!email || !code) {
+    return res.status(400).json({ message: 'email and code are required' });
+  }
+
+  try {
+    const { data: otpRecord, error } = await supabase
+      .from('password_reset_codes')
+      .select('*')
+      .eq('email', email)
+      .eq('code', code)
+      .maybeSingle();
+
+    if (error || !otpRecord) {
+      return res.status(400).json({ message: 'Invalid verification code' });
+    }
+
+    if (new Date() > new Date(otpRecord.expires_at)) {
+      return res.status(400).json({ message: 'Verification code has expired' });
+    }
+
+    // Mark user as verified in users table
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({ is_verified: true })
+      .eq('email', email);
+
+    if (updateError) {
+      return res.status(500).json({ message: 'Failed to verify user' });
+    }
+
+    // Confirm email in Supabase Auth
+    const { data: authUser } = await supabase
+      .from('users')
+      .select('auth_id')
+      .eq('email', email)
+      .maybeSingle();
+
+    if (authUser?.auth_id) {
+      await supabase.auth.admin.updateUserById(authUser.auth_id, {
+        email_confirm: true,
+      });
+    }
+
+    // Delete used OTP
+    await supabase.from('password_reset_codes').delete().eq('email', email);
+
+    console.log(`✅ Email verified for ${email}`);
+    return res.status(200).json({ message: 'Email verified successfully' });
+  } catch (err) {
+    console.error('❌ /verify-email error:', err.message);
+    return res.status(500).json({ message: err.message });
+  }
+});
+
+// POST /api/auth/resend-code
+router.post('/resend-code', async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ message: 'email is required' });
+  }
+
+  try {
+    const { data: user } = await supabase
+      .from('users')
+      .select('user_id')
+      .eq('email', email)
+      .maybeSingle();
+
+    const otp = generateOTP();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    await supabase.from('password_reset_codes').delete().eq('email', email);
+    await supabase.from('password_reset_codes').insert({
+      email,
+      code: otp,
+      expires_at: expiresAt.toISOString(),
+    });
+
+    let fullName = 'User';
+    if (user?.user_id) {
+      const { data: student } = await supabase
+        .from('students')
+        .select('full_name')
+        .eq('user_id', user.user_id)
+        .maybeSingle();
+      if (student?.full_name) fullName = student.full_name;
+    }
+
+    await sendVerificationEmail(email, fullName, otp);
+
+    return res.status(200).json({ message: 'Verification code resent' });
+  } catch (err) {
+    console.error('❌ /resend-code error:', err.message);
+    return res.status(500).json({ message: err.message });
+  }
+});
+
 // GET /api/auth/me
 router.get('/me', protect, async (req, res) => {
   try {
@@ -139,7 +251,7 @@ router.get('/me', protect, async (req, res) => {
 
       const { data: newUser, error: insertError } = await supabase
         .from('users')
-        .insert({ user_id: userId, email: userEmail, role: userRole || 'student', is_verified: true, is_active: true })
+        .insert({ email: userEmail, role: userRole || 'student', is_verified: true, is_active: true })
         .select()
         .single();
 
@@ -148,16 +260,8 @@ router.get('/me', protect, async (req, res) => {
         return res.status(500).json({ message: 'Failed to sync user' });
       }
 
-      if (userRole === 'student') {
-        await supabase.from('students').insert({ user_id: userId, full_name: '', reg_number: '' });
-      } else if (userRole === 'supervisor') {
-        await supabase.from('supervisors').insert({ user_id: userId, full_name: '' });
-      } else if (userRole === 'host_org') {
-        await supabase.from('host_organizations').insert({ user_id: userId, org_name: '' });
-      }
-
       return res.json({
-        user_id: userId,
+        user_id: newUser.user_id,
         email: userEmail,
         role: userRole || 'student',
         permissions: getRolePermissions(userRole || 'student'),

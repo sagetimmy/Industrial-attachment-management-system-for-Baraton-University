@@ -101,22 +101,13 @@ export const AuthProvider = ({ children }) => {
   };
 
   const verifyEmail = async (email, code) => {
-    const { data, error } = await supabase.auth.verifyOtp({
-      email,
-      token: code,
-      type: 'signup',
-    });
-    if (error) throw error;
-    return data;
+    const res = await api.post('/auth/verify-email', { email, code });
+    return res.data;
   };
 
   const resendVerificationCode = async (email) => {
-    const { data, error } = await supabase.auth.resend({
-      type: 'signup',
-      email,
-    });
-    if (error) throw error;
-    return data;
+    const res = await api.post('/auth/resend-code', { email });
+    return res.data;
   };
 
   const forgotPassword = async (email) => {
