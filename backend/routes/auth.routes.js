@@ -213,6 +213,60 @@ router.post('/resend-code', async (req, res) => {
   }
 });
 
+// DELETE /api/auth/users/:auth_id
+router.delete('/users/:auth_id', protect, async (req, res) => {
+  const { auth_id } = req.params;
+
+  // Only admins can delete users
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ message: 'Access denied. Admins only.' });
+  }
+
+  try {
+    // Get user from DB to find their role for profile cleanup
+    const { data: dbUser, error: fetchError } = await supabase
+      .from('users')
+      .select('user_id, role, email')
+      .eq('auth_id', auth_id)
+      .maybeSingle();
+
+    if (fetchError || !dbUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const { user_id, role, email } = dbUser;
+
+    // Delete role-specific profile
+    if (role === 'student') {
+      await supabase.from('students').delete().eq('user_id', user_id);
+    } else if (role === 'supervisor') {
+      await supabase.from('supervisors').delete().eq('user_id', user_id);
+    } else if (role === 'host_org') {
+      await supabase.from('host_organizations').delete().eq('user_id', user_id);
+    }
+
+    // Delete OTP codes
+    await supabase.from('password_reset_codes').delete().eq('email', email);
+
+    // Delete from users table
+    await supabase.from('users').delete().eq('user_id', user_id);
+
+    // Delete from Supabase Auth
+    const { error: authError } = await supabase.auth.admin.deleteUser(auth_id);
+    if (authError) {
+      console.error('❌ Auth delete error:', authError.message);
+      return res.status(500).json({ message: 'Failed to delete auth user' });
+    }
+
+    console.log(`✅ User deleted: ${email} (auth_id: ${auth_id})`);
+    return res.status(200).json({ message: 'User deleted successfully' });
+
+  } catch (err) {
+    console.error('❌ /delete user error:', err.message);
+    return res.status(500).json({ message: err.message });
+  }
+});
+
 // GET /api/auth/me
 router.get('/me', protect, async (req, res) => {
   try {
