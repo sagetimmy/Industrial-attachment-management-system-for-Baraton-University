@@ -62,7 +62,7 @@ router.post('/register', async (req, res) => {
 
     sendVerificationEmail(email, full_name || 'User', otp)
       .then(() => console.log(`✅ Verification email sent to ${email}`))
-      .catch(err => console.error(`❌ Email send failed: ${err.message}`));
+      .catch(err => console.error(`❌ Email send failed:`, err.response?.data || err.message));
 
   } catch (err) {
     console.error('❌ /register unexpected error:', err.message);
@@ -205,7 +205,7 @@ router.post('/resend-code', async (req, res) => {
 
     sendVerificationEmail(email, fullName, otp)
       .then(() => console.log(`✅ Resend email sent to ${email}`))
-      .catch(err => console.error(`❌ Resend email failed: ${err.message}`));
+      .catch(err => console.error(`❌ Resend email failed:`, err.response?.data || err.message));
 
   } catch (err) {
     console.error('❌ /resend-code error:', err.message);
