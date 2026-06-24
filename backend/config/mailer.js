@@ -1,5 +1,6 @@
 const axios = require('axios');
 require('dotenv').config();
+console.log('🔑 Brevo API Key:', process.env.BREVO_API_KEY ? 'LOADED' : 'MISSING');
 
 const sendVerificationEmail = async (email, name, code) => {
   await axios.post(
