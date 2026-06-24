@@ -55,7 +55,10 @@ export default function VerifyScreen({ navigation, route }) {
     try {
       await verifyEmail(email, fullCode);
       Alert.alert('Success! 🎉', 'Your email has been verified!', [
-        { text: 'Continue' }
+        {
+          text: 'Continue',
+          onPress: () => navigation.replace('Login'),
+        }
       ]);
     } catch (err) {
       Alert.alert('Error', err.response?.data?.message || 'Invalid code');
