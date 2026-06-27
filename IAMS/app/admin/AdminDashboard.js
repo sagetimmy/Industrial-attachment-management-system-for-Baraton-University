@@ -46,18 +46,18 @@ function ActionIcon({ name }) {
     'Manage Users':      { name: 'account-group-outline' },
     'Manage Orgs':       { name: 'office-building-outline' },
     'Settings':          { name: 'cog-outline' },
+    'Announcements':     { name: 'bullhorn-outline' },          // ← NEW
   };
   const icon = icons[name] || { name: 'dots-horizontal' };
   return <MaterialCommunityIcons name={icon.name} size={28} color={TEAL} />;
 }
 
-// ── User Menu Panel ────────────────────────────────────────────────────────
-function UserMenuPanel({ visible, user, onClose, onLogout }) {
+// ── User Menu Panel ─────────────────────────────────────────────────────────
+function UserMenuPanel({ visible, user, onClose, onLogout, onAnnouncements }) {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
         <TouchableOpacity activeOpacity={1} style={styles.userMenuPanel}>
-          {/* Profile Section */}
           <View style={styles.userMenuHeader}>
             <View style={[styles.avatar, { backgroundColor: '#1A3A6E', width: 48, height: 48 }]}>
               <Text style={styles.avatarText}>{user?.full_name?.charAt(0).toUpperCase() || 'A'}</Text>
@@ -67,10 +67,18 @@ function UserMenuPanel({ visible, user, onClose, onLogout }) {
               <Text style={styles.userMenuEmail}>{user?.email}</Text>
             </View>
           </View>
-
           <View style={styles.userMenuDivider} />
 
-          {/* Menu Items */}
+          {/* ── NEW: Announcements menu item ── */}
+          <TouchableOpacity
+            style={styles.userMenuItem}
+            onPress={() => { onClose(); onAnnouncements(); }}
+          >
+            <MaterialCommunityIcons name="bullhorn-outline" size={20} color={TEAL} />
+            <Text style={styles.userMenuItemText}>Announcements</Text>
+          </TouchableOpacity>
+
+          <View style={styles.userMenuDivider} />
           <TouchableOpacity style={styles.userMenuItem} onPress={() => { onClose(); onLogout(); }}>
             <MaterialCommunityIcons name="logout-variant" size={20} color={RED} />
             <Text style={[styles.userMenuItemText, { color: RED }]}>Logout</Text>
@@ -87,7 +95,6 @@ function NotificationPanel({ visible, notifications, unreadCount, onClose, onMar
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
         <TouchableOpacity activeOpacity={1} style={styles.notifPanel}>
-          {/* Panel header */}
           <View style={styles.notifHeader}>
             <Text style={styles.notifTitle}>Notifications</Text>
             {unreadCount > 0 && (
@@ -96,7 +103,6 @@ function NotificationPanel({ visible, notifications, unreadCount, onClose, onMar
               </TouchableOpacity>
             )}
           </View>
-
           {notifications.length === 0 ? (
             <View style={styles.notifEmpty}>
               <Ionicons name="notifications-off-outline" size={40} color={GRAY} />
@@ -134,17 +140,14 @@ function NotificationPanel({ visible, notifications, unreadCount, onClose, onMar
 
 export default function AdminDashboard({ navigation }) {
   const { user, logout } = useAuth();
-  const [data, setData]               = useState(null);
-  const [loading, setLoading]         = useState(true);
-  const [refreshing, setRefreshing]   = useState(false);
-  const [unassigned, setUnassigned]   = useState([]);
+  const [data, setData]             = useState(null);
+  const [loading, setLoading]       = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [unassigned, setUnassigned] = useState([]);
 
-  // ── Notification state ──
-  const [notifications, setNotifications]   = useState([]);
-  const [unreadCount, setUnreadCount]       = useState(0);
-  const [notifVisible, setNotifVisible]     = useState(false);
-
-  // ── User menu state ──
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount]     = useState(0);
+  const [notifVisible, setNotifVisible]   = useState(false);
   const [userMenuVisible, setUserMenuVisible] = useState(false);
 
   const fetchDashboard = async () => {
@@ -179,14 +182,13 @@ export default function AdminDashboard({ navigation }) {
   useEffect(() => {
     fetchDashboard();
     fetchNotifications();
-    // Poll for new notifications every 30 seconds
     const interval = setInterval(fetchNotifications, 30000);
     return () => clearInterval(interval);
   }, []);
 
   const handleBellPress = () => {
     setNotifVisible(true);
-    fetchNotifications(); // refresh on open
+    fetchNotifications();
   };
 
   const handleLogout = () => {
@@ -196,11 +198,7 @@ export default function AdminDashboard({ navigation }) {
         text: 'Logout',
         style: 'destructive',
         onPress: async () => {
-          try {
-            await logout();
-          } catch (err) {
-            Alert.alert('Error', 'Failed to logout');
-          }
+          try { await logout(); } catch { Alert.alert('Error', 'Failed to logout'); }
         },
       },
     ]);
@@ -258,18 +256,16 @@ export default function AdminDashboard({ navigation }) {
   }
 
   const stats = data?.stats || {};
-  const totalStudents = stats.totalStudents || 0;
-  const totalSupervisors = stats.totalSupervisors || 0;
-  const totalOrgs = stats.totalOrgs || 0;
-  const totalAttachments = stats.totalAttachments || 0;
+  const totalStudents     = stats.totalStudents    || 0;
+  const totalSupervisors  = stats.totalSupervisors || 0;
+  const totalOrgs         = stats.totalOrgs        || 0;
+  const totalAttachments  = stats.totalAttachments || 0;
   const activeAttachments = stats.activeAttachments || 0;
-  const pendingOrgs = stats.pendingOrgs || 0;
-  const totalUsers = totalStudents + totalSupervisors + totalOrgs;
-  const approvedOrgs = Math.max(totalOrgs - pendingOrgs, 0);
-  const percentOf = (value, total) => {
-    if (!total) return 0;
-    return Math.round((value / total) * 100);
-  };
+  const pendingOrgs       = stats.pendingOrgs      || 0;
+  const totalUsers        = totalStudents + totalSupervisors + totalOrgs;
+  const approvedOrgs      = Math.max(totalOrgs - pendingOrgs, 0);
+
+  const percentOf = (value, total) => (!total ? 0 : Math.round((value / total) * 100));
 
   const statCards = [
     {
@@ -302,13 +298,15 @@ export default function AdminDashboard({ navigation }) {
     },
   ];
 
+  // ── CHANGE 1: Announcements added as 7th quick action ──
   const quickActions = [
-    { label: 'Review\nPending',     screen: 'ManageAttachments' },
-    { label: 'Assign\nSupervisor',  screen: 'AssignSupervisor' },
-    { label: 'System\nReports',     screen: 'Reports' },
-    { label: 'Manage\nUsers',       screen: 'ManageUsers' },
-    { label: 'Manage\nOrgs',        screen: 'ManageOrgs' },
-    { label: 'Settings',            screen: 'Settings' },
+    { label: 'Review\nPending',     screen: 'ManageAttachments'   },
+    { label: 'Assign\nSupervisor',  screen: 'AssignSupervisor'    },
+    { label: 'System\nReports',     screen: 'Reports'             },
+    { label: 'Manage\nUsers',       screen: 'ManageUsers'         },
+    { label: 'Manage\nOrgs',        screen: 'ManageOrgs'          },
+    { label: 'Settings',            screen: 'Settings'            },
+    { label: 'Announcements',       screen: 'AdminAnnouncements'  }, // ← NEW
   ];
 
   const recentActivity = [
@@ -361,11 +359,11 @@ export default function AdminDashboard({ navigation }) {
   ];
 
   const tabs = [
-    { label: 'Home',        icon: 'home',             active: true,  screen: null },
-    { label: 'Students',    icon: 'people-outline',   active: false, screen: 'ManageUsers', params: { role: 'student' } },
-    { label: 'Supervisors', icon: 'ribbon-outline',   active: false, screen: 'ManageSupervisors' },
-    { label: 'Orgs',        icon: 'business-outline', active: false, screen: 'ManageOrgs' },
-    { label: 'Manage Users',icon: 'person-outline',   active: false, screen: 'ManageUsers' },
+    { label: 'Home',        icon: 'home',             active: true,  screen: null          },
+    { label: 'Students',    icon: 'people-outline',   active: false, screen: 'Students'    },
+    { label: 'Supervisors', icon: 'ribbon-outline',   active: false, screen: 'Supervisors' },
+    { label: 'Orgs',        icon: 'business-outline', active: false, screen: 'ManageOrgs'  },
+    { label: 'Users',       icon: 'person-outline',   active: false, screen: 'ManageUsers' },
   ];
 
   return (
@@ -381,20 +379,20 @@ export default function AdminDashboard({ navigation }) {
         onMarkRead={handleMarkRead}
       />
 
+      {/* ── CHANGE 2: onAnnouncements prop wired ── */}
       <UserMenuPanel
         visible={userMenuVisible}
         user={user}
         onClose={() => setUserMenuVisible(false)}
         onLogout={handleLogout}
+        onAnnouncements={() => navigation.navigate('AdminAnnouncements')}
       />
 
       {/* ── DARK NAVY TOP SECTION ── */}
       <View style={styles.navySection}>
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Admin Dashboard</Text>
-
           <View style={styles.headerActions}>
-            {/* Bell with live unread count badge */}
             <TouchableOpacity style={styles.bellWrap} onPress={handleBellPress}>
               <Ionicons name="notifications-outline" size={24} color={WHITE} />
               {unreadCount > 0 && (
@@ -405,11 +403,11 @@ export default function AdminDashboard({ navigation }) {
                 </View>
               )}
             </TouchableOpacity>
-
-            {/* User Profile Icon */}
             <TouchableOpacity style={styles.profileWrap} onPress={() => setUserMenuVisible(true)}>
               <View style={[styles.avatar, { width: 36, height: 36, backgroundColor: TEAL }]}>
-                <Text style={[styles.avatarText, { fontSize: 16 }]}>{user?.full_name?.charAt(0).toUpperCase() || 'A'}</Text>
+                <Text style={[styles.avatarText, { fontSize: 16 }]}>
+                  {user?.full_name?.charAt(0).toUpperCase() || 'A'}
+                </Text>
               </View>
             </TouchableOpacity>
           </View>
@@ -444,7 +442,6 @@ export default function AdminDashboard({ navigation }) {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={TEAL} />}
       >
-        {/* Quick Actions */}
         <Text style={styles.sectionTitle}>Quick Actions</Text>
         <View style={styles.actionsGrid}>
           {quickActions.map((a, i) => (
@@ -490,7 +487,10 @@ export default function AdminDashboard({ navigation }) {
                 <View style={styles.activityActions}>
                   <TouchableOpacity
                     style={styles.approveBtn}
-                    onPress={() => navigation.navigate('AssignSupervisor', { attachmentId: att.attachment_id, studentName: att.student_name })}
+                    onPress={() => navigation.navigate('AssignSupervisor', {
+                      attachmentId: att.attachment_id,
+                      studentName: att.student_name,
+                    })}
                   >
                     <Text style={styles.approveBtnText}>Assign</Text>
                   </TouchableOpacity>
@@ -550,14 +550,20 @@ export default function AdminDashboard({ navigation }) {
               {(a.showApprove || a.showAssign) && (
                 <View style={styles.activityActions}>
                   {a.showApprove && (
-                    <TouchableOpacity style={styles.approveBtn} onPress={() => handleApproveOrg(a.itemId, a.orgName)}>
+                    <TouchableOpacity
+                      style={styles.approveBtn}
+                      onPress={() => handleApproveOrg(a.itemId, a.orgName)}
+                    >
                       <Text style={styles.approveBtnText}>Approve</Text>
                     </TouchableOpacity>
                   )}
                   {a.showAssign && (
                     <TouchableOpacity
                       style={styles.approveBtn}
-                      onPress={() => navigation.navigate('AssignSupervisor', { attachmentId: a.itemId, studentName: a.name })}
+                      onPress={() => navigation.navigate('AssignSupervisor', {
+                        attachmentId: a.itemId,
+                        studentName: a.name,
+                      })}
                     >
                       <Text style={styles.approveBtnText}>Assign</Text>
                     </TouchableOpacity>
@@ -580,13 +586,13 @@ export default function AdminDashboard({ navigation }) {
         )}
       </ScrollView>
 
-      {/* Bottom Tab Bar */}
+      {/* ── Bottom Tab Bar ── */}
       <View style={styles.tabBar}>
         {tabs.map((t, i) => (
           <TouchableOpacity
             key={i}
             style={styles.tabItem}
-            onPress={() => t.screen && navigation.navigate(t.screen, t.params)}
+            onPress={() => t.screen && navigation.navigate(t.screen)}
           >
             <Ionicons
               name={t.active ? t.icon.replace('-outline', '') : t.icon}
@@ -610,8 +616,8 @@ function timeAgo(dateStr) {
   return `${Math.floor(diff / 86400)}d ago`;
 }
 
-const CARD_W    = (width - 48) / 2;
-const ACTION_W  = (width - 56) / 3;
+const CARD_W   = (width - 48) / 2;
+const ACTION_W = (width - 56) / 3;
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: NAVY },
@@ -629,7 +635,6 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 18, fontWeight: '700', color: WHITE },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 12 },
 
-  // Bell with count badge
   bellWrap: { position: 'relative', padding: 4 },
   profileWrap: { padding: 4 },
   bellBadge: {
@@ -681,6 +686,7 @@ const styles = StyleSheet.create({
     padding: 24, alignItems: 'center', borderWidth: 1, borderColor: BORDER,
   },
   emptyText: { color: GRAY, fontSize: 14 },
+
   activityCard: {
     backgroundColor: WHITE, borderRadius: 16, padding: 16, marginBottom: 12,
     borderWidth: 1, borderColor: BORDER, elevation: 1,
@@ -757,7 +763,7 @@ const styles = StyleSheet.create({
   // User Menu Panel
   userMenuPanel: {
     backgroundColor: WHITE, borderRadius: 16,
-    width: width * 0.75, maxHeight: 240,
+    width: width * 0.75, maxHeight: 300,      // ← slightly taller to fit new item
     marginTop: 60, marginRight: 12,
     elevation: 8, overflow: 'hidden',
   },
@@ -774,6 +780,7 @@ const styles = StyleSheet.create({
   },
   userMenuItemText: { fontSize: 14, fontWeight: '600', color: DARK },
 
+  // Tab bar
   tabBar: {
     flexDirection: 'row', backgroundColor: WHITE,
     borderTopWidth: 1, borderTopColor: BORDER,

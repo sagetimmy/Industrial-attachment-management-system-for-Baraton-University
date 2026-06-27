@@ -26,12 +26,35 @@ const upload = multer({
 
 const normalizeDate = (value) => (value ? String(value).slice(0, 10) : '');
 
+// ─── GET /api/students/active-session ────────────────────────────────────────
+// Returns the currently ACTIVE attachment session or null.
+// Used by the student dashboard to gate attachment-related features.
+router.get('/active-session', protect, async (req, res) => {
+  try {
+    const { data: session, error } = await supabase
+      .from('attachment_sessions')
+      .select('id, name, start_date, end_date, status')
+      .eq('status', 'ACTIVE')
+      .maybeSingle();
+
+    if (error) throw error;
+
+    if (!session) {
+      return res.json({ active: false, session: null });
+    }
+
+    res.json({ active: true, session });
+  } catch (err) {
+    console.error('GET /active-session error:', err.message);
+    res.status(500).json({ message: 'Failed to check active session.' });
+  }
+});
+
 // ─── GET /api/students/profile ──────────────────────────────────────────────
 router.get('/profile', protect, async (req, res) => {
   try {
     console.log('👤 Getting profile for user_id:', req.user.user_id);
 
-    // Get user data
     const { data: userData, error: userError } = await supabase
       .from('users')
       .select('user_id, email, role, is_verified, created_at')
@@ -43,7 +66,6 @@ router.get('/profile', protect, async (req, res) => {
       return res.status(500).json({ message: 'User not found' });
     }
 
-    // Get student data
     const { data: studentData, error: studentError } = await supabase
       .from('students')
       .select('*')
@@ -54,7 +76,6 @@ router.get('/profile', protect, async (req, res) => {
       console.error('❌ Student query error:', studentError);
     }
 
-    // Combine data
     const profile = {
       ...userData,
       ...(studentData || {})
@@ -110,7 +131,19 @@ router.post('/apply', protect, requireRolePermission('selfPlacement'), async (re
       return res.status(400).json({ message: 'Organization ID, start date, and end date are required' });
     }
 
-    // Get student
+    // Check for an active session before allowing application
+    const { data: activeSession } = await supabase
+      .from('attachment_sessions')
+      .select('id')
+      .eq('status', 'ACTIVE')
+      .maybeSingle();
+
+    if (!activeSession) {
+      return res.status(403).json({
+        message: 'Applications are currently closed. No active attachment session.',
+      });
+    }
+
     const { data: student, error: sErr } = await supabase
       .from('students')
       .select('student_id, full_name, reg_number')
@@ -122,7 +155,6 @@ router.post('/apply', protect, requireRolePermission('selfPlacement'), async (re
       return res.status(404).json({ message: 'Student not found' });
     }
 
-    // Check for existing attachment
     const { data: existing } = await supabase
       .from('attachments')
       .select('attachment_id, org_id, start_date, end_date, status')
@@ -131,9 +163,9 @@ router.post('/apply', protect, requireRolePermission('selfPlacement'), async (re
       .maybeSingle();
 
     if (existing) {
-      const sameOrg = String(existing.org_id) === String(org_id);
+      const sameOrg   = String(existing.org_id)    === String(org_id);
       const sameStart = normalizeDate(existing.start_date) === normalizeDate(start_date);
-      const sameEnd = normalizeDate(existing.end_date) === normalizeDate(end_date);
+      const sameEnd   = normalizeDate(existing.end_date)   === normalizeDate(end_date);
       if (sameOrg && sameStart && sameEnd) {
         return res.status(200).json({
           message: 'Application already submitted.',
@@ -144,15 +176,14 @@ router.post('/apply', protect, requireRolePermission('selfPlacement'), async (re
       return res.status(400).json({ message: 'You already have an active or pending application' });
     }
 
-    // Create attachment
     const { data: attachment, error } = await supabase
       .from('attachments')
-      .insert({ 
-        student_id: student.student_id, 
-        org_id, 
-        start_date, 
-        end_date, 
-        status: 'pending' 
+      .insert({
+        student_id: student.student_id,
+        org_id,
+        start_date,
+        end_date,
+        status: 'pending'
       })
       .select()
       .single();
@@ -162,7 +193,6 @@ router.post('/apply', protect, requireRolePermission('selfPlacement'), async (re
       throw error;
     }
 
-    // Notify host organization
     const { data: org } = await supabase
       .from('host_organizations')
       .select('user_id, org_name')
@@ -177,9 +207,9 @@ router.post('/apply', protect, requireRolePermission('selfPlacement'), async (re
     }
 
     console.log(`[apply:${requestId}] done ${Date.now() - requestStart}ms`);
-    res.status(201).json({ 
+    res.status(201).json({
       message: 'Application submitted successfully!',
-      attachment_id: attachment.attachment_id 
+      attachment_id: attachment.attachment_id
     });
   } catch (err) {
     console.error(`[apply:${requestId}] error`, err.stack || err);
@@ -192,7 +222,6 @@ router.get('/my-attachment', protect, async (req, res) => {
   try {
     console.log('📎 Fetching attachment for user_id:', req.user.user_id);
 
-    // Get student
     const { data: student, error: sErr } = await supabase
       .from('students')
       .select('student_id')
@@ -204,7 +233,6 @@ router.get('/my-attachment', protect, async (req, res) => {
       return res.json(null);
     }
 
-    // Get attachment
     const { data: attachment, error: attachError } = await supabase
       .from('attachments')
       .select('*')
@@ -222,7 +250,6 @@ router.get('/my-attachment', protect, async (req, res) => {
       return res.json(null);
     }
 
-    // Get organization data separately
     const { data: orgData, error: orgError } = await supabase
       .from('host_organizations')
       .select('org_name, location, contact_person, phone')
@@ -233,14 +260,13 @@ router.get('/my-attachment', protect, async (req, res) => {
       console.error('Organization query error:', orgError);
     }
 
-    // Combine data
     const result = {
       ...attachment,
-      org_name: orgData?.org_name || null,
-      location: orgData?.location || null,
-      contact_person: orgData?.contact_person || null,
-      org_phone: orgData?.phone || null,
-      supervisor_name: null,
+      org_name:        orgData?.org_name        || null,
+      location:        orgData?.location        || null,
+      contact_person:  orgData?.contact_person  || null,
+      org_phone:       orgData?.phone           || null,
+      supervisor_name:  null,
       supervisor_phone: null,
     };
 
@@ -265,7 +291,19 @@ router.post('/logbook', protect, requireRolePermission('editLogbooks'), upload.s
       file: req.file ? { name: req.file.originalname, size: req.file.size } : null,
     });
 
-    // Get student
+    // Check for an active session before allowing logbook submission
+    const { data: activeSession } = await supabase
+      .from('attachment_sessions')
+      .select('id')
+      .eq('status', 'ACTIVE')
+      .maybeSingle();
+
+    if (!activeSession) {
+      return res.status(403).json({
+        message: 'Logbook submissions are closed. No active attachment session.',
+      });
+    }
+
     const { data: student, error: sErr } = await supabase
       .from('students')
       .select('*')
@@ -276,7 +314,6 @@ router.post('/logbook', protect, requireRolePermission('editLogbooks'), upload.s
       return res.status(404).json({ message: 'Student not found' });
     }
 
-    // Get active attachment
     const { data: attachment, error: aErr } = await supabase
       .from('attachments')
       .select('attachment_id')
@@ -288,7 +325,6 @@ router.post('/logbook', protect, requireRolePermission('editLogbooks'), upload.s
       return res.status(400).json({ message: 'No active attachment found' });
     }
 
-    // Check for existing entry
     const { data: existing } = await supabase
       .from('logbook_entries')
       .select('entry_id')
@@ -303,22 +339,20 @@ router.post('/logbook', protect, requireRolePermission('editLogbooks'), upload.s
       });
     }
 
-    // Validate file
     if (!req.file) {
       return res.status(400).json({ message: 'A document file is required for logbook submission' });
     }
 
     const document_url = `/uploads/${req.file.filename}`;
 
-    // Create entry
     const { error } = await supabase
       .from('logbook_entries')
       .insert({
         attachment_id: attachment.attachment_id,
         week_number,
         description,
-        tasks_done: tasks_done || '',
-        challenges: challenges || '',
+        tasks_done:   tasks_done || '',
+        challenges:   challenges || '',
         document_url,
         status: 'submitted'
       });
@@ -338,7 +372,6 @@ router.get('/logbook', protect, async (req, res) => {
   try {
     console.log('📓 Fetching logbook for user_id:', req.user.user_id);
 
-    // Get student
     const { data: student, error: sErr } = await supabase
       .from('students')
       .select('student_id')
@@ -350,7 +383,6 @@ router.get('/logbook', protect, async (req, res) => {
       return res.json([]);
     }
 
-    // Get attachment
     const { data: attachment, error: attachError } = await supabase
       .from('attachments')
       .select('attachment_id')
@@ -369,7 +401,6 @@ router.get('/logbook', protect, async (req, res) => {
       return res.json([]);
     }
 
-    // Get logbook entries
     const { data, error } = await supabase
       .from('logbook_entries')
       .select('*')
@@ -394,7 +425,6 @@ router.get('/feedback', protect, async (req, res) => {
   try {
     console.log('⭐ Fetching feedback for user_id:', req.user.user_id);
 
-    // Get student
     const { data: student, error: sErr } = await supabase
       .from('students')
       .select('student_id')
@@ -406,7 +436,6 @@ router.get('/feedback', protect, async (req, res) => {
       return res.json([]);
     }
 
-    // Get attachments for this student
     const { data: attachments, error: attachError } = await supabase
       .from('attachments')
       .select('attachment_id')
@@ -419,7 +448,6 @@ router.get('/feedback', protect, async (req, res) => {
 
     const attachmentIds = attachments.map(a => a.attachment_id);
 
-    // Get evaluations
     const { data, error } = await supabase
       .from('evaluations')
       .select(`
@@ -439,12 +467,10 @@ router.get('/feedback', protect, async (req, res) => {
       return res.json([]);
     }
 
-    // If no evaluations, return empty array
     if (!data || data.length === 0) {
       return res.json([]);
     }
 
-    // Get supervisor names separately for each evaluation
     const supervisorIds = [...new Set(data.map(e => e.supervisor_id).filter(id => id))];
     let supervisorMap = {};
 
@@ -462,7 +488,6 @@ router.get('/feedback', protect, async (req, res) => {
       }
     }
 
-    // Format response
     const result = data.map(e => ({
       ...e,
       supervisor_name: supervisorMap[e.supervisor_id] || 'Unknown'

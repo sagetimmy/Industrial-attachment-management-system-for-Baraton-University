@@ -1,107 +1,185 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, Alert, StatusBar, RefreshControl,
+  ScrollView, Alert, StatusBar, RefreshControl, ActivityIndicator,
 } from 'react-native';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useNotifications } from '../../hooks/useNotifications';
 import api from '../../api/axios';
 import Spinner from '../../components/Spinner';
 
-const TEAL = '#0F6E56';
+const TEAL       = '#0F6E56';
 const TEAL_LIGHT = '#E1F5EE';
-const TEAL_MID = '#9FE1CB';
-const AMBER = '#BA7517';
-const AMBER_LIGHT = '#FAEEDA';
-const CORAL = '#D85A30';
+const TEAL_MID   = '#9FE1CB';
+const AMBER      = '#BA7517';
+const AMBER_LIGHT= '#FAEEDA';
+const CORAL      = '#D85A30';
+const AMBER_DARK = '#92400E';
 
+// ─── Session Banner ───────────────────────────────────────────────────────────
+function SessionBanner({ session, sessionActive, sessionLoading }) {
+  if (sessionLoading) {
+    return (
+      <View style={[sb.banner, sb.loadingBanner]}>
+        <ActivityIndicator size="small" color={TEAL} />
+        <Text style={sb.loadingText}>Checking session status…</Text>
+      </View>
+    );
+  }
+
+  if (sessionActive && session) {
+    const endDate = session.end_date
+      ? new Date(session.end_date).toLocaleDateString('en-KE', { day: '2-digit', month: 'short', year: 'numeric' })
+      : '—';
+    return (
+      <View style={[sb.banner, sb.activeBanner]}>
+        <Ionicons name="checkmark-circle" size={20} color={TEAL} />
+        <View style={sb.bannerBody}>
+          <Text style={sb.activeTitle}>{session.name}</Text>
+          <Text style={sb.activeSub}>Open until {endDate}</Text>
+        </View>
+        <View style={sb.activeDot} />
+      </View>
+    );
+  }
+
+  return (
+    <View style={[sb.banner, sb.inactiveBanner]}>
+      <MaterialCommunityIcons name="calendar-remove-outline" size={20} color={AMBER} />
+      <View style={sb.bannerBody}>
+        <Text style={sb.inactiveTitle}>No Active Attachment Session</Text>
+        <Text style={sb.inactiveSub}>Applications and logbooks are currently closed.</Text>
+      </View>
+    </View>
+  );
+}
+
+const sb = StyleSheet.create({
+  banner: {
+    flexDirection: 'row', alignItems: 'center',
+    marginHorizontal: 16, marginBottom: 8,
+    borderRadius: 12, padding: 12,
+    borderWidth: 1, gap: 10,
+  },
+  loadingBanner:  { backgroundColor: '#F9FAFB', borderColor: '#E5E7EB' },
+  activeBanner:   { backgroundColor: TEAL_LIGHT, borderColor: '#A7F3D0' },
+  inactiveBanner: { backgroundColor: AMBER_LIGHT, borderColor: '#FDE68A' },
+  bannerBody:     { flex: 1 },
+  activeTitle:    { fontSize: 13, fontWeight: '700', color: TEAL },
+  activeSub:      { fontSize: 12, color: '#065F46', marginTop: 1 },
+  inactiveTitle:  { fontSize: 13, fontWeight: '700', color: AMBER },
+  inactiveSub:    { fontSize: 12, color: AMBER_DARK, marginTop: 1 },
+  loadingText:    { fontSize: 13, color: '#6B7280' },
+  activeDot:      { width: 8, height: 8, borderRadius: 4, backgroundColor: TEAL },
+});
+
+// ─── Main Dashboard ───────────────────────────────────────────────────────────
 export default function StudentDashboard({ navigation }) {
   const { user, logout } = useAuth();
   const { theme } = useTheme();
   const { unreadCount } = useNotifications();
 
-  const [attachment, setAttachment] = useState(null);
-  const [logbookEntries, setLogbookEntries] = useState([]);
-  const [applications, setApplications] = useState([]);
+  const [attachment, setAttachment]           = useState(null);
+  const [logbookEntries, setLogbookEntries]   = useState([]);
+  const [applications, setApplications]       = useState([]);
   const [latestApplication, setLatestApplication] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading]                 = useState(true);
+  const [refreshing, setRefreshing]           = useState(false);
 
-  const fetchData = async () => {
+  // ── Session state ──────────────────────────────────────────────────────────
+  const [session, setSession]               = useState(null);
+  const [sessionActive, setSessionActive]   = useState(false);
+  const [sessionLoading, setSessionLoading] = useState(true);
+
+  const fetchSession = useCallback(async () => {
+    setSessionLoading(true);
     try {
-      console.log('Fetching student dashboard data...');
+      const res = await api.get('/students/active-session');
+      setSession(res.data.session);
+      setSessionActive(res.data.active === true);
+    } catch {
+      setSession(null);
+      setSessionActive(false);
+    } finally {
+      setSessionLoading(false);
+    }
+  }, []);
+
+  const fetchData = useCallback(async () => {
+    try {
       const [attachRes, logbookRes, appsRes] = await Promise.all([
         api.get('/students/my-attachment'),
         api.get('/students/logbook'),
         api.get('/applications'),
       ]);
-      console.log('Attachment data:', attachRes.data);
-      console.log('Logbook entries:', logbookRes.data);
       setAttachment(attachRes.data);
       setLogbookEntries(logbookRes.data ?? []);
       const apps = appsRes.data?.applications || [];
       setApplications(apps);
       setLatestApplication(apps[0] || null);
     } catch (err) {
-      console.error('Dashboard fetch error:', err.message);
-      console.error('Error response:', err.response?.data);
       Alert.alert('Error', 'Failed to load dashboard data');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
+  }, []);
+
+  useEffect(() => {
+    fetchSession();
+    fetchData();
+  }, []);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    Promise.all([fetchSession(), fetchData()]);
   };
 
-  useEffect(() => { fetchData(); }, []);
-
-  const onRefresh = () => { setRefreshing(true); fetchData(); };
-
-  const handleLogout = () => {
-    Alert.alert('Logout', 'Are you sure you want to logout?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Logout', style: 'destructive', onPress: logout },
-    ]);
-  };
-
-  // ── Derived stats from API data ──────────────────────────────────────────
+  // ── Derived stats ──────────────────────────────────────────────────────────
   const hasAttachment = !!attachment;
-  const isOngoing = attachment?.status === 'ongoing';
+  const isOngoing     = attachment?.status === 'ongoing';
 
   const startDate = attachment?.start_date ? new Date(attachment.start_date) : null;
   const endDate   = attachment?.end_date   ? new Date(attachment.end_date)   : null;
   const today     = new Date();
 
-  const totalDays = startDate && endDate
+  const totalDays   = startDate && endDate
     ? Math.max(1, Math.round((endDate - startDate) / (1000 * 60 * 60 * 24)))
     : null;
   const daysElapsed = startDate
     ? Math.max(0, Math.round((today - startDate) / (1000 * 60 * 60 * 24)))
     : null;
-  const daysLeft = endDate
+  const daysLeft    = endDate
     ? Math.max(0, Math.round((endDate - today) / (1000 * 60 * 60 * 24)))
     : null;
   const progressPct = totalDays && daysElapsed !== null
     ? Math.min(100, Math.round((daysElapsed / totalDays) * 100))
     : 0;
 
-  const logbookCount = logbookEntries.length;
-
-  // Latest 3 logbook entries as recent activity
+  const logbookCount  = logbookEntries.length;
   const recentActivity = [...logbookEntries]
     .sort((a, b) => new Date(b.submitted_at ?? b.created_at) - new Date(a.submitted_at ?? a.created_at))
     .slice(0, 3);
 
+  // ── Menu items — Apply gated when no active session ────────────────────────
   const menuItems = [
-    { title: 'Apply for Placement', icon: '📋', screen: 'Apply',         color: '#1E3A5F' },
-    { title: 'My Logbook',          icon: '📖', screen: 'Logbook',       color: '#C87941' },
-    { title: 'My Profile',          icon: '👤', screen: 'Profile',       color: '#2E7D32' },
-    { title: 'Feedback & Grades',   icon: '⭐', screen: 'Feedback',      color: '#2E7D32' },
+    {
+      title:   sessionActive ? 'Apply for Placement' : 'Applications Closed',
+      icon:    '📋',
+      screen:  sessionActive ? 'Apply' : null,
+      color:   sessionActive ? '#1E3A5F' : '#9CA3AF',
+      locked:  !sessionActive,
+    },
+    { title: 'My Logbook',        icon: '📖', screen: 'Logbook',        color: '#C87941' },
+    { title: 'My Profile',        icon: '👤', screen: 'Profile',        color: '#2E7D32' },
+    { title: 'Feedback & Grades', icon: '⭐', screen: 'Feedback',       color: '#2E7D32' },
     {
       title: 'Notifications', icon: '🔔', screen: 'Notifications', color: '#6A1B9A',
       badge: unreadCount,
     },
-    { title: 'Settings',            icon: '⚙️', screen: 'StudentSettings', color: '#0F6E56' },
+    { title: 'Settings', icon: '⚙️', screen: 'StudentSettings', color: TEAL },
   ];
 
   const statusColor = (status) => {
@@ -117,19 +195,19 @@ export default function StudentDashboard({ navigation }) {
 
   const applicationMeta = (status) => {
     switch (status) {
-      case 'accepted':  return { label: 'ACCEPTED', bg: TEAL_LIGHT, text: TEAL };
-      case 'rejected':  return { label: 'REJECTED', bg: '#FCE8E8', text: '#C62828' };
-      case 'more_info': return { label: 'MORE INFO', bg: '#E3F2FD', text: '#185FA5' };
+      case 'accepted':  return { label: 'ACCEPTED',  bg: TEAL_LIGHT,  text: TEAL };
+      case 'rejected':  return { label: 'REJECTED',  bg: '#FCE8E8',   text: '#C62828' };
+      case 'more_info': return { label: 'MORE INFO', bg: '#E3F2FD',   text: '#185FA5' };
       case 'pending':
-      default:          return { label: 'PENDING', bg: AMBER_LIGHT, text: AMBER };
+      default:          return { label: 'PENDING',   bg: AMBER_LIGHT, text: AMBER };
     }
   };
 
   const timeAgo = (dateStr) => {
     if (!dateStr) return '';
     const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000);
-    if (diff < 3600)  return `${Math.floor(diff / 60)}m ago`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    if (diff < 3600)   return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400)  return `${Math.floor(diff / 3600)}h ago`;
     if (diff < 172800) return 'Yesterday';
     return `${Math.floor(diff / 86400)}d ago`;
   };
@@ -187,6 +265,13 @@ export default function StudentDashboard({ navigation }) {
           </TouchableOpacity>
         </View>
 
+        {/* ── Session banner ─────────────────────────────────────────────── */}
+        <SessionBanner
+          session={session}
+          sessionActive={sessionActive}
+          sessionLoading={sessionLoading}
+        />
+
         {/* ── Hero card ─────────────────────────────────────────────────── */}
         {hasAttachment ? (
           <View style={s.heroCard}>
@@ -223,8 +308,10 @@ export default function StudentDashboard({ navigation }) {
           <View style={s.applicationCard}>
             <View style={s.heroTop}>
               <View style={{ flex: 1, marginRight: 10 }}>
-                <Text style={s.heroCompany}>{latestApplication.org_name ?? 'Preferred Organization'}</Text>
-                <Text style={s.heroRole}>
+                <Text style={[s.heroCompany, { color: '#1F2937' }]}>
+                  {latestApplication.org_name ?? 'Preferred Organization'}
+                </Text>
+                <Text style={[s.heroRole, { color: '#6B7280' }]}>
                   {latestApplication.start_date && latestApplication.end_date
                     ? `Period: ${new Date(latestApplication.start_date).toLocaleDateString()} — ${new Date(latestApplication.end_date).toLocaleDateString()}`
                     : 'Attachment period submitted'}
@@ -243,7 +330,8 @@ export default function StudentDashboard({ navigation }) {
               </View>
             )}
           </View>
-        ) : (
+        ) : sessionActive ? (
+          /* Session is open but no attachment yet — show apply prompt */
           <View style={s.noAttachCard}>
             <Text style={s.noAttachTitle}>No Active Attachment</Text>
             <Text style={s.noAttachSub}>Apply for placement to get started</Text>
@@ -254,15 +342,22 @@ export default function StudentDashboard({ navigation }) {
               <Text style={s.applyBtnText}>Apply Now →</Text>
             </TouchableOpacity>
           </View>
+        ) : (
+          /* No session open — show closed notice */
+          <View style={[s.noAttachCard, { borderColor: '#FDE68A', backgroundColor: AMBER_LIGHT }]}>
+            <MaterialCommunityIcons name="lock-outline" size={28} color={AMBER} />
+            <Text style={s.noAttachTitle}>Applications Closed</Text>
+            <Text style={s.noAttachSub}>
+              No attachment session is currently open. Check back later.
+            </Text>
+          </View>
         )}
 
         {/* ── Stats row ─────────────────────────────────────────────────── */}
         <View style={[s.statsRow, { backgroundColor: theme.background }]}>
           <View style={s.statCell}>
             <Text style={[s.statLabel, { color: theme.textSecondary }]}>DAYS LEFT</Text>
-            <Text style={[s.statVal, { color: theme.text }]}>
-              {daysLeft ?? '—'}
-            </Text>
+            <Text style={[s.statVal, { color: theme.text }]}>{daysLeft ?? '—'}</Text>
           </View>
           <View style={[s.statCell, s.statBorder]}>
             <Text style={[s.statLabel, { color: theme.textSecondary }]}>LOGBOOK</Text>
@@ -283,13 +378,25 @@ export default function StudentDashboard({ navigation }) {
         <View style={s.grid}>
           {menuItems.map((item) => (
             <TouchableOpacity
-              key={item.screen}
-              style={[s.card, { backgroundColor: theme.background, borderLeftColor: item.color }]}
-              onPress={() => navigation.navigate(item.screen)}
-              activeOpacity={0.7}
+              key={item.screen ?? item.title}
+              style={[
+                s.card,
+                { backgroundColor: theme.background, borderLeftColor: item.color },
+                item.locked && s.cardLocked,
+              ]}
+              onPress={() => item.screen && navigation.navigate(item.screen)}
+              activeOpacity={item.locked ? 1 : 0.7}
+              disabled={item.locked}
             >
-              <Text style={s.cardIcon}>{item.icon}</Text>
-              <Text style={[s.cardTitle, { color: theme.text }]}>{item.title}</Text>
+              <Text style={[s.cardIcon, item.locked && { opacity: 0.4 }]}>{item.icon}</Text>
+              <Text style={[s.cardTitle, { color: item.locked ? '#9CA3AF' : theme.text }]}>
+                {item.title}
+              </Text>
+              {item.locked && (
+                <View style={s.lockIcon}>
+                  <Ionicons name="lock-closed" size={12} color="#9CA3AF" />
+                </View>
+              )}
               {item.badge > 0 && (
                 <View style={s.badge}>
                   <Text style={s.badgeText}>{item.badge}</Text>
@@ -387,10 +494,10 @@ export default function StudentDashboard({ navigation }) {
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1 },
+  root:             { flex: 1 },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { marginTop: 10, fontSize: 14 },
-  scrollContent: { paddingBottom: 20 },
+  loadingText:      { marginTop: 10, fontSize: 14 },
+  scrollContent:    { paddingBottom: 20 },
 
   topBar: {
     flexDirection: 'row', alignItems: 'center',
@@ -403,7 +510,7 @@ const s = StyleSheet.create({
     backgroundColor: TEAL,
     alignItems: 'center', justifyContent: 'center',
   },
-  avatarText: { color: '#fff', fontSize: 18, fontWeight: '600' },
+  avatarText:   { color: '#fff', fontSize: 18, fontWeight: '600' },
   greetingText: { fontSize: 15, fontWeight: '500' },
   notifBtn: {
     width: 38, height: 38, borderRadius: 19,
@@ -428,51 +535,43 @@ const s = StyleSheet.create({
   applicationCard: {
     margin: 16, marginTop: 4,
     backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.08)',
+    borderRadius: 18, padding: 20,
+    borderWidth: 1, borderColor: 'rgba(0,0,0,0.08)',
   },
   heroTop: {
     flexDirection: 'row', justifyContent: 'space-between',
     alignItems: 'flex-start', marginBottom: 20,
   },
   heroCompany: { color: '#fff', fontSize: 17, fontWeight: '600' },
-  heroRole: { color: TEAL_MID, fontSize: 13, marginTop: 3 },
-  statusPill: {
-    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20,
-  },
+  heroRole:    { color: TEAL_MID, fontSize: 13, marginTop: 3 },
+  statusPill:  { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
   statusPillText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.3 },
   progressLabelRow: {
     flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8,
   },
   progressLabel: { color: 'rgba(255,255,255,0.75)', fontSize: 12 },
-  progressPct: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  progressPct:   { color: '#fff', fontSize: 12, fontWeight: '600' },
   progressTrack: { height: 6, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 3 },
-  progressFill: { height: 6, backgroundColor: '#5DCAA5', borderRadius: 3 },
+  progressFill:  { height: 6, backgroundColor: '#5DCAA5', borderRadius: 3 },
   daysRemainingText: { color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 8 },
   responseBox: {
-    marginTop: 12,
-    backgroundColor: '#F7F9FB',
-    borderRadius: 12,
-    padding: 12,
+    marginTop: 12, backgroundColor: '#F7F9FB', borderRadius: 12, padding: 12,
   },
   responseLabel: { fontSize: 12, fontWeight: '700', color: '#5A6B7A', marginBottom: 4 },
-  responseText: { fontSize: 13, color: '#2B3B49', lineHeight: 18 },
+  responseText:  { fontSize: 13, color: '#2B3B49', lineHeight: 18 },
 
   noAttachCard: {
     margin: 16, marginTop: 4,
     backgroundColor: AMBER_LIGHT,
     borderRadius: 18, padding: 20,
     borderWidth: 1, borderColor: AMBER,
-    alignItems: 'center',
+    alignItems: 'center', gap: 6,
   },
   noAttachTitle: { fontSize: 16, fontWeight: '700', color: AMBER },
-  noAttachSub: { fontSize: 13, color: '#666', marginTop: 4 },
+  noAttachSub:   { fontSize: 13, color: '#666', marginTop: 2, textAlign: 'center' },
   applyBtn: {
-    marginTop: 14, backgroundColor: AMBER,
-    paddingHorizontal: 24, paddingVertical: 10,
-    borderRadius: 20,
+    marginTop: 10, backgroundColor: AMBER,
+    paddingHorizontal: 24, paddingVertical: 10, borderRadius: 20,
   },
   applyBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
 
@@ -484,17 +583,17 @@ const s = StyleSheet.create({
     borderWidth: 0.5, borderColor: 'rgba(0,0,0,0.08)',
     overflow: 'hidden',
   },
-  statCell: { flex: 1, paddingVertical: 14, alignItems: 'center' },
+  statCell:   { flex: 1, paddingVertical: 14, alignItems: 'center' },
   statBorder: { borderLeftWidth: 0.5, borderLeftColor: 'rgba(0,0,0,0.08)' },
-  statLabel: { fontSize: 10, letterSpacing: 0.5, marginBottom: 4 },
-  statVal: { fontSize: 24, fontWeight: '500' },
+  statLabel:  { fontSize: 10, letterSpacing: 0.5, marginBottom: 4 },
+  statVal:    { fontSize: 24, fontWeight: '500' },
 
   // section
   sectionHead: {
     flexDirection: 'row', alignItems: 'center',
     gap: 8, paddingHorizontal: 16, marginBottom: 10,
   },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: CORAL },
+  dot:          { width: 8, height: 8, borderRadius: 4, backgroundColor: CORAL },
   sectionTitle: { fontSize: 15, fontWeight: '600' },
 
   // grid
@@ -505,8 +604,12 @@ const s = StyleSheet.create({
     borderLeftWidth: 4, elevation: 2,
     alignItems: 'center',
   },
-  cardIcon: { fontSize: 32, marginBottom: 10 },
-  cardTitle: { fontSize: 13, fontWeight: '600', textAlign: 'center' },
+  cardLocked: { opacity: 0.6 },
+  cardIcon:   { fontSize: 32, marginBottom: 10 },
+  cardTitle:  { fontSize: 13, fontWeight: '600', textAlign: 'center' },
+  lockIcon: {
+    position: 'absolute', top: 8, right: 8,
+  },
   badge: {
     position: 'absolute', top: -5, right: -5,
     backgroundColor: '#C62828',
@@ -517,11 +620,10 @@ const s = StyleSheet.create({
 
   // activity
   emptyActivity: {
-    marginHorizontal: 16, padding: 16,
-    borderRadius: 14, marginBottom: 8,
+    marginHorizontal: 16, padding: 16, borderRadius: 14, marginBottom: 8,
   },
   emptyActivityText: { fontSize: 13, textAlign: 'center', lineHeight: 20 },
-  activityList: { paddingHorizontal: 16, gap: 10 },
+  activityList:      { paddingHorizontal: 16, gap: 10 },
   activityItem: {
     flexDirection: 'row', alignItems: 'center',
     padding: 14, borderRadius: 14,
@@ -532,11 +634,11 @@ const s = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   actIconEmoji: { fontSize: 20 },
-  actBody: { flex: 1 },
-  actTitle: { fontSize: 13, fontWeight: '600' },
-  actSub: { fontSize: 12, marginTop: 2 },
-  actRight: { alignItems: 'flex-end', gap: 4 },
-  actTime: { fontSize: 11 },
+  actBody:      { flex: 1 },
+  actTitle:     { fontSize: 13, fontWeight: '600' },
+  actSub:       { fontSize: 12, marginTop: 2 },
+  actRight:     { alignItems: 'flex-end', gap: 4 },
+  actTime:      { fontSize: 11 },
   actStatusDot: { width: 6, height: 6, borderRadius: 3 },
 
   viewAll: {
@@ -545,19 +647,17 @@ const s = StyleSheet.create({
   },
 
   infoCard: {
-    margin: 16, padding: 20,
-    borderRadius: 16, marginBottom: 20,
+    margin: 16, padding: 20, borderRadius: 16, marginBottom: 20,
   },
   infoTitle: { fontWeight: '700', fontSize: 15, marginBottom: 8 },
-  infoText: { fontSize: 13, lineHeight: 20 },
+  infoText:  { fontSize: 13, lineHeight: 20 },
 
   bottomNav: {
-    flexDirection: 'row',
-    borderTopWidth: 0.5,
+    flexDirection: 'row', borderTopWidth: 0.5,
     paddingTop: 10, paddingBottom: 24,
   },
-  navTab: { flex: 1, alignItems: 'center', gap: 3 },
-  navIcon: { fontSize: 22 },
-  navLabel: { fontSize: 10, color: '#888', letterSpacing: 0.3 },
+  navTab:       { flex: 1, alignItems: 'center', gap: 3 },
+  navIcon:      { fontSize: 22 },
+  navLabel:     { fontSize: 10, color: '#888', letterSpacing: 0.3 },
   navActiveDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: TEAL },
 });

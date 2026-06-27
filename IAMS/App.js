@@ -5,8 +5,6 @@ import { View, Text } from 'react-native';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 
-
-
 // Auth screens
 import LoginScreen from './app/auth/LoginScreen';
 import RegisterScreen from './app/auth/RegisterScreen';
@@ -23,6 +21,7 @@ import PrivacyPolicyScreen from './app/shared/PrivacyPolicyScreen';
 // Student screens
 import StudentDashboard from './app/student/StudentDashboard';
 import ApplyScreen from './app/student/ApplyScreen';
+import StudentAnnouncementsScreen from './app/student/AnnouncementsScreen';   
 
 // Supervisor screens
 import SupervisorDashboard from './app/supervisor/SupervisorDashboard';
@@ -33,18 +32,27 @@ import SiteVisitsScreen from './app/supervisor/SiteVisitsScreen';
 import EvaluationsScreen from './app/supervisor/EvaluationsScreen';
 import ReportsScreen from './app/supervisor/ReportsScreen';
 import SupervisorSettings from './app/supervisor/SupervisorSettings';
+import SupervisorAnnouncementsScreen from './app/supervisor/AnnouncementsScreen'; 
 
 // Admin screens
-import ManageUsersScreen from './app/admin/ManageUsersScreen';
-import AssignSupervisorsScreen from './app/admin/AssignSupervisorsScreen';
 import AdminDashboard from './app/admin/AdminDashboard';
-import ManageAttachments from './app/admin/ManageAttachments';
+import ManageUsersScreen from './app/admin/ManageUsersScreen';
+import StudentsScreen from './app/admin/StudentsScreen';
+import SupervisorsScreen from './app/admin/SupervisorsScreen';
+import ManageOrgsScreen from './app/admin/ManageOrgsScreen';
+import ManageAttachments from './app/admin/ManageAttachmentsScreen';
+import AssignSupervisorsScreen from './app/admin/AssignSupervisorsScreen';
 import Reports from './app/admin/Reports';
 import OrgDetailsScreen from './app/admin/OrgDetailsScreen';
 import UserDetailScreen from './app/admin/UserDetail';
 import AdminSettings from './app/admin/AdminSettings';
 import AdminProfile from './app/admin/AdminProfile';
 import AdminActivities from './app/admin/AdminActivities';
+import AddUserScreen from './app/admin/AddUserScreen';
+import ManageAdminsScreen from './app/admin/ManageAdminsScreen';
+import AddAdminScreen from './app/admin/AddAdminScreen';
+import AdminAnnouncementsScreen from './app/admin/AnnouncementsScreen';
+
 // Host Org screens
 import HostDashboard from './app/hostorg/HostDashboard';
 import HostProfile from './app/hostorg/HostProfile';
@@ -78,7 +86,7 @@ const FullScreenLoader = () => {
   );
 };
 
-// ── Host Org Drawer Navigator ─────────
+// ── Host Org Drawer Navigator ─────────────────────────────────────────────────
 function HostOrgDrawerNavigator({ route }) {
   const { logout } = useAuth();
   const orgData = route.params?.orgData;
@@ -86,11 +94,7 @@ function HostOrgDrawerNavigator({ route }) {
   return (
     <Drawer.Navigator
       drawerContent={(props) => (
-        <CustomDrawerContent
-          {...props}
-          org={orgData}
-          onLogout={logout}
-        />
+        <CustomDrawerContent {...props} org={orgData} onLogout={logout} />
       )}
       screenOptions={{
         headerShown: false,
@@ -98,59 +102,30 @@ function HostOrgDrawerNavigator({ route }) {
         overlayColor: 'rgba(0, 0, 0, 0.5)',
       }}
     >
-      <Drawer.Screen
-        name="HostDashboard"
-        component={HostDashboard}
-        options={{ title: 'Dashboard' }}
-      />
-      <Drawer.Screen
-        name="HostSlots"
-        component={HostSlots}
-        options={{ title: 'Vacancies' }}
-      />
-      <Drawer.Screen
-        name="PostVacancy"
-        component={PostVacancyScreen}
-        options={{ title: 'Post Vacancy' }}
-      />
-      <Drawer.Screen
-        name="HostProfile"
-        component={HostProfile}
-        options={{ title: 'Profile' }}
-      />
-      <Drawer.Screen
-        name="HostSettings"
-        component={HostSettings}
-        options={{ title: 'Settings' }}
-      />
-      <Drawer.Screen
-        name="HostEvaluation"
-        component={HostEvaluation}
-        options={{ title: 'Evaluation' }}
-      />
-      <Drawer.Screen
-        name="HostApplicants"
-        component={HostApplicants}
-        options={{ title: 'Applicants' }}
-      />
+      <Drawer.Screen name="HostDashboard"  component={HostDashboard}      options={{ title: 'Dashboard'    }} />
+      <Drawer.Screen name="HostSlots"      component={HostSlots}          options={{ title: 'Vacancies'    }} />
+      <Drawer.Screen name="PostVacancy"    component={PostVacancyScreen}  options={{ title: 'Post Vacancy' }} />
+      <Drawer.Screen name="HostProfile"    component={HostProfile}        options={{ title: 'Profile'      }} />
+      <Drawer.Screen name="HostSettings"   component={HostSettings}       options={{ title: 'Settings'     }} />
+      <Drawer.Screen name="HostEvaluation" component={HostEvaluation}     options={{ title: 'Evaluation'   }} />
+      <Drawer.Screen name="HostApplicants" component={HostApplicants}     options={{ title: 'Applicants'   }} />
     </Drawer.Navigator>
   );
 }
 
+// ── Root Navigator ────────────────────────────────────────────────────────────
 function RootNavigator() {
   const { user, loading } = useAuth();
 
-  if (loading) {
-    return <FullScreenLoader />;
-  }
+  if (loading) return <FullScreenLoader />;
 
   if (!user) {
     return (
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="Login" component={LoginScreen} />
-        <Stack.Screen name="Register" component={RegisterScreen} />
-        <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} />
-        <Stack.Screen name="Verify" component={VerifyScreen} />
+        <Stack.Screen name="Login"          component={LoginScreen}          />
+        <Stack.Screen name="Register"       component={RegisterScreen}       />
+        <Stack.Screen name="PrivacyPolicy"  component={PrivacyPolicyScreen}  />
+        <Stack.Screen name="Verify"         component={VerifyScreen}         />
         <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
       </Stack.Navigator>
     );
@@ -159,17 +134,18 @@ function RootNavigator() {
   if (user.role === 'student') {
     return (
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="StudentDashboard" component={StudentDashboard} />
-        <Stack.Screen name="Apply" component={ApplyScreen} />
-        <Stack.Screen name="Logbook" component={LogbookScreen} />
-        <Stack.Screen name="LogbookDetail" component={LogbookDetailScreen} />
-        <Stack.Screen name="Stats" component={PlaceholderScreen} />
-        <Stack.Screen name="Reports" component={PlaceholderScreen} />
-        <Stack.Screen name="Profile" component={ProfileScreen} />
-        <Stack.Screen name="StudentSettings" component={StudentSettings} />
-        <Stack.Screen name="Notifications" component={NotificationsScreen} />
-        <Stack.Screen name="Feedback" component={FeedbackScreen} />
-        <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} />
+        <Stack.Screen name="StudentDashboard" component={StudentDashboard}           />
+        <Stack.Screen name="Apply"            component={ApplyScreen}                />
+        <Stack.Screen name="Logbook"          component={LogbookScreen}              />
+        <Stack.Screen name="LogbookDetail"    component={LogbookDetailScreen}        />
+        <Stack.Screen name="Stats"            component={PlaceholderScreen}          />
+        <Stack.Screen name="Reports"          component={PlaceholderScreen}          />
+        <Stack.Screen name="Profile"          component={ProfileScreen}              />
+        <Stack.Screen name="StudentSettings"  component={StudentSettings}            />
+        <Stack.Screen name="Notifications"    component={NotificationsScreen}        />
+        <Stack.Screen name="Feedback"         component={FeedbackScreen}             />
+        <Stack.Screen name="PrivacyPolicy"    component={PrivacyPolicyScreen}        />
+        <Stack.Screen name="Announcements"    component={StudentAnnouncementsScreen} /> {/* ← NEW */}
       </Stack.Navigator>
     );
   }
@@ -177,18 +153,19 @@ function RootNavigator() {
   if (user.role === 'supervisor') {
     return (
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="SupervisorDashboard" component={SupervisorDashboard} />
-        <Stack.Screen name="Profile" component={SupervisorProfileScreen} />
-        <Stack.Screen name="MyStudents" component={MyStudentsScreen} />
-        <Stack.Screen name="ReviewLogbooks" component={ReviewLogbooksScreen} />
-        <Stack.Screen name="LogbookDetail" component={LogbookDetailScreen} />
-        <Stack.Screen name="SiteVisits" component={SiteVisitsScreen} />
-        <Stack.Screen name="Evaluations" component={EvaluationsScreen} />
-        <Stack.Screen name="Reports" component={ReportsScreen} />
-        <Stack.Screen name="StudentDetail" component={PlaceholderScreen} />
-        <Stack.Screen name="Notifications" component={NotificationsScreen} />
-        <Stack.Screen name="SupervisorSettings" component={SupervisorSettings} />
-        <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} />
+        <Stack.Screen name="SupervisorDashboard" component={SupervisorDashboard}         />
+        <Stack.Screen name="Profile"             component={SupervisorProfileScreen}      />
+        <Stack.Screen name="MyStudents"          component={MyStudentsScreen}             />
+        <Stack.Screen name="ReviewLogbooks"      component={ReviewLogbooksScreen}         />
+        <Stack.Screen name="LogbookDetail"       component={LogbookDetailScreen}          />
+        <Stack.Screen name="SiteVisits"          component={SiteVisitsScreen}             />
+        <Stack.Screen name="Evaluations"         component={EvaluationsScreen}            />
+        <Stack.Screen name="Reports"             component={ReportsScreen}                />
+        <Stack.Screen name="StudentDetail"       component={PlaceholderScreen}            />
+        <Stack.Screen name="Notifications"       component={NotificationsScreen}          />
+        <Stack.Screen name="SupervisorSettings"  component={SupervisorSettings}           />
+        <Stack.Screen name="PrivacyPolicy"       component={PrivacyPolicyScreen}          />
+        <Stack.Screen name="Announcements"       component={SupervisorAnnouncementsScreen} /> {/* ← NEW */}
       </Stack.Navigator>
     );
   }
@@ -206,22 +183,47 @@ function RootNavigator() {
     );
   }
 
+  // ── Admin stack ───────────────────────────────────────────────────────────
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
+      {/* Core */}
       <Stack.Screen name="AdminDashboard" component={AdminDashboard} />
-      <Stack.Screen name="ManageUsers" component={ManageUsersScreen} />
-      <Stack.Screen name="ManageAttachments" component={ManageAttachments} />
-      <Stack.Screen name="AssignSupervisor" component={AssignSupervisorsScreen} />
+
+      {/* User management */}
+      <Stack.Screen name="ManageUsers"  component={ManageUsersScreen} />
+      <Stack.Screen name="Students"     component={StudentsScreen}    />
+      <Stack.Screen name="Supervisors"  component={SupervisorsScreen} />
+      <Stack.Screen name="ManageOrgs"   component={ManageOrgsScreen}  />
+
+      {/* Add screens — role-specific */}
+      <Stack.Screen name="AddUser"       component={AddUserScreen} />
+      <Stack.Screen name="AddStudent"    component={AddUserScreen} initialParams={{ defaultRole: 'student'    }} />
+      <Stack.Screen name="AddSupervisor" component={AddUserScreen} initialParams={{ defaultRole: 'supervisor' }} />
+      <Stack.Screen name="AddOrg"        component={AddUserScreen} initialParams={{ defaultRole: 'host_org'   }} />
+      <Stack.Screen name="AddAdmin"      component={AddAdminScreen} />
+
+      {/* Attachments & assignments */}
+      <Stack.Screen name="ManageAttachments" component={ManageAttachments}       />
+      <Stack.Screen name="AssignSupervisor"  component={AssignSupervisorsScreen} />
       <Stack.Screen name="AssignSupervisors" component={AssignSupervisorsScreen} />
-      <Stack.Screen name="ManageSupervisors" component={PlaceholderScreen} />
-      <Stack.Screen name="ManageOrgs" component={PlaceholderScreen} />
-      <Stack.Screen name="AdminProfile" component={AdminProfile} />
-      <Stack.Screen name="Settings" component={AdminSettings} />
-      <Stack.Screen name="AdminActivities" component={AdminActivities} />
-      <Stack.Screen name="UserDetail" component={UserDetailScreen} />
-      <Stack.Screen name="Reports" component={Reports} />
-      <Stack.Screen name="OrgDetails" component={OrgDetailsScreen} />
-      <Stack.Screen name="Notifications" component={NotificationsScreen} />
+
+      {/* Detail screens */}
+      <Stack.Screen name="UserDetail"       component={UserDetailScreen}  />
+      <Stack.Screen name="OrgDetails"       component={OrgDetailsScreen}  />
+      <Stack.Screen name="OrgDetail"        component={OrgDetailsScreen}  />
+      <Stack.Screen name="OrgVacancies"     component={PlaceholderScreen} />
+      <Stack.Screen name="StudentDetail"    component={PlaceholderScreen} />
+      <Stack.Screen name="SupervisorDetail" component={PlaceholderScreen} />
+      <Stack.Screen name="AssignStudent"    component={PlaceholderScreen} />
+
+      {/* Other admin */}
+      <Stack.Screen name="Reports"              component={Reports}                   />
+      <Stack.Screen name="AdminProfile"         component={AdminProfile}              />
+      <Stack.Screen name="Settings"             component={AdminSettings}             />
+      <Stack.Screen name="AdminActivities"      component={AdminActivities}           />
+      <Stack.Screen name="ManageAdmins"         component={ManageAdminsScreen}        />
+      <Stack.Screen name="Notifications"        component={NotificationsScreen}       />
+      <Stack.Screen name="AdminAnnouncements"   component={AdminAnnouncementsScreen}  /> {/* ← NEW */}
     </Stack.Navigator>
   );
 }
