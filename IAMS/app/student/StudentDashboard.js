@@ -9,7 +9,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { useNotifications } from '../../hooks/useNotifications';
 import api from '../../api/axios';
 import Spinner from '../../components/Spinner';
-import AnnouncementBanner from '../../shared/AnnouncementBanner';
+import AnnouncementBanner from '../shared/AnnouncementBanner';
 
 const TEAL       = '#0F6E56';
 const TEAL_LIGHT = '#E1F5EE';

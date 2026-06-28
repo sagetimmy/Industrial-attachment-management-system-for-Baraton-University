@@ -9,7 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { COLORS } from '../../constants/colors';
 import api from '../../api/axios';
-import AnnouncementBanner from '../../shared/AnnouncementBanner';
+import AnnouncementBanner from '../shared/AnnouncementBanner';
 
 function ProgressRing({ percent = 0, size = 52, color = '#0F6E56' }) {
   const radius = 21;
