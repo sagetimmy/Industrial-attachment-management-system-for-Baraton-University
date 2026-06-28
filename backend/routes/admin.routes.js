@@ -752,12 +752,117 @@ router.put('/assign-supervisor', protect, authorize('admin'), async (req, res) =
   }
 });
 
+// ─── GET /api/admin/admins ────────────────────────────────────────────────
+// Returns only users with role='admin', enriched with is_super_admin.
+router.get('/admins', protect, authorize('admin'), async (req, res) => {
+  try {
+    let query = supabase
+      .from('users')
+      .select('user_id, email, role, is_verified, is_active, is_super_admin, created_at')
+      .eq('role', 'admin')
+      .order('created_at', { ascending: false });
+
+    if (req.query.search) {
+      query = query.ilike('email', `%${req.query.search}%`);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    // Try to enrich with a name if a profile row happens to exist for this admin
+    const userIds = (data || []).map(u => u.user_id);
+    let nameMap = {};
+    if (userIds.length) {
+      const { data: students } = await supabase
+        .from('students').select('user_id, full_name').in('user_id', userIds);
+      (students || []).forEach(s => { nameMap[s.user_id] = s.full_name; });
+
+      const { data: supervisors } = await supabase
+        .from('supervisors').select('user_id, full_name').in('user_id', userIds);
+      (supervisors || []).forEach(s => { nameMap[s.user_id] = nameMap[s.user_id] || s.full_name; });
+    }
+
+    const result = (data || []).map(u => ({
+      ...u,
+      id:            u.user_id,
+      name:          nameMap[u.user_id] || null,
+      is_super_admin: u.is_super_admin ?? false,
+    }));
+
+    res.json({ admins: result, total: result.length });
+  } catch (err) {
+    console.error('GET /admin/admins error:', err);
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// ─── PATCH /api/admin/users/:id/super-admin ───────────────────────────────
+// Toggle is_super_admin. Only a super admin can do this, and cannot demote
+// themselves.
+router.patch('/users/:id/super-admin', protect, authorize('admin'), async (req, res) => {
+  try {
+    // Caller must be a super admin
+    if (!req.user.is_super_admin) {
+      return res.status(403).json({ message: 'Only Super Admins can change this setting.' });
+    }
+
+    const targetId = req.params.id;
+
+    // Prevent self-demotion
+    if (String(targetId) === String(req.user.user_id)) {
+      return res.status(400).json({ message: 'You cannot change your own Super Admin status.' });
+    }
+
+    const { data: target, error: fetchErr } = await supabase
+      .from('users')
+      .select('user_id, email, role, is_super_admin')
+      .eq('user_id', targetId)
+      .single();
+
+    if (fetchErr || !target) return res.status(404).json({ message: 'User not found.' });
+    if (target.role !== 'admin') return res.status(400).json({ message: 'User is not an admin.' });
+
+    const newValue = !target.is_super_admin;
+
+    const { error: updateErr } = await supabase
+      .from('users')
+      .update({ is_super_admin: newValue })
+      .eq('user_id', targetId);
+
+    if (updateErr) throw updateErr;
+
+    await audit(
+      req.user,
+      newValue ? 'PROMOTE_SUPER_ADMIN' : 'DEMOTE_SUPER_ADMIN',
+      'users', targetId,
+      `${target.email} was ${newValue ? 'promoted to' : 'demoted from'} Super Admin by ${req.user.email}`,
+      { is_super_admin: newValue }, req.ip
+    );
+
+    res.json({
+      message: `${target.email} is now a ${newValue ? 'Super Admin' : 'System Admin'}.`,
+      is_super_admin: newValue,
+    });
+  } catch (err) {
+    console.error('PATCH /admin/users/:id/super-admin error:', err);
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // ─── GET /api/admin/users ─────────────────────────────────────────────────
 router.get('/users', protect, authorize('admin'), async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .from('users').select('user_id, email, role, is_verified, is_active, created_at')
+    let query = supabase
+      .from('users')
+      .select('user_id, email, role, is_verified, is_active, is_super_admin, created_at')
       .order('created_at', { ascending: false });
+
+    // Apply role filter when provided (used as fallback by ManageAdminsScreen)
+    if (req.query.role) {
+      query = query.eq('role', req.query.role);
+    }
+
+    const { data, error } = await query;
     if (error) throw error;
 
     const userIds = data.map(u => u.user_id);
@@ -785,6 +890,7 @@ router.get('/users', protect, authorize('admin'), async (req, res) => {
       student_phone:    studentMap[u.user_id]?.phone         || null,
       supervisor_phone: supervisorMap[u.user_id]?.phone      || null,
       supervisor_dept:  supervisorMap[u.user_id]?.department || null,
+      is_super_admin:   u.is_super_admin ?? false,
     })));
   } catch (err) {
     res.status(500).json({ message: err.message });

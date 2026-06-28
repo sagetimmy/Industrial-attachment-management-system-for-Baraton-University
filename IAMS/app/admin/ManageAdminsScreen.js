@@ -18,7 +18,6 @@ import api from '../../api/axios';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 const C = {
-  // IAMS core
   navy:        '#0F2419',
   teal:        '#1B7A65',
   tealLight:   '#E0F5F1',
@@ -33,13 +32,18 @@ const C = {
   redLight:    '#FDECEA',
   amber:       '#D97706',
   green:       '#1B7A65',
-  // Template-matched extras
   surface:     '#F6FAF8',
   outline:     '#BDC9C5',
-  superBg:     '#0D7A6B',   // darker teal for super admin pill
+  superBg:     '#0D7A6B',
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+// Admins have no separate profile table, so we derive a readable display name
+// from the name field (if enriched) or the email prefix.
+const displayName = (item) =>
+  item.name?.trim() ||
+  (item.email ? item.email.split('@')[0].replace(/[._-]/g, ' ') : 'Admin User');
+
 const initials = (name = '') =>
   name.split(' ').slice(0, 2).map((w) => w[0]?.toUpperCase() ?? '').join('');
 
@@ -67,52 +71,69 @@ const Avatar = ({ name, size = 48 }) => (
   </View>
 );
 
-// ─── Admin Card — matches template layout ─────────────────────────────────────
-const AdminCard = ({ item, onToggle, onDelete, onResetPassword }) => {
-  const fullName  = `${item.first_name ?? ''} ${item.last_name ?? ''}`.trim() || 'Unknown Admin';
-  const isActive  = item.is_active !== false;
+// ─── Admin Card ───────────────────────────────────────────────────────────────
+const AdminCard = ({ item, currentUser, onToggleActive, onToggleSuperAdmin, onDelete, onResetPassword }) => {
+  const name         = displayName(item);
+  const isActive     = item.is_active !== false;
   const isSuperAdmin = !!item.is_super_admin;
-  const joined    = formatJoined(item.created_at ?? item.joined_at);
+  const joined       = formatJoined(item.created_at ?? item.joined_at);
+  const isSelf       = String(item.id) === String(currentUser?.user_id);
+  // Only super admins can toggle the super-admin flag, and never on themselves
+  const canToggleRole = !!currentUser?.is_super_admin && !isSelf;
 
   return (
     <View style={styles.card}>
-      {/* ── Top row: avatar + info + super-admin badge ── */}
+      {/* ── Top row ── */}
       <View style={styles.cardTop}>
-        <Avatar name={fullName} size={48} />
+        <Avatar name={name} size={48} />
 
         <View style={styles.cardInfo}>
-          {/* Name row + badge */}
           <View style={styles.cardNameRow}>
-            <Text style={styles.cardName} numberOfLines={1}>{fullName}</Text>
-            <View style={[
-              styles.rolePill,
-              isSuperAdmin ? styles.rolePillSuper : styles.rolePillAdmin,
-            ]}>
-              <Text style={[
-                styles.rolePillText,
-                isSuperAdmin ? styles.rolePillTextSuper : styles.rolePillTextAdmin,
-              ]}>
+            <Text style={styles.cardName} numberOfLines={1}>{name}</Text>
+            {/* Super Admin / System Admin pill */}
+            <View style={[styles.rolePill, isSuperAdmin ? styles.rolePillSuper : styles.rolePillAdmin]}>
+              <Text style={[styles.rolePillText, isSuperAdmin ? styles.rolePillTextSuper : styles.rolePillTextAdmin]}>
                 {isSuperAdmin ? 'SUPER ADMIN' : 'SYSTEM ADMIN'}
               </Text>
             </View>
           </View>
 
-          {/* Email */}
           <Text style={styles.cardEmail} numberOfLines={1}>{item.email ?? '—'}</Text>
 
-          {/* Joined date — italic muted, matches template */}
-          {joined ? (
-            <Text style={styles.cardJoined}>Joined: {joined}</Text>
-          ) : null}
+          {joined ? <Text style={styles.cardJoined}>Joined: {joined}</Text> : null}
+
+          {/* Active / Inactive status pill */}
+          <View style={[styles.statusPill, isActive ? styles.statusPillActive : styles.statusPillInactive]}>
+            <Text style={[styles.statusPillText, isActive ? styles.statusPillTextActive : styles.statusPillTextInactive]}>
+              {isActive ? 'Active' : 'Inactive'}
+            </Text>
+          </View>
         </View>
       </View>
 
-      {/* ── Bottom row: 3 inline action buttons ── */}
+      {/* ── Role toggle row (Super Admin only, not self) ── */}
+      {canToggleRole && (
+        <TouchableOpacity
+          style={[styles.roleToggleBtn, isSuperAdmin ? styles.roleToggleBtnDemote : styles.roleToggleBtnPromote]}
+          onPress={() => onToggleSuperAdmin(item)}
+          activeOpacity={0.75}
+        >
+          <MaterialCommunityIcons
+            name={isSuperAdmin ? 'shield-remove-outline' : 'shield-star-outline'}
+            size={16}
+            color={isSuperAdmin ? C.amber : C.teal}
+          />
+          <Text style={[styles.roleToggleBtnText, isSuperAdmin ? styles.roleToggleBtnTextDemote : styles.roleToggleBtnTextPromote]}>
+            {isSuperAdmin ? 'Remove Super Admin' : 'Make Super Admin'}
+          </Text>
+        </TouchableOpacity>
+      )}
+
+      {/* ── Primary action buttons ── */}
       <View style={styles.cardActions}>
-        {/* Edit Permissions / Deactivate toggle */}
         <TouchableOpacity
           style={[styles.actionBtn, styles.actionBtnPrimary]}
-          onPress={() => onToggle(item)}
+          onPress={() => onToggleActive(item)}
           activeOpacity={0.75}
         >
           <Text style={styles.actionBtnPrimaryText} numberOfLines={1}>
@@ -120,7 +141,6 @@ const AdminCard = ({ item, onToggle, onDelete, onResetPassword }) => {
           </Text>
         </TouchableOpacity>
 
-        {/* Reset Password */}
         <TouchableOpacity
           style={[styles.actionBtn, styles.actionBtnSecondary]}
           onPress={() => onResetPassword(item)}
@@ -129,7 +149,6 @@ const AdminCard = ({ item, onToggle, onDelete, onResetPassword }) => {
           <Text style={styles.actionBtnSecondaryText} numberOfLines={1}>Reset Password</Text>
         </TouchableOpacity>
 
-        {/* Delete — icon only */}
         <TouchableOpacity
           style={[styles.actionBtn, styles.actionBtnDanger]}
           onPress={() => onDelete(item)}
@@ -142,7 +161,7 @@ const AdminCard = ({ item, onToggle, onDelete, onResetPassword }) => {
   );
 };
 
-// ─── Stat Card — matches template 2-col layout ───────────────────────────────
+// ─── Stat Card ────────────────────────────────────────────────────────────────
 const StatCard = ({ label, value, color, fillFraction, accent }) => (
   <View style={styles.statCard}>
     <Text style={styles.statLabel}>{label}</Text>
@@ -157,6 +176,7 @@ const StatCard = ({ label, value, color, fillFraction, accent }) => (
 export default function ManageAdminsScreen({ navigation }) {
   const [admins, setAdmins]         = useState([]);
   const [filtered, setFiltered]     = useState([]);
+  const [currentUser, setCurrentUser] = useState(null);
   const [search, setSearch]         = useState('');
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -169,28 +189,45 @@ export default function ManageAdminsScreen({ navigation }) {
       isRefresh ? setRefreshing(true) : setLoading(true);
       setError(null);
 
+      // Fetch current user (to know if they are super admin + to block self-demotion)
+      if (!currentUser) {
+        try {
+          const meRes = await api.get('/auth/me');
+          setCurrentUser(meRes.data);
+        } catch { /* non-fatal — role toggle button will simply be hidden */ }
+      }
+
       let data = [];
       try {
+        // Primary: dedicated admins-only endpoint
         const res = await api.get('/admin/admins');
         data = res.data?.admins ?? res.data?.users ?? res.data ?? [];
       } catch (e) {
         if (e.response?.status === 404) {
+          // Fallback: generic users endpoint filtered to admin role
           const res = await api.get('/admin/users', { params: { role: 'admin' } });
-          data = res.data?.admins ?? res.data?.users ?? res.data ?? [];
+          data = res.data?.users ?? res.data ?? [];
         } else {
           throw e;
         }
       }
 
-      setAdmins(data);
-      applyFilters(data, search, filterStatus);
+      // Normalise id field
+      const normalised = data.map((u) => ({
+        ...u,
+        id: u.user_id ?? u.id,
+        is_super_admin: u.is_super_admin ?? false,
+      }));
+
+      setAdmins(normalised);
+      applyFilters(normalised, search, filterStatus);
     } catch {
       setError('Failed to load admins. Pull down to retry.');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [search, filterStatus]);
+  }, [search, filterStatus, currentUser]);
 
   useFocusEffect(useCallback(() => { fetchAdmins(); }, [fetchAdmins]));
 
@@ -200,8 +237,9 @@ export default function ManageAdminsScreen({ navigation }) {
     if (q.trim()) {
       const lower = q.toLowerCase();
       result = result.filter(
-        (a) => `${a.first_name} ${a.last_name}`.toLowerCase().includes(lower)
-             || a.email?.toLowerCase().includes(lower)
+        (a) =>
+          displayName(a).toLowerCase().includes(lower) ||
+          a.email?.toLowerCase().includes(lower)
       );
     }
     if (status === 'active')   result = result.filter((a) => a.is_active !== false);
@@ -209,16 +247,16 @@ export default function ManageAdminsScreen({ navigation }) {
     setFiltered(result);
   };
 
-  const handleSearch = (q) => { setSearch(q); applyFilters(admins, q, filterStatus); };
+  const handleSearch    = (q)   => { setSearch(q);   applyFilters(admins, q, filterStatus); };
   const handleFilterTab = (tab) => { setFilter(tab); applyFilters(admins, search, tab); };
 
-  // ── Actions ──
-  const handleToggle = (item) => {
-    const fullName = `${item.first_name ?? ''} ${item.last_name ?? ''}`.trim();
+  // ── Toggle active status ──
+  const handleToggleActive = (item) => {
+    const name     = displayName(item);
     const isActive = item.is_active !== false;
     Alert.alert(
       isActive ? 'Deactivate Admin' : 'Reactivate Admin',
-      `${isActive ? 'Deactivate' : 'Reactivate'} ${fullName}?`,
+      `${isActive ? 'Deactivate' : 'Reactivate'} ${name}?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -237,11 +275,39 @@ export default function ManageAdminsScreen({ navigation }) {
     );
   };
 
+  // ── Toggle super admin ──
+  const handleToggleSuperAdmin = (item) => {
+    const name         = displayName(item);
+    const isSuperAdmin = !!item.is_super_admin;
+    Alert.alert(
+      isSuperAdmin ? 'Remove Super Admin' : 'Make Super Admin',
+      isSuperAdmin
+        ? `Remove Super Admin privileges from ${name}? They will become a System Admin.`
+        : `Grant Super Admin privileges to ${name}? They will have full system access.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: isSuperAdmin ? 'Remove' : 'Make Super Admin',
+          style: isSuperAdmin ? 'destructive' : 'default',
+          onPress: async () => {
+            try {
+              await api.patch(`/admin/users/${item.id}/super-admin`);
+              fetchAdmins(true);
+            } catch (e) {
+              Alert.alert('Error', e.response?.data?.message || 'Could not update role. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // ── Delete ──
   const handleDelete = (item) => {
-    const fullName = `${item.first_name ?? ''} ${item.last_name ?? ''}`.trim();
+    const name = displayName(item);
     Alert.alert(
       'Delete Admin',
-      `Permanently delete ${fullName}? This cannot be undone.`,
+      `Permanently delete ${name}? This cannot be undone.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -259,11 +325,12 @@ export default function ManageAdminsScreen({ navigation }) {
     );
   };
 
+  // ── Reset password ──
   const handleResetPassword = (item) => {
-    const fullName = `${item.first_name ?? ''} ${item.last_name ?? ''}`.trim();
+    const name = displayName(item);
     Alert.alert(
       'Reset Password',
-      `Send a password reset email to ${fullName} at ${item.email}?`,
+      `Send a password reset email to ${name} at ${item.email}?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -289,9 +356,8 @@ export default function ManageAdminsScreen({ navigation }) {
 
   // ── Counts ──
   const totalCount      = admins.length;
-  const superAdminCount = admins.filter((a) => a.is_super_admin).length;
+  const superAdminCount = admins.filter((a) => !!a.is_super_admin).length;
   const activeCount     = admins.filter((a) => a.is_active !== false).length;
-  const inactiveCount   = admins.filter((a) => a.is_active === false).length;
 
   // ── Loading state ──
   if (loading) {
@@ -323,7 +389,7 @@ export default function ManageAdminsScreen({ navigation }) {
 
       <FlatList
         data={filtered}
-        keyExtractor={(item) => String(item.id)}
+        keyExtractor={(item) => String(item.id ?? item.user_id)}
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
         refreshControl={
@@ -335,7 +401,6 @@ export default function ManageAdminsScreen({ navigation }) {
           />
         }
 
-        // ── ListHeaderComponent carries all the non-card UI ──
         ListHeaderComponent={
           <>
             {/* ── 2-col stat cards ── */}
@@ -388,14 +453,13 @@ export default function ManageAdminsScreen({ navigation }) {
               ))}
             </View>
 
-            {/* ── Directory label ── */}
             <Text style={styles.sectionLabel}>Directory</Text>
           </>
         }
 
         ListEmptyComponent={
           error ? (
-            <View style={styles.centered}>
+            <View style={styles.emptyWrap}>
               <MaterialCommunityIcons name="alert-circle-outline" size={48} color={C.textMuted} />
               <Text style={styles.errorText}>{error}</Text>
               <TouchableOpacity style={styles.retryBtn} onPress={() => fetchAdmins()}>
@@ -418,7 +482,9 @@ export default function ManageAdminsScreen({ navigation }) {
         renderItem={({ item }) => (
           <AdminCard
             item={item}
-            onToggle={handleToggle}
+            currentUser={currentUser}
+            onToggleActive={handleToggleActive}
+            onToggleSuperAdmin={handleToggleSuperAdmin}
             onDelete={handleDelete}
             onResetPassword={handleResetPassword}
           />
@@ -439,10 +505,9 @@ export default function ManageAdminsScreen({ navigation }) {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  root:    { flex: 1, backgroundColor: C.bg },
-  centered:{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: C.bg, padding: 24 },
+  root:     { flex: 1, backgroundColor: C.bg },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: C.bg, padding: 24 },
 
-  // ── Header ──
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -460,10 +525,8 @@ const styles = StyleSheet.create({
     color: C.white, fontSize: 18, fontWeight: '700', flex: 1, textAlign: 'center',
   },
 
-  // ── List container ──
   list: { paddingBottom: 110 },
 
-  // ── 2-col stat cards ──
   statsRow: {
     flexDirection: 'row',
     gap: 12,
@@ -484,12 +547,11 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
   },
-  statLabel: { fontSize: 12, color: C.textSub, marginBottom: 4 },
-  statValue: { fontSize: 32, fontWeight: '700', lineHeight: 38 },
-  statBar:   { height: 4, borderRadius: 4, marginTop: 10, overflow: 'hidden' },
+  statLabel:   { fontSize: 12, color: C.textSub, marginBottom: 4 },
+  statValue:   { fontSize: 32, fontWeight: '700', lineHeight: 38 },
+  statBar:     { height: 4, borderRadius: 4, marginTop: 10, overflow: 'hidden' },
   statBarFill: { height: '100%', borderRadius: 4 },
 
-  // ── Search ──
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -511,7 +573,6 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
 
-  // ── Filter tabs ──
   filterRow: {
     flexDirection: 'row',
     gap: 8,
@@ -528,13 +589,11 @@ const styles = StyleSheet.create({
   filterTabText:       { fontSize: 13, color: C.textSub, fontWeight: '500' },
   filterTabTextActive: { color: C.white, fontWeight: '600' },
 
-  // ── Section label ──
   sectionLabel: {
     fontSize: 16, fontWeight: '700', color: C.textPrimary,
     marginHorizontal: 16, marginTop: 20, marginBottom: 10,
   },
 
-  // ── Card ──
   card: {
     backgroundColor: C.white,
     borderRadius: 16,
@@ -549,38 +608,47 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
   },
-  cardTop: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-  },
+  cardTop:     { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   cardInfo:    { flex: 1 },
   cardNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 3 },
-  cardName: {
-    fontSize: 15, fontWeight: '600', color: C.textPrimary,
-    flex: 1,
-  },
+  cardName:    { fontSize: 15, fontWeight: '600', color: C.textPrimary, flex: 1 },
 
-  // Role pill — top right of card header
-  rolePill: {
-    borderRadius: 99,
-    paddingHorizontal: 8, paddingVertical: 3,
-  },
+  rolePill:          { borderRadius: 99, paddingHorizontal: 8, paddingVertical: 3 },
   rolePillSuper:     { backgroundColor: C.tealLight },
   rolePillAdmin:     { backgroundColor: '#F0F0F0' },
   rolePillText:      { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
   rolePillTextSuper: { color: C.teal },
   rolePillTextAdmin: { color: C.textSub },
 
-  cardEmail:  { fontSize: 12, color: C.textSub },
-  cardJoined: { fontSize: 10, color: C.textMuted, fontStyle: 'italic', marginTop: 3 },
+  cardEmail:  { fontSize: 12, color: C.textSub, marginBottom: 4 },
+  cardJoined: { fontSize: 10, color: C.textMuted, fontStyle: 'italic', marginBottom: 4 },
 
-  // ── Inline action buttons row ──
-  cardActions: {
+  statusPill:             { alignSelf: 'flex-start', borderRadius: 99, paddingHorizontal: 8, paddingVertical: 2 },
+  statusPillActive:       { backgroundColor: '#E6F4F1' },
+  statusPillInactive:     { backgroundColor: C.redLight },
+  statusPillText:         { fontSize: 10, fontWeight: '700' },
+  statusPillTextActive:   { color: C.teal },
+  statusPillTextInactive: { color: C.red },
+
+  // Role toggle button (Make / Remove Super Admin)
+  roleToggleBtn: {
     flexDirection: 'row',
-    gap: 8,
-    marginTop: 12,
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    marginTop: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
   },
+  roleToggleBtnPromote:     { borderColor: C.teal,  backgroundColor: C.tealLight },
+  roleToggleBtnDemote:      { borderColor: '#F59E0B', backgroundColor: '#FFFBEB' },
+  roleToggleBtnText:        { fontSize: 12, fontWeight: '600' },
+  roleToggleBtnTextPromote: { color: C.teal },
+  roleToggleBtnTextDemote:  { color: C.amber },
+
+  cardActions: { flexDirection: 'row', gap: 8, marginTop: 12 },
   actionBtn: {
     height: 38,
     borderRadius: 10,
@@ -588,43 +656,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1.5,
   },
-  actionBtnPrimary: {
-    flex: 1,
-    borderColor: C.teal,
-  },
-  actionBtnPrimaryText: {
-    color: C.teal, fontSize: 12, fontWeight: '600',
-  },
-  actionBtnSecondary: {
-    flex: 1,
-    borderColor: C.cardBorder,
-  },
-  actionBtnSecondaryText: {
-    color: C.textSub, fontSize: 12, fontWeight: '600',
-  },
-  actionBtnDanger: {
-    width: 38,
-    borderColor: '#FFD5D0',
-    backgroundColor: '#FFF5F4',
-  },
+  actionBtnPrimary:      { flex: 1, borderColor: C.teal },
+  actionBtnPrimaryText:  { color: C.teal, fontSize: 12, fontWeight: '600' },
+  actionBtnSecondary:    { flex: 1, borderColor: C.cardBorder },
+  actionBtnSecondaryText:{ color: C.textSub, fontSize: 12, fontWeight: '600' },
+  actionBtnDanger:       { width: 38, borderColor: '#FFD5D0', backgroundColor: '#FFF5F4' },
 
-  // ── Avatar ──
   avatar:     { alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: C.white, fontWeight: '700' },
 
-  // ── Empty / Error ──
   emptyWrap:  { alignItems: 'center', paddingTop: 60, gap: 8, paddingHorizontal: 32 },
   emptyTitle: { fontSize: 16, fontWeight: '600', color: C.textSub, marginTop: 8, textAlign: 'center' },
   emptyText:  { fontSize: 13, color: C.textMuted, textAlign: 'center' },
   loadingText:{ marginTop: 12, color: C.textSub, fontSize: 14 },
   errorText:  { color: C.textSub, fontSize: 14, textAlign: 'center', marginTop: 10 },
-  retryBtn: {
-    marginTop: 16, backgroundColor: C.teal,
-    borderRadius: 8, paddingHorizontal: 24, paddingVertical: 10,
-  },
+  retryBtn:   { marginTop: 16, backgroundColor: C.teal, borderRadius: 8, paddingHorizontal: 24, paddingVertical: 10 },
   retryBtnText: { color: C.white, fontWeight: '600', fontSize: 14 },
 
-  // ── FAB ──
   fab: {
     position: 'absolute',
     bottom: 28, right: 22,
@@ -638,7 +686,4 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
   },
-
-  // ── Misc ──
-  outline: C.outline,
 });

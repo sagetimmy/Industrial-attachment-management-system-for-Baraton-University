@@ -75,13 +75,29 @@ router.post('/register-profile', async (req, res) => {
   const {
     auth_id, email, role, full_name, reg_number,
     department, year_of_study, phone,
-    org_name, location, contact_person
+    org_name, location, contact_person,
+    // Admin-specific fields
+    is_super_admin, permissions,
   } = req.body;
 
   try {
+    // Build the users row — include is_super_admin for admin role
+    const userInsert = {
+      email,
+      password: 'supabase_auth_managed',
+      role,
+      auth_id,
+      is_verified: false,
+      is_active: true,
+    };
+
+    if (role === 'admin') {
+      userInsert.is_super_admin = is_super_admin === true;
+    }
+
     const { data: newUser, error: dbError } = await supabase
       .from('users')
-      .insert({ email, password: 'supabase_auth_managed', role, auth_id, is_verified: false, is_active: true })
+      .insert(userInsert)
       .select()
       .single();
 
@@ -100,8 +116,9 @@ router.post('/register-profile', async (req, res) => {
         .insert({ user_id: newUser.user_id, org_name, location, contact_person, phone, available_slots: 0 });
       if (error) throw error;
     }
+    // admin role: no separate profile table — everything lives on users row
 
-    res.status(201).json({ message: 'Profile created successfully' });
+    res.status(201).json({ message: 'Profile created successfully', user_id: newUser.user_id });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -131,7 +148,6 @@ router.post('/verify-email', async (req, res) => {
       return res.status(400).json({ message: 'Verification code has expired' });
     }
 
-    // Mark user as verified in users table
     const { error: updateError } = await supabase
       .from('users')
       .update({ is_verified: true })
@@ -141,7 +157,6 @@ router.post('/verify-email', async (req, res) => {
       return res.status(500).json({ message: 'Failed to verify user' });
     }
 
-    // Confirm email in Supabase Auth
     const { data: authUser } = await supabase
       .from('users')
       .select('auth_id')
@@ -154,7 +169,6 @@ router.post('/verify-email', async (req, res) => {
       });
     }
 
-    // Delete used OTP
     await supabase.from('password_reset_codes').delete().eq('email', email);
 
     console.log(`✅ Email verified for ${email}`);
@@ -200,7 +214,6 @@ router.post('/resend-code', async (req, res) => {
       if (student?.full_name) fullName = student.full_name;
     }
 
-    // Send in background
     res.status(200).json({ message: 'Verification code resent' });
 
     sendVerificationEmail(email, fullName, otp)
@@ -217,13 +230,11 @@ router.post('/resend-code', async (req, res) => {
 router.delete('/users/:auth_id', protect, async (req, res) => {
   const { auth_id } = req.params;
 
-  // Only admins can delete users
   if (req.user.role !== 'admin') {
     return res.status(403).json({ message: 'Access denied. Admins only.' });
   }
 
   try {
-    // Get user from DB to find their role for profile cleanup
     const { data: dbUser, error: fetchError } = await supabase
       .from('users')
       .select('user_id, role, email')
@@ -236,7 +247,6 @@ router.delete('/users/:auth_id', protect, async (req, res) => {
 
     const { user_id, role, email } = dbUser;
 
-    // Delete role-specific profile
     if (role === 'student') {
       await supabase.from('students').delete().eq('user_id', user_id);
     } else if (role === 'supervisor') {
@@ -245,13 +255,9 @@ router.delete('/users/:auth_id', protect, async (req, res) => {
       await supabase.from('host_organizations').delete().eq('user_id', user_id);
     }
 
-    // Delete OTP codes
     await supabase.from('password_reset_codes').delete().eq('email', email);
-
-    // Delete from users table
     await supabase.from('users').delete().eq('user_id', user_id);
 
-    // Delete from Supabase Auth
     const { error: authError } = await supabase.auth.admin.deleteUser(auth_id);
     if (authError) {
       console.error('❌ Auth delete error:', authError.message);
@@ -270,15 +276,15 @@ router.delete('/users/:auth_id', protect, async (req, res) => {
 // GET /api/auth/me
 router.get('/me', protect, async (req, res) => {
   try {
-    const userId = req.user.user_id;
+    const userId    = req.user.user_id;
     const userEmail = req.user.email;
-    const userRole = req.user.role;
+    const userRole  = req.user.role;
 
     console.log('👤 getMe called for user:', { userId, email: userEmail, role: userRole });
 
     const { data: user, error: userError } = await supabase
       .from('users')
-      .select('user_id, email, role, is_verified, is_active, created_at')
+      .select('user_id, email, role, is_verified, is_active, is_super_admin, created_at')
       .eq('user_id', userId)
       .maybeSingle();
 
@@ -315,22 +321,23 @@ router.get('/me', protect, async (req, res) => {
       }
 
       return res.json({
-        user_id: newUser.user_id,
-        email: userEmail,
-        role: userRole || 'student',
+        user_id:    newUser.user_id,
+        email:      userEmail,
+        role:       userRole || 'student',
         permissions: getRolePermissions(userRole || 'student'),
       });
     }
 
     const permissions = getRolePermissions(user?.role || userRole);
     res.json({
-      user_id: user.user_id,
-      email: user.email,
-      role: user.role,
-      is_verified: user.is_verified,
-      is_active: user.is_active,
+      user_id:       user.user_id,
+      email:         user.email,
+      role:          user.role,
+      is_verified:   user.is_verified,
+      is_active:     user.is_active,
+      is_super_admin: user.is_super_admin ?? false,
       permissions,
-      ...profile
+      ...profile,
     });
 
   } catch (err) {

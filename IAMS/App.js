@@ -21,7 +21,7 @@ import PrivacyPolicyScreen from './app/shared/PrivacyPolicyScreen';
 // Student screens
 import StudentDashboard from './app/student/StudentDashboard';
 import ApplyScreen from './app/student/ApplyScreen';
-import StudentAnnouncementsScreen from './app/student/AnnouncementsScreen';   
+import StudentAnnouncementsScreen from './app/student/AnnouncementsScreen';
 
 // Supervisor screens
 import SupervisorDashboard from './app/supervisor/SupervisorDashboard';
@@ -32,7 +32,7 @@ import SiteVisitsScreen from './app/supervisor/SiteVisitsScreen';
 import EvaluationsScreen from './app/supervisor/EvaluationsScreen';
 import ReportsScreen from './app/supervisor/ReportsScreen';
 import SupervisorSettings from './app/supervisor/SupervisorSettings';
-import SupervisorAnnouncementsScreen from './app/supervisor/AnnouncementsScreen'; 
+import SupervisorAnnouncementsScreen from './app/supervisor/AnnouncementsScreen';
 
 // Admin screens
 import AdminDashboard from './app/admin/AdminDashboard';
@@ -145,7 +145,8 @@ function RootNavigator() {
         <Stack.Screen name="Notifications"    component={NotificationsScreen}        />
         <Stack.Screen name="Feedback"         component={FeedbackScreen}             />
         <Stack.Screen name="PrivacyPolicy"    component={PrivacyPolicyScreen}        />
-        <Stack.Screen name="Announcements"    component={StudentAnnouncementsScreen} /> {/* ← NEW */}
+        {/* ← NEW */}
+        <Stack.Screen name="Announcements"    component={StudentAnnouncementsScreen} />
       </Stack.Navigator>
     );
   }
@@ -165,7 +166,8 @@ function RootNavigator() {
         <Stack.Screen name="Notifications"       component={NotificationsScreen}          />
         <Stack.Screen name="SupervisorSettings"  component={SupervisorSettings}           />
         <Stack.Screen name="PrivacyPolicy"       component={PrivacyPolicyScreen}          />
-        <Stack.Screen name="Announcements"       component={SupervisorAnnouncementsScreen} /> {/* ← NEW */}
+        {/* ← NEW */}
+        <Stack.Screen name="Announcements"       component={SupervisorAnnouncementsScreen} />
       </Stack.Navigator>
     );
   }
@@ -223,7 +225,8 @@ function RootNavigator() {
       <Stack.Screen name="AdminActivities"      component={AdminActivities}           />
       <Stack.Screen name="ManageAdmins"         component={ManageAdminsScreen}        />
       <Stack.Screen name="Notifications"        component={NotificationsScreen}       />
-      <Stack.Screen name="AdminAnnouncements"   component={AdminAnnouncementsScreen}  /> {/* ← NEW */}
+      {/* ← NEW */}
+      <Stack.Screen name="AdminAnnouncements"   component={AdminAnnouncementsScreen}  />
     </Stack.Navigator>
   );
 }
