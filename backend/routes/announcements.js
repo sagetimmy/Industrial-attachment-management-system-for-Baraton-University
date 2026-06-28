@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { protect, authorize } = require('../middleware/auth.middleware');
-const { supabase } = require('../config/supabase');
+const supabase = require('../config/db');
 const audit = require('../utils/audit');
 
 // ─── POST /announcements ────────────────────────────────────────────────────
