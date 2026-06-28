@@ -75,7 +75,7 @@ router.post('/register-profile', async (req, res) => {
   const {
     auth_id, email, role, full_name, reg_number,
     department, year_of_study, phone,
-    org_name, location, contact_person,
+    org_name, location, contact_person, available_slots,
     // Admin-specific fields
     is_super_admin, permissions,
   } = req.body;
@@ -113,7 +113,14 @@ router.post('/register-profile', async (req, res) => {
       if (error) throw error;
     } else if (role === 'host_org') {
       const { error } = await supabase.from('host_organizations')
-        .insert({ user_id: newUser.user_id, org_name, location, contact_person, phone, available_slots: 0 });
+        .insert({
+          user_id: newUser.user_id,
+          org_name,
+          location,
+          contact_person,
+          phone,
+          available_slots: available_slots ?? 0,
+        });
       if (error) throw error;
     }
     // admin role: no separate profile table — everything lives on users row

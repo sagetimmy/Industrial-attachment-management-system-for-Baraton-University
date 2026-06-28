@@ -9,6 +9,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { useNotifications } from '../../hooks/useNotifications';
 import api from '../../api/axios';
 import Spinner from '../../components/Spinner';
+import AnnouncementBanner from '../../shared/AnnouncementBanner';
 
 const TEAL       = '#0F6E56';
 const TEAL_LIGHT = '#E1F5EE';
@@ -271,6 +272,9 @@ export default function StudentDashboard({ navigation }) {
           sessionActive={sessionActive}
           sessionLoading={sessionLoading}
         />
+
+        {/* ── Announcement banner ────────────────────────────────────────── */}
+        <AnnouncementBanner navigation={navigation} role="student" />
 
         {/* ── Hero card ─────────────────────────────────────────────────── */}
         {hasAttachment ? (

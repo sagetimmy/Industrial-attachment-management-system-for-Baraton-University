@@ -13,7 +13,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import api from '../utils/api'; // shared axios instance
+import api from '../../api/axios';
 
 const COLORS = {
   teal: '#1B7A65',

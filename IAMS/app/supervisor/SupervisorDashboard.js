@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { COLORS } from '../../constants/colors';
 import api from '../../api/axios';
+import AnnouncementBanner from '../../shared/AnnouncementBanner';
 
 function ProgressRing({ percent = 0, size = 52, color = '#0F6E56' }) {
   const radius = 21;
@@ -74,7 +75,6 @@ export default function SupervisorDashboard({ navigation }) {
   };
 
   const getProgress = (student) => {
-    // Calculate from attachment dates if available, else default 50
     if (student.start_date && student.end_date) {
       const start = new Date(student.start_date);
       const end = new Date(student.end_date);
@@ -148,139 +148,143 @@ export default function SupervisorDashboard({ navigation }) {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         <View style={[styles.contentWrap, isTablet && styles.contentWrapTablet, isDesktop && styles.contentWrapDesktop]}>
-        {/* Stats Card */}
-        <View style={styles.statsCard}>
-          <View style={styles.statsRow}>
-            <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Active Students</Text>
-              <Text style={[styles.statNum, { color: '#0F6E56' }]}>
-                {String(data?.stats?.totalStudents || 0).padStart(2, '0')}
-              </Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Pending Reviews</Text>
-              <Text style={[styles.statNum, { color: '#BA7517' }]}>
-                {String(data?.stats?.pendingLogs || 0).padStart(2, '0')}
-              </Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Reports Due</Text>
-              <Text style={[styles.statNum, { color: '#D85A30' }]}>
-                {String(data?.stats?.reportsDue || 0).padStart(2, '0')}
-              </Text>
-            </View>
-          </View>
-        </View>
 
-        {/* Urgent Alert */}
-        {data?.stats?.pendingLogs > 0 && (
-          <View style={styles.alertCard}>
-            <View style={styles.alertIconWrap}>
-              <Text style={styles.alertIconText}>!</Text>
-            </View>
-            <View style={styles.alertBody}>
-              <Text style={styles.alertTitle}>Urgent: Monthly Reviews</Text>
-              <Text style={styles.alertDesc}>
-                {data.stats.pendingLogs} student report{data.stats.pendingLogs !== 1 ? 's are' : ' is'} reaching
-                their final deadline tonight.
-              </Text>
-            </View>
-            <TouchableOpacity
-              style={styles.alertBtn}
-              onPress={() => navigation.navigate('ReviewLogbooks')}
-            >
-              <Text style={styles.alertBtnText}>Review</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Students Section */}
-        <View style={styles.sectionHeader}>
-          <View style={styles.sectionTitleRow}>
-            <View style={styles.greenDot} />
-            <Text style={styles.sectionTitle}>MY STUDENTS</Text>
-          </View>
-          <TouchableOpacity onPress={() => navigation.navigate('MyStudents')}>
-            <Text style={styles.viewAll}>View All →</Text>
-          </TouchableOpacity>
-        </View>
-
-        {!data?.students?.length ? (
-          <View style={styles.emptyCard}>
-            <Text style={styles.emptyIcon}>👥</Text>
-            <Text style={styles.emptyText}>No students assigned yet</Text>
-          </View>
-        ) : (
-          <View style={[styles.cardsGrid, isTablet && styles.cardsGridTablet]}>
-            {data.students.map((student, index) => (
-            <TouchableOpacity
-              key={index}
-              style={[styles.studentCard, isTablet && styles.studentCardTablet, isDesktop && styles.studentCardDesktop]}
-              onPress={() => navigation.navigate('StudentDetail', { student })}
-              activeOpacity={0.7}
-            >
-              <View style={styles.avatarWrap}>
-                <View style={[styles.avatar, { backgroundColor: getInitialColor(student.full_name) }]}>
-                  <Text style={styles.avatarText}>
-                    {student.full_name?.charAt(0).toUpperCase()}
-                  </Text>
-                </View>
-                <View style={[
-                  styles.statusDot,
-                  { backgroundColor: student.status === 'ongoing' ? '#0F6E56' : '#ccc' }
-                ]} />
-              </View>
-              <View style={styles.studentInfo}>
-                <Text style={styles.studentName}>{student.full_name}</Text>
-                <Text style={styles.studentSub} numberOfLines={1}>
-                  {student.org_name} • {student.department}
+          {/* Stats Card */}
+          <View style={styles.statsCard}>
+            <View style={styles.statsRow}>
+              <View style={styles.statItem}>
+                <Text style={styles.statLabel}>Active Students</Text>
+                <Text style={[styles.statNum, { color: '#0F6E56' }]}>
+                  {String(data?.stats?.totalStudents || 0).padStart(2, '0')}
                 </Text>
               </View>
-              <ProgressRing percent={getProgress(student)} />
-            </TouchableOpacity>
-            ))}
-          </View>
-        )}
-
-        {/* Recent Logbook Entries */}
-        {data?.pendingLogs?.length > 0 && (
-          <>
-            <View style={styles.sectionHeader}>
-              <View style={styles.sectionTitleRow}>
-                <View style={styles.greenDot} />
-                <Text style={styles.sectionTitle}>RECENT SUBMISSIONS</Text>
+              <View style={styles.statDivider} />
+              <View style={styles.statItem}>
+                <Text style={styles.statLabel}>Pending Reviews</Text>
+                <Text style={[styles.statNum, { color: '#BA7517' }]}>
+                  {String(data?.stats?.pendingLogs || 0).padStart(2, '0')}
+                </Text>
+              </View>
+              <View style={styles.statDivider} />
+              <View style={styles.statItem}>
+                <Text style={styles.statLabel}>Reports Due</Text>
+                <Text style={[styles.statNum, { color: '#D85A30' }]}>
+                  {String(data?.stats?.reportsDue || 0).padStart(2, '0')}
+                </Text>
               </View>
             </View>
-            <View style={[styles.cardsGrid, isTablet && styles.cardsGridTablet]}>
-              {data.pendingLogs.map((log, index) => (
+          </View>
+
+          {/* Announcement Banner */}
+          <AnnouncementBanner navigation={navigation} role="supervisor" />
+
+          {/* Urgent Alert */}
+          {data?.stats?.pendingLogs > 0 && (
+            <View style={styles.alertCard}>
+              <View style={styles.alertIconWrap}>
+                <Text style={styles.alertIconText}>!</Text>
+              </View>
+              <View style={styles.alertBody}>
+                <Text style={styles.alertTitle}>Urgent: Monthly Reviews</Text>
+                <Text style={styles.alertDesc}>
+                  {data.stats.pendingLogs} student report{data.stats.pendingLogs !== 1 ? 's are' : ' is'} reaching
+                  their final deadline tonight.
+                </Text>
+              </View>
               <TouchableOpacity
-                key={index}
-                style={[styles.logCard, isTablet && styles.logCardTablet, isDesktop && styles.logCardDesktop]}
+                style={styles.alertBtn}
                 onPress={() => navigation.navigate('ReviewLogbooks')}
-                activeOpacity={0.7}
               >
-                <View>
-                  <Text style={styles.logWeek}>Week {log.week_number}</Text>
-                  <Text style={styles.logStudent}>{log.full_name}</Text>
-                  <Text style={styles.logReg}>{log.reg_number}</Text>
-                </View>
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={styles.logDate}>
-                    {new Date(log.submitted_at).toLocaleDateString()}
-                  </Text>
-                  <View style={styles.reviewBtn}>
-                    <Text style={styles.reviewBtnText}>Review →</Text>
-                  </View>
-                </View>
+                <Text style={styles.alertBtnText}>Review</Text>
               </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Students Section */}
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionTitleRow}>
+              <View style={styles.greenDot} />
+              <Text style={styles.sectionTitle}>MY STUDENTS</Text>
+            </View>
+            <TouchableOpacity onPress={() => navigation.navigate('MyStudents')}>
+              <Text style={styles.viewAll}>View All →</Text>
+            </TouchableOpacity>
+          </View>
+
+          {!data?.students?.length ? (
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyIcon}>👥</Text>
+              <Text style={styles.emptyText}>No students assigned yet</Text>
+            </View>
+          ) : (
+            <View style={[styles.cardsGrid, isTablet && styles.cardsGridTablet]}>
+              {data.students.map((student, index) => (
+                <TouchableOpacity
+                  key={index}
+                  style={[styles.studentCard, isTablet && styles.studentCardTablet, isDesktop && styles.studentCardDesktop]}
+                  onPress={() => navigation.navigate('StudentDetail', { student })}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.avatarWrap}>
+                    <View style={[styles.avatar, { backgroundColor: getInitialColor(student.full_name) }]}>
+                      <Text style={styles.avatarText}>
+                        {student.full_name?.charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                    <View style={[
+                      styles.statusDot,
+                      { backgroundColor: student.status === 'ongoing' ? '#0F6E56' : '#ccc' }
+                    ]} />
+                  </View>
+                  <View style={styles.studentInfo}>
+                    <Text style={styles.studentName}>{student.full_name}</Text>
+                    <Text style={styles.studentSub} numberOfLines={1}>
+                      {student.org_name} • {student.department}
+                    </Text>
+                  </View>
+                  <ProgressRing percent={getProgress(student)} />
+                </TouchableOpacity>
               ))}
             </View>
-          </>
-        )}
+          )}
 
-        <View style={{ height: 24 }} />
+          {/* Recent Logbook Entries */}
+          {data?.pendingLogs?.length > 0 && (
+            <>
+              <View style={styles.sectionHeader}>
+                <View style={styles.sectionTitleRow}>
+                  <View style={styles.greenDot} />
+                  <Text style={styles.sectionTitle}>RECENT SUBMISSIONS</Text>
+                </View>
+              </View>
+              <View style={[styles.cardsGrid, isTablet && styles.cardsGridTablet]}>
+                {data.pendingLogs.map((log, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    style={[styles.logCard, isTablet && styles.logCardTablet, isDesktop && styles.logCardDesktop]}
+                    onPress={() => navigation.navigate('ReviewLogbooks')}
+                    activeOpacity={0.7}
+                  >
+                    <View>
+                      <Text style={styles.logWeek}>Week {log.week_number}</Text>
+                      <Text style={styles.logStudent}>{log.full_name}</Text>
+                      <Text style={styles.logReg}>{log.reg_number}</Text>
+                    </View>
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={styles.logDate}>
+                        {new Date(log.submitted_at).toLocaleDateString()}
+                      </Text>
+                      <View style={styles.reviewBtn}>
+                        <Text style={styles.reviewBtnText}>Review →</Text>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
+          )}
+
+          <View style={{ height: 24 }} />
         </View>
       </ScrollView>
 
