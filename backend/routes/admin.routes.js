@@ -17,6 +17,22 @@ const parsePagination = (query) => {
   return { page, limit, from: (page - 1) * limit };
 };
 
+const dataOrEmpty = (result, label) => {
+  if (result?.error) {
+    console.error(`${label} query failed:`, result.error.message);
+    return [];
+  }
+  return Array.isArray(result?.data) ? result.data : [];
+};
+
+const countOrZero = (result, label) => {
+  if (result?.error) {
+    console.error(`${label} count failed:`, result.error.message);
+    return 0;
+  }
+  return Number.isFinite(result?.count) ? result.count : 0;
+};
+
 // Helper: update attachment status + notify student
 const updateAttachmentStatus = async (attachmentId, status, actor, ip) => {
   const normalized = String(status || '').toLowerCase();
@@ -78,12 +94,12 @@ const handleStatusUpdate = async (req, res) => {
 router.get('/dashboard', protect, authorize('admin'), async (req, res) => {
   try {
     const [
-      { count: totalStudents },
-      { count: totalSupervisors },
-      { count: totalOrgs },
-      { count: totalAttachments },
-      { count: pendingOrgs },
-      { count: activeAttachments },
+      totalStudentsResult,
+      totalSupervisorsResult,
+      totalOrgsResult,
+      totalAttachmentsResult,
+      pendingOrgsResult,
+      activeAttachmentsResult,
     ] = await Promise.all([
       supabase.from('students').select('*', { count: 'exact', head: true }),
       supabase.from('supervisors').select('*', { count: 'exact', head: true }),
@@ -93,54 +109,64 @@ router.get('/dashboard', protect, authorize('admin'), async (req, res) => {
       supabase.from('attachments').select('*', { count: 'exact', head: true }).eq('status', 'ongoing'),
     ]);
 
-    const { data: recentUsers } = await supabase
+    const totalStudents = countOrZero(totalStudentsResult, 'dashboard total students');
+    const totalSupervisors = countOrZero(totalSupervisorsResult, 'dashboard total supervisors');
+    const totalOrgs = countOrZero(totalOrgsResult, 'dashboard total organizations');
+    const totalAttachments = countOrZero(totalAttachmentsResult, 'dashboard total attachments');
+    const pendingOrgs = countOrZero(pendingOrgsResult, 'dashboard pending organizations');
+    const activeAttachments = countOrZero(activeAttachmentsResult, 'dashboard active attachments');
+
+    const recentUsersResult = await supabase
       .from('users')
       .select('user_id, email, role, created_at')
       .order('created_at', { ascending: false })
       .limit(5);
+    const recentUsers = dataOrEmpty(recentUsersResult, 'dashboard recent users');
 
-    const userIds = (recentUsers || []).map(u => u.user_id);
+    const userIds = recentUsers.map(u => u.user_id);
     let studentsMap = {}, supervisorsMap = {}, orgsMap = {};
 
     if (userIds.length) {
-      const { data: students } = await supabase
+      const studentsResult = await supabase
         .from('students').select('user_id, full_name').in('user_id', userIds);
-      students.forEach(s => studentsMap[s.user_id] = s.full_name);
+      dataOrEmpty(studentsResult, 'dashboard student names').forEach(s => studentsMap[s.user_id] = s.full_name);
 
-      const { data: supervisors } = await supabase
+      const supervisorsResult = await supabase
         .from('supervisors').select('user_id, full_name').in('user_id', userIds);
-      supervisors.forEach(s => supervisorsMap[s.user_id] = s.full_name);
+      dataOrEmpty(supervisorsResult, 'dashboard supervisor names').forEach(s => supervisorsMap[s.user_id] = s.full_name);
 
-      const { data: orgs } = await supabase
+      const orgsResult = await supabase
         .from('host_organizations').select('user_id, org_name').in('user_id', userIds);
-      orgs.forEach(o => orgsMap[o.user_id] = o.org_name);
+      dataOrEmpty(orgsResult, 'dashboard organization names').forEach(o => orgsMap[o.user_id] = o.org_name);
     }
 
-    const flatRecentUsers = (recentUsers || []).map(u => ({
+    const flatRecentUsers = recentUsers.map(u => ({
       ...u,
       name: studentsMap[u.user_id] || supervisorsMap[u.user_id] || orgsMap[u.user_id],
     }));
 
-    const { data: pendingOrgList } = await supabase
+    const pendingOrgResult = await supabase
       .from('host_organizations')
       .select('*')
       .eq('is_approved', false)
       .order('created_at', { ascending: false });
+    const pendingOrgList = dataOrEmpty(pendingOrgResult, 'dashboard pending organizations');
 
     const orgUserIds = pendingOrgList.map(o => o.user_id).filter(Boolean);
     let emailMap = {};
     if (orgUserIds.length) {
-      const { data: users } = await supabase
+      const usersResult = await supabase
         .from('users').select('user_id, email').in('user_id', orgUserIds);
-      users.forEach(u => emailMap[u.user_id] = u.email);
+      dataOrEmpty(usersResult, 'dashboard pending organization users').forEach(u => emailMap[u.user_id] = u.email);
     }
     const pendingOrgsWithEmail = pendingOrgList.map(o => ({ ...o, email: emailMap[o.user_id] }));
 
-    const { data: recentAttachments } = await supabase
+    const recentAttachmentsResult = await supabase
       .from('attachments')
       .select('attachment_id, status, start_date, student_id, org_id, supervisor_id, created_at')
       .order('created_at', { ascending: false })
       .limit(5);
+    const recentAttachments = dataOrEmpty(recentAttachmentsResult, 'dashboard recent attachments');
 
     const studentIds = recentAttachments.map(a => a.student_id).filter(Boolean);
     const orgIds     = recentAttachments.map(a => a.org_id).filter(Boolean);
@@ -148,19 +174,19 @@ router.get('/dashboard', protect, authorize('admin'), async (req, res) => {
 
     let studentMap = {}, orgMap = {}, supervisorMap = {};
     if (studentIds.length) {
-      const { data: students } = await supabase
+      const studentsResult = await supabase
         .from('students').select('student_id, full_name, reg_number').in('student_id', studentIds);
-      students.forEach(s => studentMap[s.student_id] = s);
+      dataOrEmpty(studentsResult, 'dashboard attachment students').forEach(s => studentMap[s.student_id] = s);
     }
     if (orgIds.length) {
-      const { data: orgs } = await supabase
+      const orgsResult = await supabase
         .from('host_organizations').select('org_id, org_name').in('org_id', orgIds);
-      orgs.forEach(o => orgMap[o.org_id] = o.org_name);
+      dataOrEmpty(orgsResult, 'dashboard attachment organizations').forEach(o => orgMap[o.org_id] = o.org_name);
     }
     if (supervisorIds.length) {
-      const { data: supervisors } = await supabase
+      const supervisorsResult = await supabase
         .from('supervisors').select('supervisor_id, full_name').in('supervisor_id', supervisorIds);
-      supervisors.forEach(s => supervisorMap[s.supervisor_id] = s.full_name);
+      dataOrEmpty(supervisorsResult, 'dashboard attachment supervisors').forEach(s => supervisorMap[s.supervisor_id] = s.full_name);
     }
 
     const flatAttachments = recentAttachments.map(a => ({
@@ -637,29 +663,29 @@ router.put('/attachment-status/:id',  protect, authorize('admin'), handleStatusU
 // ─── GET /api/admin/unassigned-attachments ────────────────────────────────
 router.get('/unassigned-attachments', protect, authorize('admin'), async (req, res) => {
   try {
-    const { data, error } = await supabase
+    const attachmentsResult = await supabase
       .from('attachments').select('*')
       .is('supervisor_id', null)
       .in('status', ['pending', 'ongoing', 'approved'])
       .order('created_at', { ascending: false });
-    if (error) throw error;
+    const attachments = dataOrEmpty(attachmentsResult, 'unassigned attachments');
 
-    const studentIds = data.map(a => a.student_id).filter(Boolean);
-    const orgIds     = data.map(a => a.org_id).filter(Boolean);
+    const studentIds = attachments.map(a => a.student_id).filter(Boolean);
+    const orgIds     = attachments.map(a => a.org_id).filter(Boolean);
 
     let studentMap = {}, orgMap = {};
     if (studentIds.length) {
-      const { data: students } = await supabase
+      const studentsResult = await supabase
         .from('students').select('student_id, full_name, reg_number, department').in('student_id', studentIds);
-      students.forEach(s => studentMap[s.student_id] = s);
+      dataOrEmpty(studentsResult, 'unassigned attachment students').forEach(s => studentMap[s.student_id] = s);
     }
     if (orgIds.length) {
-      const { data: orgs } = await supabase
+      const orgsResult = await supabase
         .from('host_organizations').select('org_id, org_name, location').in('org_id', orgIds);
-      orgs.forEach(o => orgMap[o.org_id] = o);
+      dataOrEmpty(orgsResult, 'unassigned attachment organizations').forEach(o => orgMap[o.org_id] = o);
     }
 
-    res.json(data.map(a => ({
+    res.json(attachments.map(a => ({
       ...a,
       student_name: studentMap[a.student_id]?.full_name,
       reg_number:   studentMap[a.student_id]?.reg_number,

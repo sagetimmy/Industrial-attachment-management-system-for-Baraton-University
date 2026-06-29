@@ -45,6 +45,7 @@ import AssignSupervisorsScreen from './app/admin/AssignSupervisorsScreen';
 import Reports from './app/admin/Reports';
 import OrgDetailsScreen from './app/admin/OrgDetailsScreen';
 import UserDetailScreen from './app/admin/UserDetail';
+import StudentDetailScreen from './app/admin/StudentDetailScreen';
 import AdminSettings from './app/admin/AdminSettings';
 import AdminProfile from './app/admin/AdminProfile';
 import AdminActivities from './app/admin/AdminActivities';
@@ -214,7 +215,7 @@ function RootNavigator() {
       <Stack.Screen name="OrgDetails"       component={OrgDetailsScreen}  />
       <Stack.Screen name="OrgDetail"        component={OrgDetailsScreen}  />
       <Stack.Screen name="OrgVacancies"     component={PlaceholderScreen} />
-      <Stack.Screen name="StudentDetail"    component={PlaceholderScreen} />
+      <Stack.Screen name="StudentDetail"    component={StudentDetailScreen} />
       <Stack.Screen name="SupervisorDetail" component={PlaceholderScreen} />
       <Stack.Screen name="AssignStudent"    component={PlaceholderScreen} />
 
