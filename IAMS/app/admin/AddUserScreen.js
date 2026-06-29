@@ -20,10 +20,9 @@ const ORANGE = '#E8711A';
 
 // ── Role options ──────────────────────────────────────────────────────────────
 const ROLES = [
-  { key: 'student',    label: 'Student',    icon: 'school-outline'         },
-  { key: 'supervisor', label: 'Supervisor', icon: 'ribbon-outline'         },
-  { key: 'host_org',   label: 'Host Org',   icon: 'business-outline'       },
-  { key: 'admin',      label: 'Admin',      icon: 'shield-checkmark-outline'},
+  { key: 'student',    label: 'Student',    icon: 'school-outline'   },
+  { key: 'supervisor', label: 'Supervisor', icon: 'ribbon-outline'   },
+  { key: 'host_org',   label: 'Host Org',   icon: 'business-outline' },
 ];
 
 // ── Reusable field ────────────────────────────────────────────────────────────
@@ -197,7 +196,12 @@ export default function AddUserScreen({ navigation }) {
           </View>
           <Text style={styles.doneTitle}>User Created!</Text>
           <Text style={styles.doneSubtitle}>
-            {fullName} has been added as a <Text style={{ fontWeight: '700' }}>{role}</Text>.{'\n'}
+            {role === 'host_org'
+              ? `${fullName} has been registered as a Host Organisation.`
+              : `${fullName} has been added as a `}
+            {role !== 'host_org' && <Text style={{ fontWeight: '700' }}>{role}</Text>}
+            {role !== 'host_org' && '.'}
+            {'\n'}
             A verification email has been sent to{'\n'}
             <Text style={{ color: TEAL, fontWeight: '600' }}>{email}</Text>
           </Text>
@@ -271,11 +275,11 @@ export default function AddUserScreen({ navigation }) {
               <Text style={styles.cardSubtitle}>Basic credentials for the new user</Text>
 
               <Field
-                label="Full Name"
+                label={role === 'host_org' ? 'Organisation Name' : 'Full Name'}
                 value={fullName}
                 onChangeText={setFullName}
-                placeholder="e.g. Jane Doe"
-                icon="person-outline"
+                placeholder={role === 'host_org' ? 'e.g. Safaricom PLC' : 'e.g. Jane Doe'}
+                icon={role === 'host_org' ? 'business-outline' : 'person-outline'}
               />
               <Field
                 label="Email Address"
@@ -319,7 +323,9 @@ export default function AddUserScreen({ navigation }) {
                 : 'Admin Profile'}
               </Text>
               <Text style={styles.cardSubtitle}>
-                Additional details for {fullName}
+                {role === 'host_org'
+                  ? `Organisation profile for ${fullName}`
+                  : `Additional details for ${fullName}`}
               </Text>
 
               {/* ── Student fields ── */}
@@ -431,15 +437,7 @@ export default function AddUserScreen({ navigation }) {
                 </>
               )}
 
-              {/* ── Admin — no extra fields ── */}
-              {role === 'admin' && (
-                <View style={styles.adminNote}>
-                  <Ionicons name="information-circle-outline" size={20} color={TEAL} />
-                  <Text style={styles.adminNoteText}>
-                    Admin accounts don't require additional profile details.
-                  </Text>
-                </View>
-              )}
+
 
               <TouchableOpacity
                 style={[styles.submitBtn, loading && styles.submitBtnDisabled]}

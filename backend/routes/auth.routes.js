@@ -112,7 +112,7 @@ router.post('/register-profile', async (req, res) => {
         .insert({ user_id: newUser.user_id, full_name, department, phone });
       if (error) throw error;
     } else if (role === 'host_org') {
-      const { error } = await supabase.from('host_organizations')
+      const { data: newOrg, error } = await supabase.from('host_organizations')
         .insert({
           user_id: newUser.user_id,
           org_name,
@@ -120,8 +120,17 @@ router.post('/register-profile', async (req, res) => {
           contact_person,
           phone,
           available_slots: available_slots ?? 0,
-        });
+        })
+        .select()
+        .single();
       if (error) throw error;
+
+      // Write org_id back to users row
+      const { error: orgIdError } = await supabase
+        .from('users')
+        .update({ org_id: newOrg.org_id })
+        .eq('user_id', newUser.user_id);
+      if (orgIdError) throw orgIdError;
     }
     // admin role: no separate profile table — everything lives on users row
 

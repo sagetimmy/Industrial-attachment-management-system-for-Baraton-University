@@ -109,11 +109,11 @@ router.get('/dashboard', protect, authorize('admin'), async (req, res) => {
       supabase.from('attachments').select('*', { count: 'exact', head: true }).eq('status', 'ongoing'),
     ]);
 
-    const totalStudents = countOrZero(totalStudentsResult, 'dashboard total students');
-    const totalSupervisors = countOrZero(totalSupervisorsResult, 'dashboard total supervisors');
-    const totalOrgs = countOrZero(totalOrgsResult, 'dashboard total organizations');
-    const totalAttachments = countOrZero(totalAttachmentsResult, 'dashboard total attachments');
-    const pendingOrgs = countOrZero(pendingOrgsResult, 'dashboard pending organizations');
+    const totalStudents     = countOrZero(totalStudentsResult,     'dashboard total students');
+    const totalSupervisors  = countOrZero(totalSupervisorsResult,  'dashboard total supervisors');
+    const totalOrgs         = countOrZero(totalOrgsResult,         'dashboard total organizations');
+    const totalAttachments  = countOrZero(totalAttachmentsResult,  'dashboard total attachments');
+    const pendingOrgs       = countOrZero(pendingOrgsResult,       'dashboard pending organizations');
     const activeAttachments = countOrZero(activeAttachmentsResult, 'dashboard active attachments');
 
     const recentUsersResult = await supabase
@@ -168,8 +168,8 @@ router.get('/dashboard', protect, authorize('admin'), async (req, res) => {
       .limit(5);
     const recentAttachments = dataOrEmpty(recentAttachmentsResult, 'dashboard recent attachments');
 
-    const studentIds = recentAttachments.map(a => a.student_id).filter(Boolean);
-    const orgIds     = recentAttachments.map(a => a.org_id).filter(Boolean);
+    const studentIds    = recentAttachments.map(a => a.student_id).filter(Boolean);
+    const orgIds        = recentAttachments.map(a => a.org_id).filter(Boolean);
     const supervisorIds = recentAttachments.map(a => a.supervisor_id).filter(Boolean);
 
     let studentMap = {}, orgMap = {}, supervisorMap = {};
@@ -280,9 +280,10 @@ router.get('/students', protect, authorize('admin'), async (req, res) => {
 // ─── GET /api/admin/orgs ──────────────────────────────────────────────────
 router.get('/orgs', protect, authorize('admin'), async (req, res) => {
   try {
+    // ✅ Removed non-existent columns: sector, org_type
     const { data: orgs, error } = await supabase
       .from('host_organizations')
-      .select('org_id, user_id, org_name, location, contact_person, phone, available_slots, is_approved, created_at, sector, org_type')
+      .select('org_id, user_id, org_name, location, contact_person, phone, available_slots, is_approved, created_at')
       .order('org_name', { ascending: true });
     if (error) throw error;
 
@@ -309,12 +310,12 @@ router.get('/orgs', protect, authorize('admin'), async (req, res) => {
 
     const result = orgs.map(o => ({
       ...o,
-      name:          o.org_name,
-      email:         emailMap[o.user_id]                                              || null,
-      intern_count:  internCountMap[o.org_id]                                         || 0,
+      name:         o.org_name,
+      email:        emailMap[o.user_id]                                              || null,
+      intern_count: internCountMap[o.org_id]                                         || 0,
       vacancy_count: Math.max((o.available_slots || 0) - (internCountMap[o.org_id] || 0), 0),
-      sector:        o.sector   || null,
-      org_type:      o.org_type || null,
+      sector:       null,   // column does not exist; frontend falls back to '—'
+      org_type:     null,   // column does not exist; frontend falls back to 'ORG' badge
     }));
 
     res.json(result);
@@ -634,16 +635,16 @@ router.get('/attachment/:id', protect, authorize('admin'), async (req, res) => {
     res.json({
       attachment: {
         ...data,
-        student_name:    studentData?.full_name,
-        reg_number:      studentData?.reg_number,
-        department:      studentData?.department,
-        year_of_study:   studentData?.year_of_study,
-        student_phone:   studentData?.phone,
-        org_name:        orgData?.org_name,
-        location:        orgData?.location,
-        contact_person:  orgData?.contact_person,
-        org_phone:       orgData?.phone,
-        supervisor_name: supervisorData?.full_name,
+        student_name:     studentData?.full_name,
+        reg_number:       studentData?.reg_number,
+        department:       studentData?.department,
+        year_of_study:    studentData?.year_of_study,
+        student_phone:    studentData?.phone,
+        org_name:         orgData?.org_name,
+        location:         orgData?.location,
+        contact_person:   orgData?.contact_person,
+        org_phone:        orgData?.phone,
+        supervisor_name:  supervisorData?.full_name,
         supervisor_phone: supervisorData?.phone,
       },
       logbookEntries: logbookEntries || [],
@@ -657,7 +658,7 @@ router.get('/attachment/:id', protect, authorize('admin'), async (req, res) => {
 });
 
 // ─── PUT /api/admin/attachment/:id/status ─────────────────────────────────
-router.put('/attachment/:id/status', protect, authorize('admin'), handleStatusUpdate);
+router.put('/attachment/:id/status',  protect, authorize('admin'), handleStatusUpdate);
 router.put('/attachment-status/:id',  protect, authorize('admin'), handleStatusUpdate);
 
 // ─── GET /api/admin/unassigned-attachments ────────────────────────────────
@@ -779,7 +780,6 @@ router.put('/assign-supervisor', protect, authorize('admin'), async (req, res) =
 });
 
 // ─── GET /api/admin/admins ────────────────────────────────────────────────
-// Returns only users with role='admin', enriched with is_super_admin.
 router.get('/admins', protect, authorize('admin'), async (req, res) => {
   try {
     let query = supabase
@@ -795,7 +795,6 @@ router.get('/admins', protect, authorize('admin'), async (req, res) => {
     const { data, error } = await query;
     if (error) throw error;
 
-    // Try to enrich with a name if a profile row happens to exist for this admin
     const userIds = (data || []).map(u => u.user_id);
     let nameMap = {};
     if (userIds.length) {
@@ -810,8 +809,8 @@ router.get('/admins', protect, authorize('admin'), async (req, res) => {
 
     const result = (data || []).map(u => ({
       ...u,
-      id:            u.user_id,
-      name:          nameMap[u.user_id] || null,
+      id:             u.user_id,
+      name:           nameMap[u.user_id] || null,
       is_super_admin: u.is_super_admin ?? false,
     }));
 
@@ -823,18 +822,14 @@ router.get('/admins', protect, authorize('admin'), async (req, res) => {
 });
 
 // ─── PATCH /api/admin/users/:id/super-admin ───────────────────────────────
-// Toggle is_super_admin. Only a super admin can do this, and cannot demote
-// themselves.
 router.patch('/users/:id/super-admin', protect, authorize('admin'), async (req, res) => {
   try {
-    // Caller must be a super admin
     if (!req.user.is_super_admin) {
       return res.status(403).json({ message: 'Only Super Admins can change this setting.' });
     }
 
     const targetId = req.params.id;
 
-    // Prevent self-demotion
     if (String(targetId) === String(req.user.user_id)) {
       return res.status(400).json({ message: 'You cannot change your own Super Admin status.' });
     }
@@ -883,7 +878,6 @@ router.get('/users', protect, authorize('admin'), async (req, res) => {
       .select('user_id, email, role, is_verified, is_active, is_super_admin, created_at')
       .order('created_at', { ascending: false });
 
-    // Apply role filter when provided (used as fallback by ManageAdminsScreen)
     if (req.query.role) {
       query = query.eq('role', req.query.role);
     }
@@ -1098,18 +1092,18 @@ router.get('/reports/detailed', protect, authorize('admin'), async (req, res) =>
 
     res.json({
       details: data.map(a => ({
-        attachment_id:      a.attachment_id,
-        status:             a.status,
-        start_date:         a.start_date,
-        end_date:           a.end_date,
-        created_at:         a.created_at,
-        student_name:       studentMap[a.student_id]?.full_name,
-        reg_number:         studentMap[a.student_id]?.reg_number,
-        department:         studentMap[a.student_id]?.department,
-        org_name:           orgMap[a.org_id],
-        supervisor_name:    supervisorMap[a.supervisor_id],
-        logbook_count:      logbookCount[a.attachment_id] || 0,
-        evaluation_rating:  evalRatings[a.attachment_id]  || null,
+        attachment_id:     a.attachment_id,
+        status:            a.status,
+        start_date:        a.start_date,
+        end_date:          a.end_date,
+        created_at:        a.created_at,
+        student_name:      studentMap[a.student_id]?.full_name,
+        reg_number:        studentMap[a.student_id]?.reg_number,
+        department:        studentMap[a.student_id]?.department,
+        org_name:          orgMap[a.org_id],
+        supervisor_name:   supervisorMap[a.supervisor_id],
+        logbook_count:     logbookCount[a.attachment_id] || 0,
+        evaluation_rating: evalRatings[a.attachment_id]  || null,
       })),
       pagination: { page, limit, total: count, pages: Math.max(Math.ceil(count / limit), 1) },
     });
@@ -1159,7 +1153,6 @@ router.get('/attachment-sessions', protect, authorize('admin'), async (req, res)
       .order('start_date', { ascending: false });
     if (error) throw error;
 
-    // For the active session, derive live student count from attachments table
     const activeSession = (sessions || []).find(s => s.status === 'ACTIVE');
     let activeStudentCount = 0;
     if (activeSession) {
@@ -1197,7 +1190,6 @@ router.post('/attachment-sessions', protect, authorize('admin'), async (req, res
   if (end <= start)           return res.status(400).json({ message: 'End date must be after start date.' });
 
   try {
-    // Only one ACTIVE session at a time
     if (status === 'ACTIVE') {
       const { data: existing } = await supabase
         .from('attachment_sessions')
@@ -1253,14 +1245,12 @@ router.put('/attachment-sessions/:id', protect, authorize('admin'), async (req, 
     if (end_date?.trim())   data.end_date   = end_date.trim();
     if (status)             data.status     = status;
 
-    // Validate dates
     const resolvedStart = new Date(data.start_date || existing.start_date);
     const resolvedEnd   = new Date(data.end_date   || existing.end_date);
     if (resolvedEnd <= resolvedStart) {
       return res.status(400).json({ message: 'End date must be after start date.' });
     }
 
-    // Only one ACTIVE at a time
     if (status === 'ACTIVE' && existing.status !== 'ACTIVE') {
       const { data: otherActive } = await supabase
         .from('attachment_sessions')
@@ -1320,6 +1310,74 @@ router.delete('/attachment-sessions/:id', protect, authorize('admin'), async (re
   } catch (err) {
     console.error('DELETE /attachment-sessions/:id:', err);
     res.status(500).json({ message: 'Failed to delete session.' });
+  }
+});
+
+// ─── PATCH /api/admin/users/:id/status ───────────────────────────────────────
+router.patch('/users/:id/status', protect, authorize('admin'), async (req, res) => {
+  try {
+    const { is_active } = req.body;
+    const { data: user } = await supabase
+      .from('users').select('email, is_active').eq('user_id', req.params.id).single();
+
+    await supabase.from('users')
+      .update({ is_active }).eq('user_id', req.params.id);
+
+    await audit(
+      req.user,
+      is_active ? 'ACTIVATE_USER' : 'DEACTIVATE_USER',
+      'users', req.params.id,
+      `User ${user?.email} was ${is_active ? 'activated' : 'deactivated'}`,
+      { is_active }, req.ip
+    );
+
+    res.json({ message: `User ${is_active ? 'activated' : 'deactivated'} successfully.` });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// ─── DELETE /api/admin/users/:id ─────────────────────────────────────────────
+router.delete('/users/:id', protect, authorize('admin'), async (req, res) => {
+  try {
+    const { data: user } = await supabase
+      .from('users').select('email, role').eq('user_id', req.params.id).single();
+
+    const { error } = await supabase.from('users').delete().eq('user_id', req.params.id);
+    if (error) throw error;
+
+    await audit(
+      req.user, 'DELETE_USER', 'users', req.params.id,
+      `User ${user?.email} (${user?.role}) was deleted`,
+      { deleted_email: user?.email, deleted_role: user?.role }, req.ip
+    );
+
+    res.json({ message: 'User deleted successfully.' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// ─── POST /api/admin/users/:id/reset-password ────────────────────────────────
+router.post('/users/:id/reset-password', protect, authorize('admin'), async (req, res) => {
+  try {
+    const { data: user } = await supabase
+      .from('users').select('email, auth_id').eq('user_id', req.params.id).single();
+    if (!user) return res.status(404).json({ message: 'User not found.' });
+
+    const tempPassword = Math.random().toString(36).slice(-8) + 'A1!';
+    if (user.auth_id) {
+      await supabase.auth.admin.updateUserById(user.auth_id, { password: tempPassword });
+    }
+
+    await audit(
+      req.user, 'RESET_PASSWORD', 'users', req.params.id,
+      `Password reset for ${user.email}`, {}, req.ip
+    );
+
+    res.json({ message: `Password reset successfully. Temporary password: ${tempPassword}` });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 });
 
