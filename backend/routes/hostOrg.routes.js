@@ -15,32 +15,46 @@ router.get('/dashboard', protect, async (req, res) => {
 
     if (orgError || !org) return res.status(404).json({ message: 'Organization not found' });
 
-    const { data: applications, error: appError } = await supabase
+    // ✅ Fetch attachments without relational join (FK is integer, not UUID)
+    const { data: attachments, error: appError } = await supabase
       .from('attachments')
-      .select(`
-        attachment_id, status, start_date, end_date,
-        students (full_name, reg_number, department, year_of_study, phone)
-      `)
+      .select('attachment_id, status, start_date, end_date, student_id')
       .eq('org_id', org.org_id)
       .order('created_at', { ascending: false });
 
     if (appError) throw appError;
 
-    // Flatten student fields onto each application
-    const flat = applications.map(({ students, ...a }) => ({ ...a, ...students }));
+    // ✅ Fetch student details separately
+    const studentIds = (attachments || []).map(a => a.student_id).filter(Boolean);
+    let studentMap = {};
+    if (studentIds.length) {
+      const { data: students, error: stuError } = await supabase
+        .from('students')
+        .select('student_id, full_name, reg_number, department, year_of_study, phone')
+        .in('student_id', studentIds);
+      if (stuError) throw stuError;
+      students.forEach(s => { studentMap[s.student_id] = s; });
+    }
+
+    // Flatten student fields onto each attachment
+    const flat = (attachments || []).map(a => ({
+      ...a,
+      ...(studentMap[a.student_id] || {}),
+    }));
 
     const permissions = await getRolePermissions(req.user.role);
     const stats = permissions.viewAnalytics === false
       ? null
       : {
-          total: flat.length,
-          pending: flat.filter(a => a.status === 'pending').length,
-          ongoing: flat.filter(a => a.status === 'ongoing').length,
+          total:     flat.length,
+          pending:   flat.filter(a => a.status === 'pending').length,
+          ongoing:   flat.filter(a => a.status === 'ongoing').length,
           completed: flat.filter(a => a.status === 'completed').length,
         };
 
     res.json({ org, applications: flat, stats, permissions });
   } catch (err) {
+    console.error('GET /host-orgs/dashboard error:', err);
     res.status(500).json({ message: err.message });
   }
 });
@@ -89,9 +103,9 @@ router.get('/available-slots', protect, async (req, res) => {
 
     const usedSlots = count || 0;
     res.json({
-      available_slots: org.available_slots,
-      used_slots: usedSlots,
-      total_capacity: (org.available_slots || 0) + usedSlots,
+      available_slots:  org.available_slots,
+      used_slots:       usedSlots,
+      total_capacity:   (org.available_slots || 0) + usedSlots,
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -110,12 +124,20 @@ router.post('/evaluate/:attachmentId', protect, async (req, res) => {
     return res.status(400).json({ message: 'Comments are required' });
 
   try {
-    // Check attachment exists and belongs to this org
+    // Verify attachment belongs to this org via org_id lookup
+    const { data: org, error: orgError } = await supabase
+      .from('host_organizations')
+      .select('org_id')
+      .eq('user_id', req.user.user_id)
+      .single();
+
+    if (orgError || !org) return res.status(404).json({ message: 'Organization not found' });
+
     const { data: attachment, error: attachError } = await supabase
       .from('attachments')
-      .select('attachment_id, org_id, status, host_organizations!inner(user_id)')
+      .select('attachment_id, status')
       .eq('attachment_id', attachmentId)
-      .eq('host_organizations.user_id', req.user.user_id)
+      .eq('org_id', org.org_id)
       .single();
 
     if (attachError || !attachment)
@@ -136,14 +158,12 @@ router.post('/evaluate/:attachmentId', protect, async (req, res) => {
         .from('evaluations')
         .update({ rating, comments, created_at: new Date().toISOString() })
         .eq('attachment_id', attachmentId);
-
       if (error) throw error;
       return res.json({ message: 'Evaluation updated successfully!' });
     } else {
       const { error } = await supabase
         .from('evaluations')
         .insert({ attachment_id: attachmentId, supervisor_id: null, rating, comments });
-
       if (error) throw error;
       return res.json({ message: 'Evaluation submitted successfully!' });
     }
@@ -163,13 +183,10 @@ router.get('/ongoing-attachments', protect, async (req, res) => {
 
     if (orgError || !org) return res.status(404).json({ message: 'Organization not found' });
 
+    // ✅ Fetch attachments without relational join
     const { data: attachments, error } = await supabase
       .from('attachments')
-      .select(`
-        attachment_id, status, start_date,
-        students (full_name, reg_number, department),
-        evaluations (rating, comments, created_at)
-      `)
+      .select('attachment_id, status, start_date, student_id')
       .eq('org_id', org.org_id)
       .in('status', ['ongoing', 'completed'])
       .order('status', { ascending: false })
@@ -177,12 +194,34 @@ router.get('/ongoing-attachments', protect, async (req, res) => {
 
     if (error) throw error;
 
-    const flat = attachments.map(({ students, evaluations, ...a }) => ({
+    // ✅ Fetch students separately
+    const studentIds = (attachments || []).map(a => a.student_id).filter(Boolean);
+    let studentMap = {};
+    if (studentIds.length) {
+      const { data: students } = await supabase
+        .from('students')
+        .select('student_id, full_name, reg_number, department')
+        .in('student_id', studentIds);
+      (students || []).forEach(s => { studentMap[s.student_id] = s; });
+    }
+
+    // ✅ Fetch evaluations separately
+    const attachmentIds = (attachments || []).map(a => a.attachment_id).filter(Boolean);
+    let evalMap = {};
+    if (attachmentIds.length) {
+      const { data: evaluations } = await supabase
+        .from('evaluations')
+        .select('attachment_id, rating, comments, created_at')
+        .in('attachment_id', attachmentIds);
+      (evaluations || []).forEach(e => { evalMap[e.attachment_id] = e; });
+    }
+
+    const flat = (attachments || []).map(a => ({
       ...a,
-      ...students,
-      rating: evaluations?.[0]?.rating || null,
-      comments: evaluations?.[0]?.comments || null,
-      evaluated_at: evaluations?.[0]?.created_at || null,
+      ...(studentMap[a.student_id] || {}),
+      rating:       evalMap[a.attachment_id]?.rating      || null,
+      comments:     evalMap[a.attachment_id]?.comments    || null,
+      evaluated_at: evalMap[a.attachment_id]?.created_at  || null,
     }));
 
     res.json(flat);
@@ -191,7 +230,7 @@ router.get('/ongoing-attachments', protect, async (req, res) => {
   }
 });
 
-// PUT /api/host-orgs/application/:attachmentId - Confirm or reject placement
+// PUT /api/host-orgs/application/:attachmentId
 router.put('/application/:attachmentId', protect, async (req, res) => {
   const { attachmentId } = req.params;
   const { status } = req.body;
@@ -203,10 +242,19 @@ router.put('/application/:attachmentId', protect, async (req, res) => {
   try {
     console.log('PUT /application/:attachmentId received:', { attachmentId, status, user_id: req.user.user_id });
 
-    // Verify attachment belongs to this organization
+    // Look up the org for this user
+    const { data: org, error: orgError } = await supabase
+      .from('host_organizations')
+      .select('org_id')
+      .eq('user_id', req.user.user_id)
+      .single();
+
+    if (orgError || !org) return res.status(404).json({ message: 'Organization not found' });
+
+    // Verify attachment belongs to this org
     const { data: attachment, error: attachError } = await supabase
       .from('attachments')
-      .select('attachment_id, org_id, student_id, host_organizations!attachments_org_id_fkey(user_id)')
+      .select('attachment_id, org_id')
       .eq('attachment_id', attachmentId)
       .single();
 
@@ -215,12 +263,10 @@ router.put('/application/:attachmentId', protect, async (req, res) => {
       return res.status(404).json({ message: 'Attachment not found' });
     }
 
-    // Check that the organization belongs to the logged-in user
-    if (attachment.host_organizations?.user_id !== req.user.user_id) {
+    if (attachment.org_id !== org.org_id) {
       return res.status(403).json({ message: 'Not authorized to update this application' });
     }
 
-    // Update the attachment status
     const { error: updateError } = await supabase
       .from('attachments')
       .update({ status })
@@ -235,6 +281,30 @@ router.put('/application/:attachmentId', protect, async (req, res) => {
     res.json({ message: `Application ${status} successfully!` });
   } catch (err) {
     console.error('PUT /application error:', err);
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// GET /api/host-orgs/vacancies
+router.get('/vacancies', protect, async (req, res) => {
+  try {
+    const { data: org, error: orgError } = await supabase
+      .from('host_organizations')
+      .select('org_id')
+      .eq('user_id', req.user.user_id)
+      .single();
+
+    if (orgError || !org) return res.status(404).json({ message: 'Organization not found' });
+
+    const { data: vacancies, error } = await supabase
+      .from('vacancies')
+      .select('*')
+      .eq('org_id', org.org_id)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    res.json(vacancies || []);
+  } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
@@ -266,7 +336,7 @@ router.post('/vacancies', protect, requireRolePermission('postPlacements'), asyn
       return res.status(404).json({ message: 'Organization not found' });
     }
 
-    // Parse deadline from mm/dd/yyyy to YYYY-MM-DD format
+    // Parse deadline from mm/dd/yyyy to YYYY-MM-DD
     let parsedDeadline = application_deadline;
     if (typeof application_deadline === 'string' && application_deadline.includes('/')) {
       const [month, day, year] = application_deadline.split('/');
