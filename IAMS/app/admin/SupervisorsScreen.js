@@ -70,7 +70,6 @@ function SupervisorCard({ supervisor, onManage, onAssign }) {
     : '??';
 
   const studentCount = supervisor.student_count ?? supervisor.assigned_students ?? 0;
-  const rating = supervisor.rating ?? supervisor.avg_rating ?? null;
 
   return (
     <Pressable
@@ -97,18 +96,11 @@ function SupervisorCard({ supervisor, onManage, onAssign }) {
       {/* Divider */}
       <View style={styles.supDivider} />
 
-      {/* Stats row */}
+      {/* Stats row — Rating removed, Students stat now centered alone */}
       <View style={styles.supStatsRow}>
         <View style={styles.supStat}>
           <Text style={styles.supStatValue}>{String(studentCount).padStart(2, '0')}</Text>
           <Text style={styles.supStatLabel}>Students</Text>
-        </View>
-        <View style={styles.supStatDivider} />
-        <View style={styles.supStat}>
-          <Text style={styles.supStatValue}>
-            {rating !== null ? `${rating}%` : '—'}
-          </Text>
-          <Text style={styles.supStatLabel}>Rating</Text>
         </View>
       </View>
 
@@ -153,7 +145,13 @@ export default function SupervisorsScreen({ navigation }) {
         api.get('/admin/dashboard'),
       ]);
 
-      const list = supRes.data || [];
+      // API returns full_name / supervisor_id; normalize to the name / user_id
+      // fields this screen renders and passes along to the assign flow.
+      const list = (supRes.data || []).map(s => ({
+        ...s,
+        name: s.name || s.full_name || 'Unknown',
+        user_id: s.user_id || s.supervisor_id,
+      }));
       setSupervisors(list);
       setFiltered(list);
 
@@ -208,12 +206,17 @@ export default function SupervisorsScreen({ navigation }) {
 
   const onRefresh = () => { setRefreshing(true); fetchSupervisors(); };
 
+  // ── CHANGE: "Manage" now routes into the new ManageSupervisorsScreen
+  // instead of SupervisorDetail.
   const handleManage = (supervisor) => {
-    navigation.navigate('SupervisorDetail', { supervisor });
+    navigation.navigate('ManageSupervisors', { supervisor });
   };
 
+  // "Assign Student" routes into the existing AssignSupervisor
+  // screen (Step 2 pre-selects this supervisor) instead of the AssignStudent
+  // placeholder screen.
   const handleAssign = (supervisor) => {
-    navigation.navigate('AssignStudent', {
+    navigation.navigate('AssignSupervisor', {
       supervisorId: supervisor.user_id,
       supervisorName: supervisor.name,
     });
@@ -258,8 +261,6 @@ export default function SupervisorsScreen({ navigation }) {
           label="TOTAL SUPERVISORS"
           value={stats.total}
           icon="account-group-outline"
-          subtext={`+12% from last term`}
-          subtextColor={TEAL}
         />
 
         {/* Active Now */}
@@ -510,16 +511,16 @@ const styles = StyleSheet.create({
   // Divider
   supDivider: { height: 1, backgroundColor: BORDER, marginBottom: 14 },
 
-  // Stats row
+  // Stats row — single centered stat now that Rating is removed
   supStatsRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: 14,
   },
-  supStat: { flex: 1, alignItems: 'center' },
+  supStat: { alignItems: 'center' },
   supStatValue: { fontSize: 22, fontWeight: '800', color: TEAL },
   supStatLabel: { fontSize: 12, color: GRAY, marginTop: 2 },
-  supStatDivider: { width: 1, height: 36, backgroundColor: BORDER },
 
   // Actions
   supActions: {

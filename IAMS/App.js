@@ -53,6 +53,8 @@ import AddUserScreen from './app/admin/AddUserScreen';
 import ManageAdminsScreen from './app/admin/ManageAdminsScreen';
 import AddAdminScreen from './app/admin/AddAdminScreen';
 import AdminAnnouncementsScreen from './app/admin/AnnouncementsScreen';
+import SupervisorDetailScreen from './app/admin/SupervisorDetailScreen';
+import ManageSupervisorsScreen from './app/admin/ManageSupervisorsScreen';
 
 // Host Org screens
 import HostDashboard from './app/hostorg/HostDashboard';
@@ -216,8 +218,9 @@ function RootNavigator() {
       <Stack.Screen name="OrgDetail"        component={OrgDetailsScreen}  />
       <Stack.Screen name="OrgVacancies"     component={PlaceholderScreen} />
       <Stack.Screen name="StudentDetail"    component={StudentDetailScreen} />
-      <Stack.Screen name="SupervisorDetail" component={PlaceholderScreen} />
+      <Stack.Screen name="SupervisorDetail" component={SupervisorDetailScreen} />
       <Stack.Screen name="AssignStudent"    component={PlaceholderScreen} />
+      <Stack.Screen name="ManageSupervisors" component={ManageSupervisorsScreen} />
 
       {/* Other admin */}
       <Stack.Screen name="Reports"              component={Reports}                   />

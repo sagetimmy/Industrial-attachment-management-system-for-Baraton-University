@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, Alert, RefreshControl
+  ScrollView, Alert, RefreshControl, Image, ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../api/axios';
 import Spinner from '../../components/Spinner';
@@ -18,12 +20,13 @@ const BORDER = '#E5E7EB';
 const RED = '#E53935';
 
 export default function ProfileScreen({ navigation }) {
-  const { user, logout } = useAuth();
+  const { user, logout, fetchUserProfile } = useAuth();
   const [profile, setProfile] = useState(null);
   const [attachment, setAttachment] = useState(null);
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -44,7 +47,60 @@ export default function ProfileScreen({ navigation }) {
 
   useEffect(() => { fetchData(); }, []);
 
+  // Keep local `profile` in sync whenever the global user object changes
+  // (e.g. after fetchUserProfile() runs post-upload)
+  useEffect(() => {
+    if (user) setProfile(user);
+  }, [user]);
+
   const onRefresh = () => { setRefreshing(true); fetchData(); };
+
+  const handleChangePhoto = async () => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission needed', 'Please allow photo library access to upload a profile photo.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (result.canceled) return;
+
+      setUploadingPhoto(true);
+
+      const manipulated = await ImageManipulator.manipulateAsync(
+        result.assets[0].uri,
+        [{ resize: { width: 512, height: 512 } }],
+        { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
+      );
+
+      const formData = new FormData();
+      formData.append('photo', {
+        uri: manipulated.uri,
+        name: 'avatar.jpg',
+        type: 'image/jpeg',
+      });
+
+      await api.post('/avatar', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      // Refresh the global user object so the new avatar_url
+      // propagates everywhere (header, drawer, other screens)
+      await fetchUserProfile();
+    } catch (err) {
+      const message = err.response?.data?.message || 'Could not upload photo. Please try again.';
+      Alert.alert('Upload Failed', message);
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -56,6 +112,7 @@ export default function ProfileScreen({ navigation }) {
   }
 
   const initials = profile?.full_name?.trim().charAt(0).toUpperCase() || '?';
+  const avatarUrl = profile?.avatar_url || null;
 
   const handleLogout = () => {
     Alert.alert('Logout', 'Are you sure you want to logout?', [
@@ -78,9 +135,28 @@ export default function ProfileScreen({ navigation }) {
         </View>
 
         <View style={styles.avatarWrapper}>
-          <View style={styles.avatarCircle}>
-            <Text style={styles.avatarText}>{initials}</Text>
-          </View>
+          <TouchableOpacity
+            style={styles.avatarCircle}
+            onPress={handleChangePhoto}
+            disabled={uploadingPhoto}
+            activeOpacity={0.8}
+          >
+            {avatarUrl ? (
+              <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
+            ) : (
+              <Text style={styles.avatarText}>{initials}</Text>
+            )}
+
+            {uploadingPhoto && (
+              <View style={styles.avatarLoadingOverlay}>
+                <ActivityIndicator size="small" color={WHITE} />
+              </View>
+            )}
+
+            <View style={styles.cameraBadge}>
+              <Ionicons name="camera" size={14} color={WHITE} />
+            </View>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.nameSection}>
@@ -170,8 +246,11 @@ const styles = StyleSheet.create({
   backBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   backText: { color: WHITE, fontSize: 15, fontWeight: '600' },
   avatarWrapper: { alignItems: 'center', marginTop: -50, marginBottom: 12 },
-  avatarCircle: { width: 100, height: 100, borderRadius: 50, backgroundColor: DARK, borderWidth: 4, borderColor: WHITE, justifyContent: 'center', alignItems: 'center' },
+  avatarCircle: { width: 100, height: 100, borderRadius: 50, backgroundColor: DARK, borderWidth: 4, borderColor: WHITE, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
+  avatarImage: { width: '100%', height: '100%' },
   avatarText: { color: WHITE, fontSize: 38, fontWeight: '800' },
+  avatarLoadingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center' },
+  cameraBadge: { position: 'absolute', bottom: -2, right: -2, width: 28, height: 28, borderRadius: 14, backgroundColor: TEAL, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: WHITE },
   nameSection: { alignItems: 'center', marginBottom: 20 },
   name: { fontSize: 22, fontWeight: '800', color: DARK, marginBottom: 4 },
   regNumber: { fontSize: 13, color: GRAY },

@@ -3,6 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, Alert,
   ImageBackground, ScrollView, Dimensions,
+  KeyboardAvoidingView, Platform, SafeAreaView,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
@@ -55,126 +56,143 @@ export default function LoginScreen({ navigation }) {
   };
 
   return (
-    <View style={styles.root}>
-      {/* ── Hero top section with graduation photo ── */}
-      <ImageBackground
-        source={require('../../assets/graduation-bg.jpg.png')}
-        style={styles.hero}
-        resizeMode="cover"
-        imageStyle={{ opacity: 0.9 }}
+    <SafeAreaView style={styles.root}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        {/* Dark blue overlay for text readability */}
-        <View style={styles.heroOverlay} />
+        {/* ── Hero top section with graduation photo ── */}
+        <ImageBackground
+          source={require('../../assets/graduation-bg.jpg.png')}
+          style={styles.hero}
+          resizeMode="cover"
+          imageStyle={{ opacity: 0.9 }}
+        >
+          {/* Dark blue overlay for text readability */}
+          <View style={styles.heroOverlay} />
 
-        {/* Educational icons and decorative elements */}
-        <View style={styles.iconDecor}>
-          <Ionicons name="book-outline" size={24} color={WHITE} style={styles.decorIcon} />
-          <MaterialCommunityIcons name="school" size={24} color={WHITE} style={styles.decorIcon} />
-          <Ionicons name="ribbon-outline" size={24} color={WHITE} style={styles.decorIcon} />
-        </View>
-
-        {/* Hero content */}
-        <View style={styles.heroContent}>
-          <Text style={styles.welcomeText}>University of Eastern Africa,Baraton
-          </Text>
-          <Text style={styles.appName}>IAMS</Text>
-
-          {/* Gold divider with subtitle */}
-          <View style={styles.subtitleRow}>
-            <View style={styles.goldLine} />
-            <Text style={styles.subtitleText}>Industrial Attachment Management</Text>
-            <View style={styles.goldLine} />
+          {/* Educational icons and decorative elements */}
+          <View style={styles.iconDecor}>
+            <Ionicons name="book-outline" size={24} color={WHITE} style={styles.decorIcon} />
+            <MaterialCommunityIcons name="school" size={24} color={WHITE} style={styles.decorIcon} />
+            <Ionicons name="ribbon-outline" size={24} color={WHITE} style={styles.decorIcon} />
           </View>
 
-          {/* Graduation cap emoji */}
-          <Text style={styles.capEmoji}>🎓</Text>
-        </View>
-      </ImageBackground>
+          {/* Hero content */}
+          <View style={styles.heroContent}>
+            <Text
+              style={styles.welcomeText}
+              numberOfLines={2}
+              adjustsFontSizeToFit
+              allowFontScaling={false}
+            >
+              University of Eastern Africa, Baraton
+            </Text>
+            <Text style={styles.appName} allowFontScaling={false}>IAMS</Text>
 
-      {/* ── White card bottom sheet with form ── */}
-      <ScrollView
-        style={styles.card}
-        contentContainerStyle={styles.cardContent}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Email input */}
-        <View style={styles.inputWrap}>
-          <Ionicons name="mail-outline" size={20} color={BLUE} style={styles.inputIcon} />
-          <TextInput
-            style={styles.input}
-            placeholder="Email"
-            placeholderTextColor={GRAY}
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
-        </View>
+            {/* Gold divider with subtitle */}
+            <View style={styles.subtitleRow}>
+              <View style={styles.goldLine} />
+              <Text
+                style={styles.subtitleText}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                allowFontScaling={false}
+              >
+                Industrial Attachment Management
+              </Text>
+              <View style={styles.goldLine} />
+            </View>
 
-        {/* Password input */}
-        <View style={styles.inputWrap}>
-          <MaterialCommunityIcons name="lock-outline" size={20} color={BLUE} style={styles.inputIcon} />
-          <TextInput
-            style={[styles.input, { flex: 1 }]}
-            placeholder="Password"
-            placeholderTextColor={GRAY}
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry={!showPass}
-          />
-          <TouchableOpacity onPress={() => setShowPass(!showPass)} style={styles.eyeBtn}>
-            <Ionicons name={showPass ? 'eye-outline' : 'eye-off-outline'} size={20} color={GRAY} />
-          </TouchableOpacity>
-        </View>
+            {/* Graduation cap emoji */}
+            <Text style={styles.capEmoji}>🎓</Text>
+          </View>
+        </ImageBackground>
 
-        {/* Forgot password */}
-        <View style={styles.optionsRow}>
-          <View style={{ flex: 1 }} />
-          <TouchableOpacity onPress={() => navigation.navigate('ForgotPassword')}>
-            <Text style={styles.forgotText}>Forgot Password?</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Sign In button */}
-        <TouchableOpacity
-          style={[styles.signInBtn, loading && { opacity: 0.7 }]}
-          onPress={handleLogin}
-          disabled={loading}
-          activeOpacity={0.85}
+        {/* ── White card bottom sheet with form ── */}
+        <ScrollView
+          style={styles.card}
+          contentContainerStyle={styles.cardContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          {loading ? (
-            <Spinner color={WHITE} size="small" />
-          ) : (
-            <>
-              <Text style={styles.signInText}>log In</Text>
-              <Ionicons name="arrow-forward" size={20} color={WHITE} style={{ marginLeft: 8 }} />
-            </>
-          )}
-        </TouchableOpacity>
+          {/* Email input */}
+          <View style={styles.inputWrap}>
+            <Ionicons name="mail-outline" size={20} color={BLUE} style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Email"
+              placeholderTextColor={GRAY}
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              allowFontScaling={false}
+            />
+          </View>
 
+          {/* Password input */}
+          <View style={styles.inputWrap}>
+            <MaterialCommunityIcons name="lock-outline" size={20} color={BLUE} style={styles.inputIcon} />
+            <TextInput
+              style={[styles.input, { flex: 1 }]}
+              placeholder="Password"
+              placeholderTextColor={GRAY}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry={!showPass}
+              allowFontScaling={false}
+            />
+            <TouchableOpacity onPress={() => setShowPass(!showPass)} style={styles.eyeBtn}>
+              <Ionicons name={showPass ? 'eye-outline' : 'eye-off-outline'} size={20} color={GRAY} />
+            </TouchableOpacity>
+          </View>
 
+          {/* Forgot password */}
+          <View style={styles.optionsRow}>
+            <View style={{ flex: 1 }} />
+            <TouchableOpacity onPress={() => navigation.navigate('ForgotPassword')}>
+              <Text style={styles.forgotText} allowFontScaling={false}>Forgot Password?</Text>
+            </TouchableOpacity>
+          </View>
 
-        {/* Register link */}
-        <View style={styles.registerRow}>
-          <Text style={styles.registerText}>Don't have an account? </Text>
-          <TouchableOpacity onPress={() => navigation.navigate('Register')}>
-            <Text style={styles.registerLink}>Sign Up</Text>
+          {/* Sign In button */}
+          <TouchableOpacity
+            style={[styles.signInBtn, loading && { opacity: 0.7 }]}
+            onPress={handleLogin}
+            disabled={loading}
+            activeOpacity={0.85}
+          >
+            {loading ? (
+              <Spinner color={WHITE} size="small" />
+            ) : (
+              <>
+                <Text style={styles.signInText} allowFontScaling={false}>Log In</Text>
+                <Ionicons name="arrow-forward" size={20} color={WHITE} style={{ marginLeft: 8 }} />
+              </>
+            )}
           </TouchableOpacity>
-        </View>
-      </ScrollView>
-    </View>
+
+          {/* Register link */}
+          <View style={styles.registerRow}>
+            <Text style={styles.registerText} allowFontScaling={false}>Don't have an account? </Text>
+            <TouchableOpacity onPress={() => navigation.navigate('Register')}>
+              <Text style={styles.registerLink} allowFontScaling={false}>Sign Up</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
-
-
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: WHITE },
 
   // Hero section with graduation photo
   hero: {
-    height: height * 0.50,
+    height: height * 0.45,
+    minHeight: 320,
     justifyContent: 'flex-end',
   },
   heroOverlay: {
@@ -199,23 +217,27 @@ const styles = StyleSheet.create({
 
   heroContent: {
     paddingHorizontal: 24,
-    paddingBottom: 40,
+    paddingBottom: 32,
     alignItems: 'center',
     zIndex: 2,
+    width: '100%',
   },
   welcomeText: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: '600',
     color: WHITE,
+    textAlign: 'center',
+    width: '100%',
     textShadowColor: 'rgba(0,0,0,0.4)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
   },
   appName: {
-    fontSize: 48,
+    fontSize: 44,
     fontWeight: '900',
     color: WHITE,
     letterSpacing: 1,
+    textAlign: 'center',
     textShadowColor: 'rgba(0,0,0,0.5)',
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 6,
@@ -226,22 +248,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 12,
     gap: 8,
+    width: '100%',
+    justifyContent: 'center',
   },
   goldLine: {
     height: 2,
     backgroundColor: GOLD,
-    maxWidth: 50,
+    maxWidth: 40,
     flex: 1,
   },
   subtitleText: {
     color: WHITE,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     opacity: 0.95,
+    textAlign: 'center',
+    flexShrink: 1,
   },
   capEmoji: {
     fontSize: 32,
     marginTop: 12,
+    textAlign: 'center',
   },
 
   // Card section
@@ -278,6 +305,8 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#1F2937',
     fontWeight: '500',
+    paddingVertical: 0,
+    textAlignVertical: 'center',
   },
   eyeBtn: {
     padding: 6,
@@ -321,15 +350,15 @@ const styles = StyleSheet.create({
     color: WHITE,
     fontSize: 17,
     fontWeight: '700',
+    textAlign: 'center',
   },
-
-
 
   // Register link
   registerRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
+    flexWrap: 'wrap',
   },
   registerText: {
     fontSize: 14,

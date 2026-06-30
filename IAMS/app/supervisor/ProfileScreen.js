@@ -1,20 +1,28 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert,
-  ActivityIndicator, useWindowDimensions
+  ActivityIndicator, Image
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
-import { COLORS } from '../../constants/colors';
 import api from '../../api/axios';
 
 const TEAL = '#1B6B5A';
-const LIGHT = '#F0F4F3';
+const TEAL_LIGHT = '#E3F1EE';
+const ORANGE = '#C77B2E';
+const ORANGE_LIGHT = '#FBEFE3';
+const BG = '#F4F8F7';
+const ONLINE_GREEN = '#2ECC71';
+const NEEDS_REVIEW_BG = '#FBEAE3';
+const NEEDS_REVIEW_TEXT = '#C0552B';
+const ON_TRACK_BG = '#E3F1EE';
+const ON_TRACK_TEXT = '#1B6B5A';
 
 export default function SupervisorProfileScreen({ navigation }) {
   const { user, logout } = useAuth();
-  const { width } = useWindowDimensions();
   const [loading, setLoading] = useState(false);
   const [profile, setProfile] = useState(null);
+  const [stats, setStats] = useState({ activeStudents: 0, reviewsPending: 0, avgScore: 0 });
+  const [students, setStudents] = useState([]);
 
   useEffect(() => {
     fetchProfile();
@@ -23,27 +31,36 @@ export default function SupervisorProfileScreen({ navigation }) {
   const fetchProfile = async () => {
     try {
       setLoading(true);
-      // Fetch supervisor dashboard data for additional details
       const res = await api.get('/supervisors/dashboard');
-      const supervisorData = res.data?.supervisor || {};
-      
-      // Combine with user data from auth context
+      const data = res.data || {};
+      const supervisorData = data.supervisor || {};
+
       setProfile({
         full_name: user?.full_name || supervisorData.full_name || 'Supervisor',
         email: user?.email || supervisorData.email || '',
         phone: user?.phone || supervisorData.phone || '',
         department: user?.department || supervisorData.department || '',
+        staff_id: supervisorData.staff_id || '',
         office: supervisorData.office || '',
-        specialization: supervisorData.specialization || '',
+        title: supervisorData.title || 'Supervisor',
+        photo_url: supervisorData.photo_url || user?.photo_url || null,
       });
+
+      setStats({
+        activeStudents: data.active_students_count ?? data.stats?.active_students ?? 0,
+        reviewsPending: data.reviews_pending_count ?? data.stats?.reviews_pending ?? 0,
+        avgScore: data.average_score ?? data.stats?.average_score ?? 0,
+      });
+
+      setStudents(data.recent_students || []);
     } catch (err) {
       console.log('Profile fetch error:', err.message);
-      // Use user data from auth context as fallback
       setProfile({
         full_name: user?.full_name || 'Supervisor',
         email: user?.email || '',
         phone: user?.phone || '',
         department: user?.department || '',
+        title: 'Supervisor',
       });
     } finally {
       setLoading(false);
@@ -53,18 +70,14 @@ export default function SupervisorProfileScreen({ navigation }) {
   const handleLogout = () => {
     Alert.alert('Logout', 'Are you sure you want to logout?', [
       { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Logout',
-        style: 'destructive',
-        onPress: () => logout(),
-      },
+      { text: 'Logout', style: 'destructive', onPress: () => logout() },
     ]);
   };
 
   const profileData = profile || {
     full_name: user?.full_name || 'Supervisor',
     email: user?.email || '',
-    phone: user?.phone || '',
+    title: 'Supervisor',
   };
 
   const initials = profileData.full_name
@@ -80,10 +93,12 @@ export default function SupervisorProfileScreen({ navigation }) {
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Text style={styles.backButton}>← Back</Text>
+            <Text style={styles.backButton}>←</Text>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Profile</Text>
-          <View style={{ width: 60 }} />
+          <Text style={styles.headerTitle}>Supervisor Profile</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('EditProfile')}>
+            <Text style={styles.editButton}>✎</Text>
+          </TouchableOpacity>
         </View>
 
         {loading ? (
@@ -92,72 +107,174 @@ export default function SupervisorProfileScreen({ navigation }) {
           </View>
         ) : (
           <>
-            {/* Profile Card */}
-            <View style={styles.profileCard}>
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>{initials}</Text>
+            {/* Avatar + Name */}
+            <View style={styles.avatarSection}>
+              <View style={styles.avatarWrap}>
+                {profileData.photo_url ? (
+                  <Image source={{ uri: profileData.photo_url }} style={styles.avatarImage} />
+                ) : (
+                  <View style={styles.avatar}>
+                    <Text style={styles.avatarText}>{initials}</Text>
+                  </View>
+                )}
+                <View style={styles.onlineDot} />
               </View>
               <Text style={styles.name}>{profileData.full_name}</Text>
-              <Text style={styles.role}>Supervisor</Text>
+              <Text style={styles.role}>{profileData.title}</Text>
+              {!!profileData.department && (
+                <Text style={styles.department}>{profileData.department}</Text>
+              )}
             </View>
 
-            {/* Contact Information */}
+            {/* Stats Row */}
+            <View style={styles.statsRow}>
+              <View style={styles.statCard}>
+                <Text style={styles.statValue}>{stats.activeStudents}</Text>
+                <Text style={styles.statLabel}>ACTIVE{'\n'}STUDENTS</Text>
+              </View>
+              <View style={styles.statCard}>
+                <Text style={[styles.statValue, { color: ORANGE }]}>
+                  {String(stats.reviewsPending).padStart(2, '0')}
+                </Text>
+                <Text style={styles.statLabel}>REVIEWS{'\n'}PENDING</Text>
+              </View>
+              <View style={styles.statCard}>
+                <Text style={styles.statValue}>
+                  {stats.avgScore} <Text style={styles.star}>★</Text>
+                </Text>
+                <Text style={styles.statLabel}>AVG.{'\n'}SCORE</Text>
+              </View>
+            </View>
+
+            {/* Institutional Details */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Contact Information</Text>
+              <Text style={styles.sectionTitle}>Institutional Details</Text>
+
+              {!!profileData.staff_id && (
+                <View style={styles.infoRow}>
+                  <View style={styles.iconCircle}><Text>🪪</Text></View>
+                  <View>
+                    <Text style={styles.label}>STAFF ID</Text>
+                    <Text style={styles.value}>{profileData.staff_id}</Text>
+                  </View>
+                </View>
+              )}
+
+              {!!profileData.office && (
+                <View style={styles.infoRow}>
+                  <View style={styles.iconCircle}><Text>🏢</Text></View>
+                  <View>
+                    <Text style={styles.label}>OFFICE NUMBER</Text>
+                    <Text style={styles.value}>{profileData.office}</Text>
+                  </View>
+                </View>
+              )}
 
               <View style={styles.infoRow}>
-                <Text style={styles.label}>Email</Text>
-                <Text style={styles.value}>{profileData.email || 'Not provided'}</Text>
+                <View style={styles.iconCircle}><Text>✉️</Text></View>
+                <View>
+                  <Text style={styles.label}>OFFICIAL EMAIL</Text>
+                  <Text style={styles.value}>{profileData.email || 'Not provided'}</Text>
+                </View>
               </View>
-
-              {profileData.phone && (
-                <View style={styles.infoRow}>
-                  <Text style={styles.label}>Phone</Text>
-                  <Text style={styles.value}>{profileData.phone}</Text>
-                </View>
-              )}
-
-              {profileData.department && (
-                <View style={styles.infoRow}>
-                  <Text style={styles.label}>Department</Text>
-                  <Text style={styles.value}>{profileData.department}</Text>
-                </View>
-              )}
-
-              {profileData.office && (
-                <View style={styles.infoRow}>
-                  <Text style={styles.label}>Office</Text>
-                  <Text style={styles.value}>{profileData.office}</Text>
-                </View>
-              )}
-
-              {profileData.specialization && (
-                <View style={styles.infoRow}>
-                  <Text style={styles.label}>Specialization</Text>
-                  <Text style={styles.value}>{profileData.specialization}</Text>
-                </View>
-              )}
             </View>
+
+            {/* Recent Students */}
+            <View style={styles.studentsHeader}>
+              <Text style={styles.studentsTitle}>Recent Students</Text>
+              <TouchableOpacity onPress={() => navigation.navigate('Students')}>
+                <Text style={styles.viewAll}>VIEW ALL</Text>
+              </TouchableOpacity>
+            </View>
+
+            {students.length === 0 ? (
+              <Text style={styles.emptyText}>No recent students to show.</Text>
+            ) : (
+              students.map((s, idx) => {
+                const needsReview = s.status === 'needs_review';
+                const progress = Math.max(0, Math.min(100, s.progress ?? 0));
+                return (
+                  <View key={s.id || idx} style={styles.studentCard}>
+                    <View style={styles.studentTopRow}>
+                      <View style={styles.studentAvatarWrap}>
+                        {s.photo_url ? (
+                          <Image source={{ uri: s.photo_url }} style={styles.studentAvatarImage} />
+                        ) : (
+                          <View style={styles.studentAvatar}>
+                            <Text style={styles.studentAvatarText}>
+                              {(s.full_name || '?').charAt(0).toUpperCase()}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.studentName}>{s.full_name}</Text>
+                        <Text style={styles.studentProgram}>{s.program}</Text>
+                      </View>
+                      <View
+                        style={[
+                          styles.statusBadge,
+                          { backgroundColor: needsReview ? NEEDS_REVIEW_BG : ON_TRACK_BG },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.statusBadgeText,
+                            { color: needsReview ? NEEDS_REVIEW_TEXT : ON_TRACK_TEXT },
+                          ]}
+                        >
+                          {needsReview ? 'NEEDS REVIEW' : 'ON TRACK'}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.progressRow}>
+                      <Text style={styles.progressLabel}>PROGRESS</Text>
+                      <Text style={styles.progressPercent}>{progress}%</Text>
+                    </View>
+                    <View style={styles.progressTrack}>
+                      <View
+                        style={[
+                          styles.progressFill,
+                          {
+                            width: `${progress}%`,
+                            backgroundColor: needsReview ? '#C0552B' : TEAL,
+                          },
+                        ]}
+                      />
+                    </View>
+                  </View>
+                );
+              })
+            )}
 
             {/* Settings */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Settings</Text>
-
               <TouchableOpacity style={styles.settingRow}>
-                <Text style={styles.settingLabel}>Change Password</Text>
+                <Text style={styles.settingIcon}>🔔</Text>
+                <Text style={styles.settingLabel}>Notification Preferences</Text>
                 <Text style={styles.chevron}>›</Text>
               </TouchableOpacity>
 
               <TouchableOpacity style={styles.settingRow}>
-                <Text style={styles.settingLabel}>Notification Preferences</Text>
+                <Text style={styles.settingIcon}>🔒</Text>
+                <Text style={styles.settingLabel}>Change Password</Text>
+                <Text style={styles.chevron}>›</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={[styles.settingRow, { borderBottomWidth: 0 }]}>
+                <Text style={styles.settingIcon}>🛡️</Text>
+                <Text style={styles.settingLabel}>Security</Text>
                 <Text style={styles.chevron}>›</Text>
               </TouchableOpacity>
             </View>
 
             {/* Logout Button */}
             <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-              <Text style={styles.logoutText}>Logout</Text>
+              <Text style={styles.logoutText}>⎋  Logout Session</Text>
             </TouchableOpacity>
+
+            <Text style={styles.versionText}>Version 2.4.0 (Build 1082)</Text>
           </>
         )}
 
@@ -170,114 +287,279 @@ export default function SupervisorProfileScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F4F4F4',
+    backgroundColor: BG,
   },
   centerContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingVertical: 60,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 14,
     paddingTop: 16,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
   },
   backButton: {
-    fontSize: 16,
-    color: TEAL,
-    fontWeight: '600',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 20,
     color: '#000000',
   },
+  headerTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: TEAL,
+  },
+  editButton: {
+    fontSize: 18,
+    color: TEAL,
+  },
 
-  // Profile Card
-  profileCard: {
-    backgroundColor: '#FFFFFF',
-    marginHorizontal: 16,
-    marginVertical: 20,
-    borderRadius: 12,
-    padding: 24,
+  // Avatar
+  avatarSection: {
     alignItems: 'center',
+    paddingVertical: 16,
+  },
+  avatarWrap: {
+    position: 'relative',
+    marginBottom: 14,
   },
   avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
     backgroundColor: TEAL,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
+  },
+  avatarImage: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
   },
   avatarText: {
-    fontSize: 32,
+    fontSize: 36,
     fontWeight: '700',
     color: '#FFFFFF',
   },
+  onlineDot: {
+    position: 'absolute',
+    bottom: 4,
+    right: 4,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: ONLINE_GREEN,
+    borderWidth: 2,
+    borderColor: BG,
+  },
   name: {
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: '700',
     color: '#000000',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   role: {
     fontSize: 14,
+    color: TEAL,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  department: {
+    fontSize: 13,
+    color: '#555555',
+  },
+
+  // Stats
+  statsRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    gap: 10,
+    marginBottom: 18,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  statValue: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#000000',
+    marginBottom: 6,
+  },
+  star: {
+    color: '#F2B705',
+  },
+  statLabel: {
+    fontSize: 10,
+    fontWeight: '600',
     color: '#999999',
+    textAlign: 'center',
+    lineHeight: 13,
   },
 
   // Section
   section: {
     backgroundColor: '#FFFFFF',
     marginHorizontal: 16,
-    marginVertical: 12,
+    marginVertical: 8,
     borderRadius: 12,
     padding: 16,
   },
   sectionTitle: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
-    color: '#000000',
+    color: TEAL,
     marginBottom: 12,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
   },
 
   // Info Row
   infoRow: {
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+  },
+  iconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: TEAL_LIGHT,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   label: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#999999',
     fontWeight: '600',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   value: {
     fontSize: 14,
     color: '#000000',
-    fontWeight: '500',
+    fontWeight: '600',
   },
 
-  // Setting Row
-  settingRow: {
+  // Students
+  studentsHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 10,
+  },
+  studentsTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#000000',
+  },
+  viewAll: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: TEAL,
+  },
+  emptyText: {
+    fontSize: 13,
+    color: '#999999',
+    textAlign: 'center',
+    paddingVertical: 12,
+  },
+  studentCard: {
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 16,
+    marginBottom: 12,
+    borderRadius: 12,
+    padding: 14,
+  },
+  studentTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 10,
+  },
+  studentAvatarWrap: {},
+  studentAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: TEAL,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  studentAvatarImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+  },
+  studentAvatarText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  studentName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#000000',
+  },
+  studentProgram: {
+    fontSize: 12,
+    color: '#777777',
+    marginTop: 1,
+  },
+  statusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 14,
+  },
+  statusBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  progressRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  progressLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#999999',
+  },
+  progressPercent: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#555555',
+  },
+  progressTrack: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#EEEEEE',
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+
+  // Settings
+  settingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
     paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: '#F0F0F0',
   },
+  settingIcon: {
+    fontSize: 16,
+  },
   settingLabel: {
+    flex: 1,
     fontSize: 14,
     color: '#000000',
     fontWeight: '500',
@@ -290,15 +572,23 @@ const styles = StyleSheet.create({
   // Logout Button
   logoutButton: {
     marginHorizontal: 16,
-    marginVertical: 24,
+    marginTop: 16,
     paddingVertical: 14,
-    backgroundColor: '#FFE5E5',
-    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E8B3A3',
+    borderRadius: 30,
     alignItems: 'center',
   },
   logoutText: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#C62828',
+    color: '#C0552B',
+  },
+  versionText: {
+    fontSize: 11,
+    color: '#AAAAAA',
+    textAlign: 'center',
+    marginTop: 16,
   },
 });

@@ -40,13 +40,13 @@ function Sparkline({ up }) {
 
 function ActionIcon({ name }) {
   const icons = {
-    'Review Pending':    { name: 'clipboard-edit-outline' },
-    'Assign Supervisor': { name: 'account-arrow-right-outline' },
-    'System Reports':    { name: 'chart-bar' },
-    'Manage Users':      { name: 'account-group-outline' },
-    'Manage Orgs':       { name: 'office-building-outline' },
-    'Settings':          { name: 'cog-outline' },
-    'Announcements':     { name: 'bullhorn-outline' },          // ← NEW
+    'Manage Attachments': { name: 'clipboard-edit-outline' },
+    'Assign Supervisor':  { name: 'account-arrow-right-outline' },
+    'System Reports':     { name: 'chart-bar' },
+    'Manage Users':       { name: 'account-group-outline' },
+    'Manage Orgs':        { name: 'office-building-outline' },
+    'Settings':           { name: 'cog-outline' },
+    'Announcements':      { name: 'bullhorn-outline' },          // ← NEW
   };
   const icon = icons[name] || { name: 'dots-horizontal' };
   return <MaterialCommunityIcons name={icon.name} size={28} color={TEAL} />;
@@ -298,15 +298,15 @@ export default function AdminDashboard({ navigation }) {
     },
   ];
 
-  // ── CHANGE 1: Announcements added as 7th quick action ──
+  // ── CHANGE: "Review Pending" renamed to "Manage Attachments" ──
   const quickActions = [
-    { label: 'Review\nPending',     screen: 'ManageAttachments'   },
+    { label: 'Manage\nAttachments', screen: 'ManageAttachments'   },
     { label: 'Assign\nSupervisor',  screen: 'AssignSupervisor'    },
     { label: 'System\nReports',     screen: 'Reports'             },
     { label: 'Manage\nUsers',       screen: 'ManageUsers'         },
     { label: 'Manage\nOrgs',        screen: 'ManageOrgs'          },
     { label: 'Settings',            screen: 'Settings'            },
-    { label: 'Announcements',       screen: 'AdminAnnouncements'  }, // ← NEW
+    { label: 'Announcements',       screen: 'AdminAnnouncements'  },
   ];
 
   const recentActivity = [
@@ -358,12 +358,12 @@ export default function AdminDashboard({ navigation }) {
     })),
   ];
 
+  // ── CHANGE: "Users" tab removed from bottom tab bar ──
   const tabs = [
     { label: 'Home',        icon: 'home',             active: true,  screen: null          },
     { label: 'Students',    icon: 'people-outline',   active: false, screen: 'Students'    },
     { label: 'Supervisors', icon: 'ribbon-outline',   active: false, screen: 'Supervisors' },
     { label: 'Orgs',        icon: 'business-outline', active: false, screen: 'ManageOrgs'  },
-    { label: 'Users',       icon: 'person-outline',   active: false, screen: 'ManageUsers' },
   ];
 
   return (

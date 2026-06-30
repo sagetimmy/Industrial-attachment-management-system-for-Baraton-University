@@ -300,7 +300,7 @@ router.get('/me', protect, async (req, res) => {
 
     const { data: user, error: userError } = await supabase
       .from('users')
-      .select('user_id, email, role, is_verified, is_active, is_super_admin, created_at')
+      .select('user_id, email, role, is_verified, is_active, is_super_admin, created_at, avatar_url')
       .eq('user_id', userId)
       .maybeSingle();
 
@@ -352,7 +352,9 @@ router.get('/me', protect, async (req, res) => {
       is_verified:   user.is_verified,
       is_active:     user.is_active,
       is_super_admin: user.is_super_admin ?? false,
+      avatar_url:    user.avatar_url ?? null,
       permissions,
+  
       ...profile,
     });
 

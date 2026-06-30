@@ -94,7 +94,7 @@ function SupervisorCard({ supervisor, selected, onPress }) {
   );
 }
 
-export default function AssignSupervisorsScreen({ navigation }) {
+export default function AssignSupervisorsScreen({ navigation, route }) {
   const [attachments, setAttachments] = useState([]);
   const [supervisors, setSupervisors] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -103,6 +103,11 @@ export default function AssignSupervisorsScreen({ navigation }) {
   const [selectedSupervisor, setSelectedSupervisor] = useState(null);
   const [assigning, setAssigning] = useState(false);
   const [search, setSearch] = useState('');
+
+  // Params passed in when navigating from the Attachment list (preselect a student)
+  // or from the Supervisor Directory's "Assign Student" action (preselect a supervisor)
+  const preselectAttachmentId = route?.params?.attachmentId;
+  const preselectSupervisorId = route?.params?.supervisorId;
 
   const fetchData = async () => {
     try {
@@ -146,6 +151,22 @@ export default function AssignSupervisorsScreen({ navigation }) {
   };
 
   useEffect(() => { fetchData(); }, []);
+
+  // Preselect a student if an attachmentId was passed in via navigation params
+  useEffect(() => {
+    if (preselectAttachmentId && attachments.length > 0) {
+      const match = attachments.find(a => a.attachment_id === preselectAttachmentId);
+      if (match) setSelectedAttachment(match);
+    }
+  }, [attachments, preselectAttachmentId]);
+
+  // Preselect a supervisor if a supervisorId was passed in (e.g. from Supervisor Directory)
+  useEffect(() => {
+    if (preselectSupervisorId && supervisors.length > 0) {
+      const match = supervisors.find(s => s.supervisor_id === preselectSupervisorId);
+      if (match) setSelectedSupervisor(match);
+    }
+  }, [supervisors, preselectSupervisorId]);
 
   const filteredAttachments = attachments.filter(a =>
     a.student_name?.toLowerCase().includes(search.toLowerCase()) ||
@@ -201,7 +222,7 @@ export default function AssignSupervisorsScreen({ navigation }) {
       <View style={styles.header}>
         <View style={styles.headerTop}>
           <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Text style={styles.hamburger}>☰</Text>
+            <Text style={styles.backIcon}>←</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>IAMS Admin</Text>
           <View style={styles.headerRight}>
@@ -220,7 +241,7 @@ export default function AssignSupervisorsScreen({ navigation }) {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 120 }}
+        contentContainerStyle={{ paddingBottom: 110 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchData(); }} />}
       >
         {/* Step 1 */}
@@ -303,22 +324,6 @@ export default function AssignSupervisorsScreen({ navigation }) {
         </TouchableOpacity>
         <Text style={styles.assignNote}>An email notification will be sent to both parties.</Text>
       </View>
-
-      {/* Bottom Nav */}
-      <View style={styles.bottomNav}>
-        {[
-          { label: 'Home', icon: '🏠' },
-          { label: 'Users', icon: '👥', active: true },
-          { label: 'Orgs', icon: '🏢' },
-          { label: 'Profile', icon: '👤' },
-        ].map(tab => (
-          <TouchableOpacity key={tab.label} style={styles.navTab}>
-            <Text style={styles.navIcon}>{tab.icon}</Text>
-            <Text style={[styles.navLabel, tab.active && styles.navLabelActive]}>{tab.label}</Text>
-            {tab.active && <View style={styles.navDot} />}
-          </TouchableOpacity>
-        ))}
-      </View>
     </View>
   );
 }
@@ -339,7 +344,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     justifyContent: 'space-between', marginBottom: 16,
   },
-  hamburger: { fontSize: 20, color: '#1A3A33' },
+  backIcon: { fontSize: 22, color: '#1A3A33', fontWeight: '700' },
   headerTitle: { fontSize: 20, fontWeight: '800', color: '#1A3A33' },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   bellIcon: { fontSize: 20 },
@@ -449,7 +454,7 @@ const styles = StyleSheet.create({
 
   // Bottom
   bottomBar: {
-    position: 'absolute', bottom: 64,
+    position: 'absolute', bottom: 0,
     left: 0, right: 0,
     paddingHorizontal: 16, paddingVertical: 10,
     backgroundColor: '#F2F6F5',
@@ -463,23 +468,6 @@ const styles = StyleSheet.create({
   assignBtnDisabled: { backgroundColor: '#B0CECA' },
   assignBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
   assignNote: { textAlign: 'center', fontSize: 12, color: '#999', marginTop: 8 },
-
-  // Bottom Nav
-  bottomNav: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    flexDirection: 'row', backgroundColor: '#fff',
-    borderTopWidth: 1, borderTopColor: '#E8EFED',
-    paddingVertical: 8,
-  },
-  navTab: { flex: 1, alignItems: 'center', paddingVertical: 4, position: 'relative' },
-  navIcon: { fontSize: 20 },
-  navLabel: { fontSize: 10, color: '#AAA', fontWeight: '500', marginTop: 2 },
-  navLabelActive: { color: '#1A6B5A', fontWeight: '700' },
-  navDot: {
-    width: 4, height: 4, borderRadius: 2,
-    backgroundColor: '#1A6B5A',
-    position: 'absolute', bottom: 0,
-  },
 
   emptyCard: {
     backgroundColor: '#fff', padding: 30,
