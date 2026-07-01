@@ -1,6 +1,7 @@
 import { registerRootComponent } from 'expo';
 import React from 'react';
-import { View, Text, TouchableOpacity, SafeAreaView } from 'react-native';
+import { View, Text, TouchableOpacity } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import App from './App';
 
 // ── FIX #12: ErrorBoundary wrapping App ───────────────────────────

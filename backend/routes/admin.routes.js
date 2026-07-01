@@ -726,12 +726,117 @@ router.get('/supervisors', protect, authorize('admin'), async (req, res) => {
       });
     }
 
-    res.json(data.map(sv => ({
+    const supervisors = data.map(sv => ({
       ...sv,
       email:          emailMap[sv.user_id],
       assigned_count: countMap[sv.supervisor_id] || 0,
-    })));
+    }));
+
+    // Platform-wide totals for the ManageSupervisors dashboard cards.
+    const totalSupervisors = supervisors.length;
+    const activeLoads = Object.values(countMap).reduce((sum, n) => sum + n, 0);
+
+    const { data: activeAtts } = await supabase
+      .from('attachments')
+      .select('attachment_id')
+      .in('status', ['ongoing', 'approved'])
+      .not('supervisor_id', 'is', null);
+
+    // Pending reviews (platform-wide): logbook entries submitted under any
+    // active, supervised attachment that a supervisor hasn't reviewed yet
+    // (reviewed_at is only set on approve/reject/revision-request).
+    let pendingReviews = 0;
+    const activeAttIds = (activeAtts || []).map(a => a.attachment_id);
+    if (activeAttIds.length) {
+      const { count } = await supabase
+        .from('logbook_entries')
+        .select('entry_id', { count: 'exact', head: true })
+        .in('attachment_id', activeAttIds)
+        .is('reviewed_at', null);
+      pendingReviews = count || 0;
+    }
+
+    res.json({
+      supervisors,
+      totals: { totalSupervisors, activeLoads, pendingReviews },
+    });
   } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// ─── GET /api/admin/supervisors/:id ───────────────────────────────────────
+router.get('/supervisors/:id', protect, authorize('admin'), async (req, res) => {
+  try {
+    const { data: supervisor, error } = await supabase
+      .from('supervisors')
+      .select('supervisor_id, full_name, department, phone, user_id')
+      .eq('supervisor_id', req.params.id)
+      .single();
+    if (error || !supervisor) return res.status(404).json({ message: 'Supervisor not found' });
+
+    let email = null;
+    if (supervisor.user_id) {
+      const { data: user } = await supabase
+        .from('users').select('email').eq('user_id', supervisor.user_id).single();
+      email = user?.email || null;
+    }
+
+    const { data: attachments } = await supabase
+      .from('attachments')
+      .select('attachment_id, student_id, org_id, status')
+      .eq('supervisor_id', req.params.id)
+      .in('status', ['ongoing', 'approved']);
+
+    const activeAttachments = attachments || [];
+    const studentIds = activeAttachments.map(a => a.student_id).filter(Boolean);
+    const orgIds     = activeAttachments.map(a => a.org_id).filter(Boolean);
+    const attachmentIds = activeAttachments.map(a => a.attachment_id).filter(Boolean);
+
+    let studentMap = {}, orgMap = {};
+    if (studentIds.length) {
+      const { data: students } = await supabase
+        .from('students').select('student_id, full_name').in('student_id', studentIds);
+      (students || []).forEach(s => studentMap[s.student_id] = s.full_name);
+    }
+    if (orgIds.length) {
+      const { data: orgs } = await supabase
+        .from('host_organizations').select('org_id, org_name').in('org_id', orgIds);
+      (orgs || []).forEach(o => orgMap[o.org_id] = o.org_name);
+    }
+
+    const students = activeAttachments.map(a => ({
+      id:   a.student_id,
+      name: studentMap[a.student_id] || 'Unknown',
+      org:  orgMap[a.org_id] || 'Unassigned',
+    }));
+
+    // Pending reviews: logbook entries submitted by this supervisor's
+    // assigned students that haven't been reviewed yet (reviewed_at is only
+    // set when a supervisor approves/rejects/requests revision).
+    let pendingReviews = 0;
+    if (attachmentIds.length) {
+      const { count } = await supabase
+        .from('logbook_entries')
+        .select('entry_id', { count: 'exact', head: true })
+        .in('attachment_id', attachmentIds)
+        .is('reviewed_at', null);
+      pendingReviews = count || 0;
+    }
+
+    res.json({
+      supervisor_id:   supervisor.supervisor_id,
+      user_id:         supervisor.user_id,
+      name:            supervisor.full_name,
+      department:      supervisor.department,
+      phone:           supervisor.phone,
+      email,
+      active_students: activeAttachments.length,
+      pending_reviews: pendingReviews,
+      students,
+    });
+  } catch (err) {
+    console.error('GET /admin/supervisors/:id error:', err);
     res.status(500).json({ message: err.message });
   }
 });

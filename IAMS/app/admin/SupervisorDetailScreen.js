@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, Image, Dimensions,
+  ScrollView, Image, Dimensions, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import api from '../../api/axios';
 
 // ── Design Tokens (matches admin design system) ────────────────────────────
 const BG           = '#EEF2F0';
@@ -19,15 +20,6 @@ const SUCCESS      = '#10B981';
 const ICON_BG      = '#E0F5F1';
 
 const { width } = Dimensions.get('window');
-
-// TODO: backend doesn't expose assigned-student org/email/office fields yet.
-// Replace with a real fetch once GET /admin/supervisors/:id/students (and a
-// supervisor contact-info source) exist. Shape assumed below.
-const MOCK_STUDENTS = [
-  { id: 'STU-1', name: 'Alex Johnson',   org: 'TechCorp Solutions' },
-  { id: 'STU-2', name: 'Sarah Williams', org: 'FinStream Inc.'     },
-  { id: 'STU-3', name: 'David Chen',     org: 'Global Logistics'   },
-];
 
 function getInitials(name = '') {
   return name.split(' ').filter(Boolean).map(w => w[0]).join('').toUpperCase().slice(0, 2) || '??';
@@ -56,44 +48,77 @@ function StudentRow({ student, onPress }) {
 }
 
 export default function SupervisorDetailScreen({ navigation, route }) {
-  const supervisor = route?.params?.supervisor || {};
+  const paramSupervisor = route?.params?.supervisor || {};
+  const supervisorId = paramSupervisor.supervisor_id || paramSupervisor.id || route?.params?.supervisorId;
 
-  const name        = supervisor.name || supervisor.full_name || 'Unknown Supervisor';
-  const isActive    = supervisor.is_active !== false;
-  const avatarUrl   = supervisor.avatar_url || supervisor.photo_url || null;
+  const [detail, setDetail] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // TODO: backend doesn't expose honorific/credentials, faculty/institution,
-  // or contact-info fields yet — defaults shown to match the template.
-  const honorific   = supervisor.honorific || 'Dr.';
-  const profileName = `${honorific} ${name}`;
-  const faculty     = supervisor.faculty || supervisor.department || supervisor.dept || 'Faculty of Science';
-  const institution = supervisor.institution || 'University of Eastern Africa';
-  const email       = supervisor.email || 'r.smith@university.edu.ea';
-  const officeLocation = supervisor.office_location || 'Science Building, Room 402B';
+  const fetchDetail = useCallback(async () => {
+    if (!supervisorId) {
+      setError('No supervisor selected.');
+      setLoading(false);
+      return;
+    }
+    try {
+      setError(null);
+      const res = await api.get(`/admin/supervisors/${supervisorId}`);
+      setDetail(res.data);
+    } catch (err) {
+      console.error('Failed to fetch supervisor detail:', err);
+      setError('Failed to load supervisor details.');
+    } finally {
+      setLoading(false);
+    }
+  }, [supervisorId]);
 
-  // TODO: workload summary numbers are mocked until a backend endpoint
-  // (e.g. GET /admin/supervisors/:id/workload) exists.
-  const activeStudents = supervisor.active_students ?? supervisor.student_count ?? 24;
-  const pendingReviews = supervisor.pending_reviews ?? 8;
-  const reportsDue     = supervisor.reports_due ?? 3;
+  useEffect(() => {
+    fetchDetail();
+  }, [fetchDetail]);
 
-  const students = MOCK_STUDENTS;
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.safe, { justifyContent: 'center', alignItems: 'center' }]} edges={['top']}>
+        <ActivityIndicator color={TEAL} size="large" />
+      </SafeAreaView>
+    );
+  }
+
+  if (error || !detail) {
+    return (
+      <SafeAreaView style={[styles.safe, { justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 }]} edges={['top']}>
+        <Text style={{ fontSize: 15, color: GRAY, textAlign: 'center', marginBottom: 16 }}>
+          {error || 'Supervisor not found.'}
+        </Text>
+        <TouchableOpacity style={styles.secondaryBtn} onPress={fetchDetail}>
+          <Text style={styles.secondaryBtnText}>Try Again</Text>
+        </TouchableOpacity>
+      </SafeAreaView>
+    );
+  }
+
+  const name        = detail.name || 'Unknown Supervisor';
+  const department  = detail.department || 'Department not set';
+  const email       = detail.email || 'Not available';
+  const phone       = detail.phone || 'Not available';
+  const activeStudents = detail.active_students ?? 0;
+  const pendingReviews = detail.pending_reviews ?? 0;
+  const students        = detail.students || [];
 
   const handleAssignStudent = () => {
     navigation.navigate('AssignSupervisor', {
-      supervisorId: supervisor.user_id || supervisor.supervisor_id,
+      supervisorId: detail.supervisor_id,
       supervisorName: name,
     });
   };
 
   const handleViewReports = () => {
-    // TODO: route to the real reports screen once supervisor-scoped
-    // reports exist; currently falls back to the general Reports screen.
-    navigation.navigate('Reports', { supervisorId: supervisor.user_id || supervisor.supervisor_id });
+    navigation.navigate('Reports', { supervisorId: detail.supervisor_id });
   };
 
   const handleViewAllStudents = () => {
-    navigation.navigate('MyStudents', { supervisorId: supervisor.user_id || supervisor.supervisor_id });
+    navigation.navigate('MyStudents', { supervisorId: detail.supervisor_id });
   };
 
   return (
@@ -116,18 +141,14 @@ export default function SupervisorDetailScreen({ navigation, route }) {
         {/* ── Profile Card ── */}
         <View style={styles.profileCard}>
           <View style={styles.profileAvatarWrap}>
-            {avatarUrl ? (
-              <Image source={{ uri: avatarUrl }} style={styles.profileAvatar} />
-            ) : (
-              <View style={[styles.profileAvatar, styles.profileAvatarFallback]}>
-                <Text style={styles.profileAvatarText}>{getInitials(name)}</Text>
-              </View>
-            )}
-            <View style={[styles.statusDot, { backgroundColor: isActive ? SUCCESS : GRAY }]} />
+            <View style={[styles.profileAvatar, styles.profileAvatarFallback]}>
+              <Text style={styles.profileAvatarText}>{getInitials(name)}</Text>
+            </View>
+            <View style={[styles.statusDot, { backgroundColor: SUCCESS }]} />
           </View>
-          <Text style={styles.profileName}>{profileName}</Text>
-          <Text style={styles.profileFaculty}>{faculty}</Text>
-          <Text style={styles.profileInstitution}>{institution}</Text>
+          <Text style={styles.profileName}>{name}</Text>
+          <Text style={styles.profileFaculty}>{department}</Text>
+          <Text style={styles.profileInstitution}>University of Eastern Africa, Baraton</Text>
         </View>
 
         {/* ── Workload Summary ── */}
@@ -143,10 +164,6 @@ export default function SupervisorDetailScreen({ navigation, route }) {
               {String(pendingReviews).padStart(2, '0')}
             </Text>
             <Text style={styles.workloadLabel}>PENDING REVIEWS</Text>
-            <Text style={[styles.workloadValue, styles.workloadValueSmall]}>
-              {String(reportsDue).padStart(2, '0')}
-            </Text>
-            <Text style={styles.workloadLabel}>REPORTS DUE</Text>
           </View>
         </View>
 
@@ -158,13 +175,19 @@ export default function SupervisorDetailScreen({ navigation, route }) {
           </TouchableOpacity>
         </View>
 
-        {students.map((s) => (
-          <StudentRow
-            key={s.id}
-            student={s}
-            onPress={() => navigation.navigate('StudentDetail', { studentId: s.id })}
-          />
-        ))}
+        {students.length === 0 ? (
+          <Text style={{ fontSize: 13, color: GRAY, marginBottom: 16 }}>
+            No students currently assigned.
+          </Text>
+        ) : (
+          students.map((s) => (
+            <StudentRow
+              key={s.id}
+              student={s}
+              onPress={() => navigation.navigate('StudentDetail', { studentId: s.id })}
+            />
+          ))
+        )}
 
         {/* ── Contact Information ── */}
         <Text style={styles.sectionTitle}>Contact Information</Text>
@@ -174,18 +197,18 @@ export default function SupervisorDetailScreen({ navigation, route }) {
               <Ionicons name="mail-outline" size={18} color={TEAL} />
             </View>
             <View>
-              <Text style={styles.contactLabel}>INSTITUTIONAL EMAIL</Text>
+              <Text style={styles.contactLabel}>EMAIL</Text>
               <Text style={styles.contactValue}>{email}</Text>
             </View>
           </View>
           <View style={styles.contactDivider} />
           <View style={styles.contactRow}>
             <View style={styles.contactIconCircle}>
-              <Ionicons name="location-outline" size={18} color={TEAL} />
+              <Ionicons name="call-outline" size={18} color={TEAL} />
             </View>
             <View>
-              <Text style={styles.contactLabel}>OFFICE LOCATION</Text>
-              <Text style={styles.contactValue}>{officeLocation}</Text>
+              <Text style={styles.contactLabel}>PHONE</Text>
+              <Text style={styles.contactValue}>{phone}</Text>
             </View>
           </View>
         </View>
@@ -270,7 +293,6 @@ const styles = StyleSheet.create({
   workloadCol: { flex: 1, alignItems: 'center' },
   workloadDivider: { width: 1, backgroundColor: BORDER, marginHorizontal: 8 },
   workloadValue: { fontSize: 26, fontWeight: '800', color: DARK },
-  workloadValueSmall: { fontSize: 22, marginTop: 10 },
   workloadLabel: { fontSize: 10, fontWeight: '700', color: GRAY, letterSpacing: 0.4, marginTop: 2 },
 
   // Student rows

@@ -28,20 +28,11 @@ const T = {
   trackBg: '#E5E9E6',
 };
 
-// TODO: backend endpoint for supervisor list with workload/student-count stats
-// does not exist yet. This screen uses GET /admin/supervisors for the base list
-// (same source as SupervisorsScreen.js) and falls back to MOCK workload data
-// (activeLoad %, pendingReviews, studentCount/capacity) until a dedicated
-// /admin/supervisors/workload-summary route is built.
-const MOCK_STATS = {
-  totalSupervisors: 18,
-  activeLoads: 12,
-  activeLoadsTrend: '+8%',
-  pendingReviews: 45,
-  pendingReviewsLevel: 'High',
-};
-
-const MOCK_WORKLOAD_BY_ID = {};
+// Fixed nominal capacity per supervisor for the workload bar. There's no
+// per-supervisor capacity field in the schema, so this is a shared constant
+// rather than per-supervisor data. Adjust here if a real capacity column
+// gets added later.
+const NOMINAL_CAPACITY = 10;
 
 function getInitials(name = '') {
   return name
@@ -68,35 +59,41 @@ function WorkloadBar({ filled, total, statusColor }) {
 
 export default function ManageSupervisorScreen({ navigation }) {
   const [supervisors, setSupervisors] = useState([]);
+  const [totals, setTotals] = useState({ totalSupervisors: 0, activeLoads: 0, pendingReviews: 0 });
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchSupervisors = useCallback(async () => {
     try {
-      // Reuses the same endpoint as SupervisorsScreen.js
       const res = await api.get('/admin/supervisors');
       const raw = Array.isArray(res.data) ? res.data : res.data?.supervisors || [];
+      const responseTotals = res.data?.totals;
 
-      const normalized = raw.map((s, idx) => {
-        // Normalize API shape (full_name/supervisor_id) -> screen shape (name/id)
+      const normalized = raw.map((s) => {
         const id = s.supervisor_id || s.user_id || s.id;
-        const mock = MOCK_WORKLOAD_BY_ID[id] || {
-          studentCount: (idx * 3) % 10,
-          capacity: 10,
-        };
         return {
           id,
           name: s.full_name || s.name || 'Unknown',
-          department: s.department || s.dept || 'N/A',
+          department: s.department || 'N/A',
           avatarUrl: s.avatar_url || s.photo_url || null,
-          studentCount: mock.studentCount,
-          capacity: mock.capacity,
+          studentCount: s.assigned_count ?? 0,
+          capacity: NOMINAL_CAPACITY,
           raw: s,
         };
       });
 
       setSupervisors(normalized);
+      if (responseTotals) {
+        setTotals(responseTotals);
+      } else {
+        // Fallback if backend hasn't been updated to return totals yet.
+        setTotals({
+          totalSupervisors: normalized.length,
+          activeLoads: normalized.reduce((sum, s) => sum + s.studentCount, 0),
+          pendingReviews: 0,
+        });
+      }
     } catch (err) {
       console.error('Failed to fetch supervisors:', err);
     } finally {
@@ -158,7 +155,7 @@ export default function ManageSupervisorScreen({ navigation }) {
         <View style={styles.statCardLarge}>
           <View style={{ flex: 1 }}>
             <Text style={styles.statLabel}>TOTAL SUPERVISORS</Text>
-            <Text style={styles.statValueLarge}>{supervisors.length || MOCK_STATS.totalSupervisors}</Text>
+            <Text style={styles.statValueLarge}>{totals.totalSupervisors}</Text>
           </View>
           <View style={styles.statIconCircle}>
             <Ionicons name="people" size={26} color={T.teal} />
@@ -170,19 +167,16 @@ export default function ManageSupervisorScreen({ navigation }) {
           <View style={[styles.statCardSmall, { marginRight: 12 }]}>
             <Text style={styles.statLabel}>ACTIVE LOADS</Text>
             <View style={styles.statSmallRow}>
-              <Text style={styles.statValueSmall}>{MOCK_STATS.activeLoads}</Text>
-              <Text style={styles.statTrendUp}>
-                {'  '}
-                <MaterialCommunityIcons name="trending-up" size={14} color={T.teal} />
-                {' ' + MOCK_STATS.activeLoadsTrend}
-              </Text>
+              <Text style={styles.statValueSmall}>{totals.activeLoads}</Text>
             </View>
           </View>
           <View style={styles.statCardSmall}>
             <Text style={styles.statLabel}>PENDING REVIEWS</Text>
             <View style={styles.statSmallRow}>
-              <Text style={styles.statValueSmall}>{MOCK_STATS.pendingReviews}</Text>
-              <Text style={styles.statTagHigh}>{'  ' + MOCK_STATS.pendingReviewsLevel}</Text>
+              <Text style={styles.statValueSmall}>{totals.pendingReviews}</Text>
+              {totals.pendingReviews > 20 && (
+                <Text style={styles.statTagHigh}>{'  High'}</Text>
+              )}
             </View>
           </View>
         </View>
@@ -273,7 +267,6 @@ export default function ManageSupervisorScreen({ navigation }) {
       <TouchableOpacity
         style={styles.fab}
         onPress={() =>
-          // Reuses existing 2-step registration flow, preset to supervisor role
           navigation.navigate('AddUser', { presetRole: 'supervisor' })
         }
       >
@@ -326,7 +319,6 @@ const styles = StyleSheet.create({
   },
   statSmallRow: { flexDirection: 'row', alignItems: 'baseline', marginTop: 6, flexWrap: 'wrap' },
   statValueSmall: { color: T.navy, fontSize: 24, fontWeight: '800' },
-  statTrendUp: { color: T.teal, fontSize: 12, fontWeight: '600' },
   statTagHigh: { color: T.danger, fontSize: 12, fontWeight: '700' },
 
   searchRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 18 },
