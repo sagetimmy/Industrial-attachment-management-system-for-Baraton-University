@@ -260,14 +260,36 @@ router.get('/my-attachment', protect, async (req, res) => {
       console.error('Organization query error:', orgError);
     }
 
+    // ── Supervisor lookup ────────────────────────────────────────────────
+    // Previously this was hardcoded to null — the assignment (via
+    // PUT /admin/assign-supervisor) writes attachment.supervisor_id, but
+    // this route never looked it up against the supervisors table.
+    let supervisor_name = null;
+    let supervisor_phone = null;
+
+    if (attachment.supervisor_id) {
+      const { data: supervisorData, error: supervisorError } = await supabase
+        .from('supervisors')
+        .select('full_name, phone')
+        .eq('supervisor_id', attachment.supervisor_id)
+        .maybeSingle();
+
+      if (supervisorError) {
+        console.error('Supervisor query error:', supervisorError);
+      } else if (supervisorData) {
+        supervisor_name = supervisorData.full_name || null;
+        supervisor_phone = supervisorData.phone || null;
+      }
+    }
+
     const result = {
       ...attachment,
       org_name:        orgData?.org_name        || null,
       location:        orgData?.location        || null,
       contact_person:  orgData?.contact_person  || null,
       org_phone:       orgData?.phone           || null,
-      supervisor_name:  null,
-      supervisor_phone: null,
+      supervisor_name,
+      supervisor_phone,
     };
 
     console.log('✅ Attachment found:', attachment.attachment_id);

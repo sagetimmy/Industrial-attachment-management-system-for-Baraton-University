@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, Alert, StatusBar, RefreshControl, ActivityIndicator,
+  ScrollView, Alert, StatusBar, RefreshControl, ActivityIndicator, Image,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
@@ -20,7 +20,7 @@ const CORAL      = '#D85A30';
 const AMBER_DARK = '#92400E';
 
 // ─── Session Banner ───────────────────────────────────────────────────────────
-function SessionBanner({ session, sessionActive, sessionLoading }) {
+function SessionBanner({ session, sessionActive, sessionLoading, onDetails }) {
   if (sessionLoading) {
     return (
       <View style={[sb.banner, sb.loadingBanner]}>
@@ -41,7 +41,9 @@ function SessionBanner({ session, sessionActive, sessionLoading }) {
           <Text style={sb.activeTitle}>{session.name}</Text>
           <Text style={sb.activeSub}>Open until {endDate}</Text>
         </View>
-        <View style={sb.activeDot} />
+        <TouchableOpacity onPress={onDetails} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Text style={sb.detailsLink}>DETAILS</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -73,7 +75,7 @@ const sb = StyleSheet.create({
   inactiveTitle:  { fontSize: 13, fontWeight: '700', color: AMBER },
   inactiveSub:    { fontSize: 12, color: AMBER_DARK, marginTop: 1 },
   loadingText:    { fontSize: 13, color: '#6B7280' },
-  activeDot:      { width: 8, height: 8, borderRadius: 4, backgroundColor: TEAL },
+  detailsLink:    { fontSize: 11, fontWeight: '700', color: TEAL, letterSpacing: 0.4 },
 });
 
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
@@ -164,23 +166,32 @@ export default function StudentDashboard({ navigation }) {
     .sort((a, b) => new Date(b.submitted_at ?? b.created_at) - new Date(a.submitted_at ?? a.created_at))
     .slice(0, 3);
 
-  // ── Menu items — Apply gated when no active session ────────────────────────
+  // ── Quick action tiles ──────────────────────────────────────────────────────
   const menuItems = [
     {
-      title:   sessionActive ? 'Apply for Placement' : 'Applications Closed',
-      icon:    '📋',
-      screen:  sessionActive ? 'Apply' : null,
-      color:   sessionActive ? '#1E3A5F' : '#9CA3AF',
-      locked:  !sessionActive,
+      title:    sessionActive ? 'Apply Now' : 'Applications Closed',
+      subtitle: sessionActive ? 'Find new opportunities' : 'Closed for this session',
+      icon:     'business-outline',
+      screen:   sessionActive ? 'Apply' : null,
+      color:    sessionActive ? '#1E3A5F' : '#9CA3AF',
+      circleBg: sessionActive ? 'rgba(30,58,95,0.1)' : 'rgba(156,163,175,0.15)',
+      locked:   !sessionActive,
     },
-    { title: 'My Logbook',        icon: '📖', screen: 'Logbook',        color: '#C87941' },
-    { title: 'My Profile',        icon: '👤', screen: 'Profile',        color: '#2E7D32' },
-    { title: 'Feedback & Grades', icon: '⭐', screen: 'Feedback',       color: '#2E7D32' },
     {
-      title: 'Notifications', icon: '🔔', screen: 'Notifications', color: '#6A1B9A',
-      badge: unreadCount,
+      title: 'My Logbook', subtitle: 'Update weekly logs',
+      icon: 'book-outline', screen: 'Logbook',
+      color: '#C87941', circleBg: 'rgba(200,121,65,0.12)',
     },
-    { title: 'Settings', icon: '⚙️', screen: 'StudentSettings', color: TEAL },
+    {
+      title: 'Grades', subtitle: 'View performance',
+      icon: 'star-outline', screen: 'Feedback',
+      color: '#2E7D32', circleBg: 'rgba(46,125,50,0.12)',
+    },
+    {
+      title: 'Settings', subtitle: 'Account & preferences',
+      icon: 'settings-outline', screen: 'StudentSettings',
+      color: TEAL, circleBg: TEAL_LIGHT,
+    },
   ];
 
   const statusColor = (status) => {
@@ -221,6 +232,7 @@ export default function StudentDashboard({ navigation }) {
   };
 
   const firstName = (user?.full_name ?? '').trim().split(/\s+/)[0] || 'Student';
+  const program = user?.program ?? user?.course ?? '';
 
   if (loading) {
     return (
@@ -249,20 +261,21 @@ export default function StudentDashboard({ navigation }) {
                 {(user?.full_name ?? 'S')[0].toUpperCase()}
               </Text>
             </View>
-            <Text style={[s.greetingText, { color: theme.text }]}>
-              {getGreeting()}, {firstName} 👋
-            </Text>
+            <View>
+              <Text style={[s.greetingText, { color: theme.text }]}>
+                {getGreeting()}, {firstName} 👋
+              </Text>
+              {!!program && (
+                <Text style={[s.programText, { color: theme.textSecondary }]}>{program}</Text>
+              )}
+            </View>
           </View>
           <TouchableOpacity
             style={[s.notifBtn, { backgroundColor: theme.background }]}
             onPress={() => navigation.navigate('Notifications')}
           >
-            <Text style={s.notifIcon}>🔔</Text>
-            {unreadCount > 0 && (
-              <View style={s.notifBadge}>
-                <Text style={s.notifBadgeText}>{unreadCount}</Text>
-              </View>
-            )}
+            <Ionicons name="notifications-outline" size={20} color={theme.text} />
+            {unreadCount > 0 && <View style={s.notifDot} />}
           </TouchableOpacity>
         </View>
 
@@ -271,6 +284,7 @@ export default function StudentDashboard({ navigation }) {
           session={session}
           sessionActive={sessionActive}
           sessionLoading={sessionLoading}
+          onDetails={() => navigation.navigate('SessionDetails')}
         />
 
         {/* ── Announcement banner ────────────────────────────────────────── */}
@@ -281,18 +295,30 @@ export default function StudentDashboard({ navigation }) {
           <View style={s.heroCard}>
             <View style={s.heroTop}>
               <View style={{ flex: 1, marginRight: 10 }}>
+                <View style={[s.statusPill, { backgroundColor: statusColor(attachment.status).bg }]}>
+                  <Text style={[s.statusPillText, { color: statusColor(attachment.status).text }]}>
+                    {attachment.status?.toUpperCase()}
+                  </Text>
+                </View>
                 <Text style={s.heroCompany}>{attachment.org_name ?? 'Organization'}</Text>
-                <Text style={s.heroRole}>
-                  {attachment.supervisor_name
-                    ? `Supervisor: ${attachment.supervisor_name}`
-                    : 'No supervisor assigned'}
-                </Text>
+                <Text style={s.heroRole}>{attachment.department ?? attachment.org_dept ?? ' '}</Text>
               </View>
-              <View style={[s.statusPill, { backgroundColor: statusColor(attachment.status).bg }]}>
-                <Text style={[s.statusPillText, { color: statusColor(attachment.status).text }]}>
-                  {attachment.status?.toUpperCase()}
-                </Text>
+              <View style={s.heroBadge}>
+                {attachment.org_logo_url ? (
+                  <Image source={{ uri: attachment.org_logo_url }} style={s.heroBadgeImg} />
+                ) : (
+                  <MaterialCommunityIcons name="card-account-details-outline" size={22} color={TEAL} />
+                )}
               </View>
+            </View>
+
+            <View style={s.supervisorRow}>
+              <Ionicons name="person-outline" size={14} color={TEAL_MID} />
+              <Text style={s.supervisorText}>
+                {attachment.supervisor_name
+                  ? `Supervisor: ${attachment.supervisor_name}`
+                  : 'No supervisor assigned'}
+              </Text>
             </View>
 
             {isOngoing && daysLeft !== null && (
@@ -321,8 +347,8 @@ export default function StudentDashboard({ navigation }) {
                     : 'Attachment period submitted'}
                 </Text>
               </View>
-              <View style={[s.statusPill, { backgroundColor: applicationMeta(latestApplication.status).bg }]}>
-                <Text style={[s.statusPillText, { color: applicationMeta(latestApplication.status).text }]}>
+              <View style={[s.appStatusPill, { backgroundColor: applicationMeta(latestApplication.status).bg }]}>
+                <Text style={[s.appStatusPillText, { color: applicationMeta(latestApplication.status).text }]}>
                   {applicationMeta(latestApplication.status).label}
                 </Text>
               </View>
@@ -335,19 +361,14 @@ export default function StudentDashboard({ navigation }) {
             )}
           </View>
         ) : sessionActive ? (
-          /* Session is open but no attachment yet — show apply prompt */
           <View style={s.noAttachCard}>
             <Text style={s.noAttachTitle}>No Active Attachment</Text>
             <Text style={s.noAttachSub}>Apply for placement to get started</Text>
-            <TouchableOpacity
-              style={s.applyBtn}
-              onPress={() => navigation.navigate('Apply')}
-            >
+            <TouchableOpacity style={s.applyBtn} onPress={() => navigation.navigate('Apply')}>
               <Text style={s.applyBtnText}>Apply Now →</Text>
             </TouchableOpacity>
           </View>
         ) : (
-          /* No session open — show closed notice */
           <View style={[s.noAttachCard, { borderColor: '#FDE68A', backgroundColor: AMBER_LIGHT }]}>
             <MaterialCommunityIcons name="lock-outline" size={28} color={AMBER} />
             <Text style={s.noAttachTitle}>Applications Closed</Text>
@@ -358,18 +379,18 @@ export default function StudentDashboard({ navigation }) {
         )}
 
         {/* ── Stats row ─────────────────────────────────────────────────── */}
-        <View style={[s.statsRow, { backgroundColor: theme.background }]}>
-          <View style={s.statCell}>
-            <Text style={[s.statLabel, { color: theme.textSecondary }]}>DAYS LEFT</Text>
+        <View style={s.statsRow}>
+          <View style={[s.statCard, { backgroundColor: theme.background }]}>
             <Text style={[s.statVal, { color: theme.text }]}>{daysLeft ?? '—'}</Text>
+            <Text style={[s.statLabel, { color: theme.textSecondary }]}>DAYS LEFT</Text>
           </View>
-          <View style={[s.statCell, s.statBorder]}>
-            <Text style={[s.statLabel, { color: theme.textSecondary }]}>LOGBOOK</Text>
+          <View style={[s.statCard, { backgroundColor: theme.background }]}>
             <Text style={[s.statVal, { color: TEAL }]}>{logbookCount}</Text>
+            <Text style={[s.statLabel, { color: theme.textSecondary }]}>LOGBOOK</Text>
           </View>
-          <View style={[s.statCell, s.statBorder]}>
-            <Text style={[s.statLabel, { color: theme.textSecondary }]}>PROGRESS</Text>
+          <View style={[s.statCard, { backgroundColor: theme.background }]}>
             <Text style={[s.statVal, { color: TEAL }]}>{progressPct}%</Text>
+            <Text style={[s.statLabel, { color: theme.textSecondary }]}>PROGRESS</Text>
           </View>
         </View>
 
@@ -383,27 +404,23 @@ export default function StudentDashboard({ navigation }) {
           {menuItems.map((item) => (
             <TouchableOpacity
               key={item.screen ?? item.title}
-              style={[
-                s.card,
-                { backgroundColor: theme.background, borderLeftColor: item.color },
-                item.locked && s.cardLocked,
-              ]}
+              style={[s.card, { backgroundColor: theme.background }, item.locked && s.cardLocked]}
               onPress={() => item.screen && navigation.navigate(item.screen)}
               activeOpacity={item.locked ? 1 : 0.7}
               disabled={item.locked}
             >
-              <Text style={[s.cardIcon, item.locked && { opacity: 0.4 }]}>{item.icon}</Text>
+              <View style={[s.cardIconCircle, { backgroundColor: item.circleBg }]}>
+                <Ionicons name={item.icon} size={22} color={item.color} />
+              </View>
               <Text style={[s.cardTitle, { color: item.locked ? '#9CA3AF' : theme.text }]}>
                 {item.title}
+              </Text>
+              <Text style={[s.cardSubtitle, { color: theme.textSecondary }]} numberOfLines={1}>
+                {item.subtitle}
               </Text>
               {item.locked && (
                 <View style={s.lockIcon}>
                   <Ionicons name="lock-closed" size={12} color="#9CA3AF" />
-                </View>
-              )}
-              {item.badge > 0 && (
-                <View style={s.badge}>
-                  <Text style={s.badgeText}>{item.badge}</Text>
                 </View>
               )}
             </TouchableOpacity>
@@ -411,9 +428,16 @@ export default function StudentDashboard({ navigation }) {
         </View>
 
         {/* ── Recent Activity ───────────────────────────────────────────── */}
-        <View style={[s.sectionHead, { marginTop: 20 }]}>
-          <View style={s.dot} />
-          <Text style={[s.sectionTitle, { color: theme.text }]}>Recent Activity</Text>
+        <View style={[s.sectionHead, { marginTop: 20, justifyContent: 'space-between' }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <View style={s.dot} />
+            <Text style={[s.sectionTitle, { color: theme.text }]}>Recent Activity</Text>
+          </View>
+          {recentActivity.length > 0 && (
+            <TouchableOpacity onPress={() => navigation.navigate('Logbook')}>
+              <Text style={s.seeAll}>See All</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {recentActivity.length === 0 ? (
@@ -432,34 +456,22 @@ export default function StudentDashboard({ navigation }) {
                 activeOpacity={0.7}
               >
                 <View style={[s.actIconWrap, { backgroundColor: TEAL_LIGHT }]}>
-                  <Text style={s.actIconEmoji}>📖</Text>
+                  <Ionicons name="document-text-outline" size={18} color={TEAL} />
                 </View>
                 <View style={s.actBody}>
                   <Text style={[s.actTitle, { color: theme.text }]}>
-                    Week {entry.week_number} Logbook
+                    Week {entry.week_number} Logbook Entry
                   </Text>
                   <Text style={[s.actSub, { color: theme.textSecondary }]} numberOfLines={1}>
                     {entry.description}
                   </Text>
                 </View>
-                <View style={s.actRight}>
-                  <Text style={[s.actTime, { color: theme.textSecondary }]}>
-                    {timeAgo(entry.submitted_at ?? entry.created_at)}
-                  </Text>
-                  <View style={[
-                    s.actStatusDot,
-                    { backgroundColor: statusColor(entry.status ?? 'pending').text }
-                  ]} />
-                </View>
+                <Text style={[s.actTime, { color: theme.textSecondary }]}>
+                  {timeAgo(entry.submitted_at ?? entry.created_at)}
+                </Text>
               </TouchableOpacity>
             ))}
           </View>
-        )}
-
-        {recentActivity.length > 0 && (
-          <TouchableOpacity onPress={() => navigation.navigate('Logbook')}>
-            <Text style={[s.viewAll, { color: TEAL }]}>View All Activity</Text>
-          </TouchableOpacity>
         )}
 
         {/* ── Info card ─────────────────────────────────────────────────── */}
@@ -476,16 +488,20 @@ export default function StudentDashboard({ navigation }) {
       {/* ── Bottom nav ────────────────────────────────────────────────────── */}
       <View style={[s.bottomNav, { backgroundColor: theme.background, borderTopColor: theme.border ?? 'rgba(0,0,0,0.08)' }]}>
         {[
-          { label: 'HOME',    icon: '🏠', screen: null },
-          { label: 'LOGBOOK', icon: '📖', screen: 'Logbook' },
-          { label: 'PROFILE', icon: '👤', screen: 'Profile' },
+          { label: 'HOME',    icon: 'home-outline',           activeIcon: 'home',            screen: null },
+          { label: 'LOGBOOK', icon: 'book-outline',           activeIcon: 'book',            screen: 'Logbook' },
+          { label: 'PROFILE', icon: 'person-circle-outline',  activeIcon: 'person-circle',   screen: 'Profile' },
         ].map((tab) => (
           <TouchableOpacity
             key={tab.label}
             style={s.navTab}
             onPress={() => tab.screen && navigation.navigate(tab.screen)}
           >
-            <Text style={s.navIcon}>{tab.icon}</Text>
+            <Ionicons
+              name={!tab.screen ? tab.activeIcon : tab.icon}
+              size={22}
+              color={!tab.screen ? TEAL : theme.textSecondary}
+            />
             <Text style={[s.navLabel, !tab.screen && { color: TEAL, fontWeight: '600' }]}>
               {tab.label}
             </Text>
@@ -516,19 +532,17 @@ const s = StyleSheet.create({
   },
   avatarText:   { color: '#fff', fontSize: 18, fontWeight: '600' },
   greetingText: { fontSize: 15, fontWeight: '500' },
+  programText:  { fontSize: 12, marginTop: 2 },
   notifBtn: {
     width: 38, height: 38, borderRadius: 19,
     alignItems: 'center', justifyContent: 'center',
     borderWidth: 0.5, borderColor: 'rgba(0,0,0,0.1)',
   },
-  notifIcon: { fontSize: 18 },
-  notifBadge: {
-    position: 'absolute', top: 2, right: 2,
-    width: 16, height: 16, borderRadius: 8,
+  notifDot: {
+    position: 'absolute', top: 6, right: 6,
+    width: 9, height: 9, borderRadius: 4.5,
     backgroundColor: CORAL,
-    alignItems: 'center', justifyContent: 'center',
   },
-  notifBadgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
 
   // hero
   heroCard: {
@@ -544,12 +558,20 @@ const s = StyleSheet.create({
   },
   heroTop: {
     flexDirection: 'row', justifyContent: 'space-between',
-    alignItems: 'flex-start', marginBottom: 20,
+    alignItems: 'flex-start', marginBottom: 14,
   },
-  heroCompany: { color: '#fff', fontSize: 17, fontWeight: '600' },
-  heroRole:    { color: TEAL_MID, fontSize: 13, marginTop: 3 },
-  statusPill:  { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
+  heroBadge: {
+    width: 44, height: 44, borderRadius: 12,
+    backgroundColor: '#fff',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  heroBadgeImg: { width: 44, height: 44, borderRadius: 12 },
+  statusPill:  { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, marginBottom: 10 },
   statusPillText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.3 },
+  heroCompany: { color: '#fff', fontSize: 20, fontWeight: '600' },
+  heroRole:    { color: TEAL_MID, fontSize: 13, marginTop: 3 },
+  supervisorRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 18 },
+  supervisorText: { color: TEAL_MID, fontSize: 12 },
   progressLabelRow: {
     flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8,
   },
@@ -563,6 +585,8 @@ const s = StyleSheet.create({
   },
   responseLabel: { fontSize: 12, fontWeight: '700', color: '#5A6B7A', marginBottom: 4 },
   responseText:  { fontSize: 13, color: '#2B3B49', lineHeight: 18 },
+  appStatusPill: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
+  appStatusPillText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.3 },
 
   noAttachCard: {
     margin: 16, marginTop: 4,
@@ -580,15 +604,11 @@ const s = StyleSheet.create({
   applyBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
 
   // stats
-  statsRow: {
-    flexDirection: 'row',
-    marginHorizontal: 16, marginBottom: 20,
-    borderRadius: 14,
+  statsRow: { flexDirection: 'row', gap: 10, marginHorizontal: 16, marginBottom: 20 },
+  statCard: {
+    flex: 1, borderRadius: 14, paddingVertical: 14, alignItems: 'center',
     borderWidth: 0.5, borderColor: 'rgba(0,0,0,0.08)',
-    overflow: 'hidden',
   },
-  statCell:   { flex: 1, paddingVertical: 14, alignItems: 'center' },
-  statBorder: { borderLeftWidth: 0.5, borderLeftColor: 'rgba(0,0,0,0.08)' },
   statLabel:  { fontSize: 10, letterSpacing: 0.5, marginBottom: 4 },
   statVal:    { fontSize: 24, fontWeight: '500' },
 
@@ -599,28 +619,22 @@ const s = StyleSheet.create({
   },
   dot:          { width: 8, height: 8, borderRadius: 4, backgroundColor: CORAL },
   sectionTitle: { fontSize: 15, fontWeight: '600' },
+  seeAll:       { fontSize: 13, fontWeight: '600', color: TEAL },
 
   // grid
   grid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 10 },
   card: {
     width: '46%', margin: '2%',
-    padding: 20, borderRadius: 16,
-    borderLeftWidth: 4, elevation: 2,
-    alignItems: 'center',
+    padding: 16, borderRadius: 16, elevation: 2,
   },
   cardLocked: { opacity: 0.6 },
-  cardIcon:   { fontSize: 32, marginBottom: 10 },
-  cardTitle:  { fontSize: 13, fontWeight: '600', textAlign: 'center' },
-  lockIcon: {
-    position: 'absolute', top: 8, right: 8,
+  cardIconCircle: {
+    width: 42, height: 42, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 10,
   },
-  badge: {
-    position: 'absolute', top: -5, right: -5,
-    backgroundColor: '#C62828',
-    width: 20, height: 20, borderRadius: 10,
-    justifyContent: 'center', alignItems: 'center',
-  },
-  badgeText: { color: '#fff', fontSize: 11, fontWeight: 'bold' },
+  cardTitle:    { fontSize: 13, fontWeight: '600' },
+  cardSubtitle: { fontSize: 11, marginTop: 2 },
+  lockIcon:     { position: 'absolute', top: 8, right: 8 },
 
   // activity
   emptyActivity: {
@@ -637,22 +651,12 @@ const s = StyleSheet.create({
     width: 40, height: 40, borderRadius: 10,
     alignItems: 'center', justifyContent: 'center',
   },
-  actIconEmoji: { fontSize: 20 },
-  actBody:      { flex: 1 },
-  actTitle:     { fontSize: 13, fontWeight: '600' },
-  actSub:       { fontSize: 12, marginTop: 2 },
-  actRight:     { alignItems: 'flex-end', gap: 4 },
-  actTime:      { fontSize: 11 },
-  actStatusDot: { width: 6, height: 6, borderRadius: 3 },
+  actBody:  { flex: 1 },
+  actTitle: { fontSize: 13, fontWeight: '600' },
+  actSub:   { fontSize: 12, marginTop: 2 },
+  actTime:  { fontSize: 11 },
 
-  viewAll: {
-    textAlign: 'center', paddingVertical: 16,
-    fontSize: 13, fontWeight: '600',
-  },
-
-  infoCard: {
-    margin: 16, padding: 20, borderRadius: 16, marginBottom: 20,
-  },
+  infoCard: { margin: 16, padding: 20, borderRadius: 16, marginBottom: 20 },
   infoTitle: { fontWeight: '700', fontSize: 15, marginBottom: 8 },
   infoText:  { fontSize: 13, lineHeight: 20 },
 
@@ -661,7 +665,6 @@ const s = StyleSheet.create({
     paddingTop: 10, paddingBottom: 24,
   },
   navTab:       { flex: 1, alignItems: 'center', gap: 3 },
-  navIcon:      { fontSize: 22 },
   navLabel:     { fontSize: 10, color: '#888', letterSpacing: 0.3 },
   navActiveDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: TEAL },
 });
