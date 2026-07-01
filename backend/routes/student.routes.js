@@ -7,12 +7,12 @@ const { notify } = require('../config/notify');
 const multer = require('multer');
 const path = require('path');
 
-// ─── File Upload Setup (local for now) ───────────────────────────────────────
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, path.join(__dirname, '..', 'uploads')),
-  filename: (req, file, cb) =>
-    cb(null, `doc-${Date.now()}${path.extname(file.originalname)}`),
-});
+// ─── File Upload Setup (Supabase Storage, in-memory buffer) ──────────────────
+// Switched from multer.diskStorage to memoryStorage because Railway's
+// filesystem is ephemeral — anything written to local disk is wiped on
+// every redeploy/restart. Files are uploaded to Supabase Storage instead,
+// same pattern as the profile-photos bucket.
+const storage = multer.memoryStorage();
 const upload = multer({
   storage,
   limits: { fileSize: 5 * 1024 * 1024 },
@@ -23,6 +23,8 @@ const upload = multer({
     else cb(new Error('Only PDF, DOC, DOCX, JPG, PNG files are allowed'));
   },
 });
+
+const LOGBOOK_BUCKET = 'logbook-documents'; // TODO: confirm this bucket exists in Supabase Storage
 
 const normalizeDate = (value) => (value ? String(value).slice(0, 10) : '');
 
@@ -261,9 +263,6 @@ router.get('/my-attachment', protect, async (req, res) => {
     }
 
     // ── Supervisor lookup ────────────────────────────────────────────────
-    // Previously this was hardcoded to null — the assignment (via
-    // PUT /admin/assign-supervisor) writes attachment.supervisor_id, but
-    // this route never looked it up against the supervisors table.
     let supervisor_name = null;
     let supervisor_phone = null;
 
@@ -365,7 +364,27 @@ router.post('/logbook', protect, requireRolePermission('editLogbooks'), upload.s
       return res.status(400).json({ message: 'A document file is required for logbook submission' });
     }
 
-    const document_url = `/uploads/${req.file.filename}`;
+    // ── Upload to Supabase Storage ─────────────────────────────────────────
+    const ext = path.extname(req.file.originalname).toLowerCase();
+    const storagePath = `${attachment.attachment_id}/week-${week_number}-${Date.now()}${ext}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from(LOGBOOK_BUCKET)
+      .upload(storagePath, req.file.buffer, {
+        contentType: req.file.mimetype,
+        upsert: false,
+      });
+
+    if (uploadError) {
+      console.error(`[logbook:${requestId}] storage upload error`, uploadError);
+      return res.status(500).json({ message: 'Failed to upload document. Please try again.' });
+    }
+
+    const { data: publicUrlData } = supabase.storage
+      .from(LOGBOOK_BUCKET)
+      .getPublicUrl(storagePath);
+
+    const document_url = publicUrlData?.publicUrl || null;
 
     const { error } = await supabase
       .from('logbook_entries')
