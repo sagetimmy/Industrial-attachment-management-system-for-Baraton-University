@@ -1,326 +1,281 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, Alert, TextInput
+  ScrollView, ActivityIndicator,
 } from 'react-native';
-import { COLORS } from '../../constants/colors';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import api from '../../api/axios';
-import Spinner from '../../components/Spinner';
+
+// ── Design Tokens (matches admin design system) ────────────────────────────
+const BG         = '#EEF2F0';
+const WHITE      = '#FFFFFF';
+const TEAL       = '#1B7A65';
+const TEAL_LIGHT = '#E0F5F1';
+const MINT       = '#2EC4B6';
+const DARK       = '#0F2419';
+const GRAY       = '#7A8F86';
+const BORDER     = '#D8E4DF';
+const ORANGE     = '#E8711A';
+const MAROON     = '#8B3A3A';
+
+const STATUS_COLORS = {
+  ongoing:   TEAL,
+  approved:  TEAL,
+  completed: GRAY,
+  pending:   ORANGE,
+  rejected:  MAROON,
+};
+
+function getInitials(name = '') {
+  return name.split(' ').filter(Boolean).map(w => w[0]).join('').toUpperCase().slice(0, 2) || '??';
+}
+
+function StatCard({ label, value, borderColor, suffix }) {
+  return (
+    <View style={[styles.statCard, { borderLeftColor: borderColor }]}>
+      <Text style={styles.statLabel}>{label}</Text>
+      <Text style={[styles.statValue, { color: borderColor }]}>
+        {value}{suffix ? <Text style={styles.statSuffix}>{suffix}</Text> : null}
+      </Text>
+    </View>
+  );
+}
+
+function PlacementRow({ placement }) {
+  const statusColor = STATUS_COLORS[placement.status] || GRAY;
+  return (
+    <View style={styles.placementCard}>
+      <View style={styles.placementAvatar}>
+        <Text style={styles.placementAvatarText}>{getInitials(placement.student_name)}</Text>
+      </View>
+      <View style={{ flex: 1, marginLeft: 12 }}>
+        <Text style={styles.placementName}>{placement.student_name}</Text>
+        <Text style={styles.placementDept}>{placement.department || 'Department not set'}</Text>
+      </View>
+      <View style={[styles.statusPill, { backgroundColor: `${statusColor}1A` }]}>
+        <Text style={[styles.statusPillText, { color: statusColor }]}>
+          {placement.status?.toUpperCase() || 'UNKNOWN'}
+        </Text>
+      </View>
+    </View>
+  );
+}
 
 export default function OrgDetailsScreen({ navigation, route }) {
   const { orgId, orgName } = route.params;
   const [org, setOrg] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [rejecting, setRejecting] = useState(false);
-  const [rejectReason, setRejectReason] = useState('');
-  const [showRejectInput, setShowRejectInput] = useState(false);
+  const [error, setError] = useState(null);
+  const [showAllPlacements, setShowAllPlacements] = useState(false);
+
+  const fetchOrg = useCallback(async () => {
+    try {
+      setError(null);
+      const res = await api.get(`/admin/org-details/${orgId}`);
+      setOrg(res.data);
+    } catch (err) {
+      console.error('Failed to load organization details:', err);
+      setError('Failed to load organization details.');
+    } finally {
+      setLoading(false);
+    }
+  }, [orgId]);
 
   useEffect(() => {
-    api.get(`/admin/org-details/${orgId}`)
-      .then(res => setOrg(res.data))
-      .catch(() => Alert.alert('Error', 'Failed to load organization details'))
-      .finally(() => setLoading(false));
-  }, []);
-
-  const handleApprove = () => {
-    Alert.alert('Approve Organization', `Approve ${orgName}?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Approve ✓',
-        onPress: async () => {
-          try {
-            await api.put(`/admin/approve-org/${orgId}`);
-            Alert.alert('Success!', `${orgName} has been approved!`);
-            navigation.goBack();
-          } catch (err) {
-            Alert.alert('Error', 'Failed to approve organization');
-          }
-        }
-      }
-    ]);
-  };
-
-  const handleReject = async () => {
-    if (!rejectReason.trim()) {
-      Alert.alert('Error', 'Please provide a reason for rejection');
-      return;
-    }
-    setRejecting(true);
-    try {
-      await api.put(`/admin/reject-org/${orgId}`, { reason: rejectReason });
-      Alert.alert('Rejected', `${orgName} has been rejected.`);
-      navigation.goBack();
-    } catch (err) {
-      Alert.alert('Error', 'Failed to reject organization');
-    } finally {
-      setRejecting(false);
-    }
-  };
-
-  const renderStars = (rating) => {
-    const stars = Math.round(rating || 0);
-    return '⭐'.repeat(stars) + '☆'.repeat(5 - stars);
-  };
-
-  const DetailRow = ({ label, value }) => (
-    value ? (
-      <View style={styles.detailRow}>
-        <Text style={styles.detailLabel}>{label}</Text>
-        <Text style={styles.detailValue}>{value}</Text>
-      </View>
-    ) : null
-  );
+    fetchOrg();
+  }, [fetchOrg]);
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <Spinner size="large" color={COLORS.primary} />
-      </View>
+      <SafeAreaView style={[styles.safe, { justifyContent: 'center', alignItems: 'center' }]} edges={['top']}>
+        <ActivityIndicator color={TEAL} size="large" />
+      </SafeAreaView>
     );
   }
 
-  return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backText}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.title}>Organization Review</Text>
-        <Text style={styles.subtitle}>Review before approving</Text>
-      </View>
-
-      {/* Approval Status */}
-      <View style={[styles.statusBanner, {
-        backgroundColor: org?.is_approved ? '#E8F5E9' : '#FFF3E0'
-      }]}>
-        <Text style={[styles.statusBannerText, {
-          color: org?.is_approved ? '#2E7D32' : COLORS.primary
-        }]}>
-          {org?.is_approved ? '✅ Already Approved' : '⏳ Pending Approval'}
+  if (error || !org) {
+    return (
+      <SafeAreaView style={[styles.safe, { justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 }]} edges={['top']}>
+        <Text style={{ fontSize: 15, color: GRAY, textAlign: 'center', marginBottom: 16 }}>
+          {error || 'Organization not found.'}
         </Text>
+        <TouchableOpacity style={styles.retryBtn} onPress={fetchOrg}>
+          <Text style={styles.retryBtnText}>Try Again</Text>
+        </TouchableOpacity>
+      </SafeAreaView>
+    );
+  }
+
+  const name = org.org_name || orgName || 'Unknown Organization';
+  const location = org.location || 'Location not set';
+  const placements = org.placements || [];
+  const visiblePlacements = showAllPlacements ? placements : placements.slice(0, 3);
+
+  return (
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      {/* ── Header ── */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerIconBtn}>
+          <Ionicons name="arrow-back" size={22} color={WHITE} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle} numberOfLines={1}>Organization Details</Text>
+        <TouchableOpacity style={styles.headerIconBtn}>
+          <Ionicons name="ellipsis-vertical" size={20} color={WHITE} />
+        </TouchableOpacity>
       </View>
 
-      {/* Rating */}
-      {org?.total_reviews > 0 && (
-        <View style={styles.ratingCard}>
-          <Text style={styles.ratingStars}>{renderStars(org.avg_rating)}</Text>
-          <Text style={styles.ratingNum}>{Number(org.avg_rating).toFixed(1)}/5</Text>
-          <Text style={styles.ratingCount}>({org.total_reviews} reviews)</Text>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        {/* ── Profile Card ── */}
+        <View style={styles.profileCard}>
+          <View style={styles.profileAvatar}>
+            <Text style={styles.profileAvatarText}>{getInitials(name)}</Text>
+          </View>
+          <Text style={styles.profileName}>{name}</Text>
+          <Text style={styles.profileLocation}>{location}</Text>
         </View>
-      )}
 
-      {/* Organization Info */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>🏢 Organization Information</Text>
-        <DetailRow label="Organization Name" value={org?.org_name} />
-        <DetailRow label="Industry/Sector" value={org?.industry} />
-        <DetailRow label="Physical Address" value={org?.location} />
-        <DetailRow label="Official Email" value={org?.official_email || org?.email} />
-        <DetailRow label="Phone" value={org?.phone} />
-        <DetailRow label="Website" value={org?.website} />
-        {org?.description && (
-          <View style={styles.descBox}>
-            <Text style={styles.descLabel}>Description</Text>
-            <Text style={styles.descText}>{org.description}</Text>
-          </View>
-        )}
-      </View>
+        {/* ── Stat Cards ── */}
+        <View style={styles.statRow}>
+          <StatCard label="TOTAL INTERNS"   value={org.total_interns ?? 0}                       borderColor={TEAL} />
+          <StatCard label="OPEN VACANCIES"  value={String(org.open_vacancies ?? 0).padStart(2, '0')} borderColor={ORANGE} />
+        </View>
+        <View style={styles.statRow}>
+          <StatCard
+            label="COMPLETION RATE"
+            value={org.completion_rate != null ? org.completion_rate : '—'}
+            suffix={org.completion_rate != null ? '%' : ''}
+            borderColor={MINT}
+          />
+          <StatCard
+            label="AVG. RATING"
+            value={org.avg_rating != null ? Number(org.avg_rating).toFixed(1) : '—'}
+            borderColor={MAROON}
+          />
+        </View>
 
-      {/* Contact Person */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>👤 Contact Person</Text>
-        <DetailRow label="Full Name" value={org?.contact_person} />
-        <DetailRow label="Position" value={org?.contact_position} />
-        <DetailRow label="Email" value={org?.email} />
-        <DetailRow label="Phone" value={org?.phone} />
-      </View>
+        {/* ── About ── */}
+        <Text style={styles.sectionTitle}>About</Text>
+        <View style={styles.aboutCard}>
+          <Text style={styles.aboutText}>
+            {org.description || 'No description provided by this organization yet.'}
+          </Text>
+        </View>
 
-      {/* Attachment Opportunity */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>📋 Attachment Opportunity</Text>
-        <DetailRow label="Department" value={org?.department_offering} />
-        <DetailRow label="Available Slots" value={org?.available_slots?.toString()} />
-        <DetailRow label="Duration" value={org?.attachment_duration} />
-        <DetailRow label="Work Mode" value={org?.work_mode} />
-        <DetailRow label="Required Skills" value={org?.required_skills} />
-        {org?.roles_tasks && (
-          <View style={styles.descBox}>
-            <Text style={styles.descLabel}>Roles & Tasks</Text>
-            <Text style={styles.descText}>{org.roles_tasks}</Text>
-          </View>
-        )}
-      </View>
-
-      {/* Internal Supervision */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>👨‍💼 Internal Supervision</Text>
-        <DetailRow label="Supervisor Name" value={org?.internal_supervisor} />
-        <DetailRow label="Position" value={org?.supervisor_position} />
-        <DetailRow
-          label="Mentorship Available"
-          value={org?.mentorship_available ? 'Yes ✓' : 'No'}
-        />
-      </View>
-
-      {/* Support */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>💰 Support Provided</Text>
-        <DetailRow label="Allowance/Stipend" value={org?.allowance} />
-        {org?.resources_provided && (
-          <View style={styles.descBox}>
-            <Text style={styles.descLabel}>Resources/Equipment</Text>
-            <Text style={styles.descText}>{org.resources_provided}</Text>
-          </View>
-        )}
-      </View>
-
-      {/* Action Buttons */}
-      {!org?.is_approved && (
-        <View style={styles.actions}>
-          <TouchableOpacity
-            style={styles.approveBtn}
-            onPress={handleApprove}
-          >
-            <Text style={styles.approveBtnText}>✓ Approve Organization</Text>
-          </TouchableOpacity>
-
-          {!showRejectInput ? (
-            <TouchableOpacity
-              style={styles.rejectBtn}
-              onPress={() => setShowRejectInput(true)}
-            >
-              <Text style={styles.rejectBtnText}>✗ Reject Organization</Text>
+        {/* ── Active Placements ── */}
+        <View style={styles.sectionRow}>
+          <Text style={styles.sectionTitle}>Active Placements</Text>
+          {placements.length > 3 && (
+            <TouchableOpacity onPress={() => setShowAllPlacements(v => !v)}>
+              <Text style={styles.viewAllLink}>{showAllPlacements ? 'Show Less' : 'View All'}</Text>
             </TouchableOpacity>
-          ) : (
-            <View style={styles.rejectForm}>
-              <Text style={styles.rejectLabel}>Reason for Rejection *</Text>
-              <TextInput
-                style={styles.rejectInput}
-                placeholder="Provide a reason..."
-                value={rejectReason}
-                onChangeText={setRejectReason}
-                multiline
-                numberOfLines={3}
-              />
-              <View style={styles.rejectActions}>
-                <TouchableOpacity
-                  style={styles.cancelRejectBtn}
-                  onPress={() => setShowRejectInput(false)}
-                >
-                  <Text style={styles.cancelRejectText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.confirmRejectBtn}
-                  onPress={handleReject}
-                  disabled={rejecting}
-                >
-                  {rejecting
-                    ? <Spinner color={COLORS.white} size="small" />
-                    : <Text style={styles.confirmRejectText}>Confirm Reject</Text>
-                  }
-                </TouchableOpacity>
-              </View>
-            </View>
           )}
         </View>
-      )}
 
-      <View style={{ height: 40 }} />
-    </ScrollView>
+        {placements.length === 0 ? (
+          <Text style={{ fontSize: 13, color: GRAY, marginBottom: 16 }}>
+            No students have been placed at this organization yet.
+          </Text>
+        ) : (
+          visiblePlacements.map((p) => (
+            <PlacementRow key={p.attachment_id} placement={p} />
+          ))
+        )}
+
+        <View style={{ height: 24 }} />
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F4F4F4' },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  safe: { flex: 1, backgroundColor: BG },
+
   header: {
-    backgroundColor: COLORS.secondary,
-    paddingTop: 55, paddingBottom: 25,
-    paddingHorizontal: 20,
-    borderBottomLeftRadius: 25,
-    borderBottomRightRadius: 25,
-  },
-  backBtn: { marginBottom: 10 },
-  backText: { color: COLORS.primary, fontSize: 14, fontWeight: '600' },
-  title: { color: COLORS.white, fontSize: 24, fontWeight: 'bold' },
-  subtitle: { color: '#8899AA', fontSize: 13, marginTop: 4 },
-  statusBanner: {
-    margin: 16, padding: 12,
-    borderRadius: 12, alignItems: 'center',
-  },
-  statusBannerText: { fontWeight: '700', fontSize: 14 },
-  ratingCard: {
-    backgroundColor: COLORS.white,
-    marginHorizontal: 16, marginBottom: 8,
-    padding: 16, borderRadius: 16,
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    elevation: 2,
-  },
-  ratingStars: { fontSize: 18 },
-  ratingNum: { fontSize: 16, fontWeight: '700', color: COLORS.darkGray },
-  ratingCount: { fontSize: 13, color: COLORS.gray },
-  section: {
-    backgroundColor: COLORS.white,
-    marginHorizontal: 16, marginBottom: 12,
-    padding: 16, borderRadius: 16, elevation: 2,
-  },
-  sectionTitle: {
-    fontSize: 15, fontWeight: '700',
-    color: COLORS.secondary, marginBottom: 12,
-  },
-  detailRow: {
+    backgroundColor: DARK,
+    paddingVertical: 14,
+    paddingHorizontal: 8,
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F4F4F4',
-  },
-  detailLabel: { fontSize: 13, color: COLORS.gray, flex: 1 },
-  detailValue: { fontSize: 13, fontWeight: '600', color: COLORS.darkGray, flex: 1, textAlign: 'right' },
-  descBox: {
-    backgroundColor: '#F8F9FA',
-    padding: 12, borderRadius: 10, marginTop: 8,
-  },
-  descLabel: { fontSize: 12, color: COLORS.gray, marginBottom: 6 },
-  descText: { fontSize: 13, color: COLORS.darkGray, lineHeight: 20 },
-  actions: { marginHorizontal: 16, marginBottom: 16 },
-  approveBtn: {
-    backgroundColor: '#2E7D32',
-    padding: 15, borderRadius: 14,
-    alignItems: 'center', marginBottom: 10,
-  },
-  approveBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 15 },
-  rejectBtn: {
-    borderWidth: 2, borderColor: '#C62828',
-    padding: 15, borderRadius: 14,
     alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  rejectBtnText: { color: '#C62828', fontWeight: '700', fontSize: 15 },
-  rejectForm: {
-    backgroundColor: COLORS.white,
-    padding: 16, borderRadius: 14,
-    borderWidth: 2, borderColor: '#C62828',
+  headerIconBtn: { padding: 8 },
+  headerTitle: { flex: 1, fontSize: 18, fontWeight: '700', color: WHITE, textAlign: 'left' },
+
+  scrollContent: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 24 },
+
+  profileCard: {
+    backgroundColor: WHITE,
+    borderRadius: 18,
+    paddingVertical: 24,
+    alignItems: 'center',
+    marginBottom: 16,
   },
-  rejectLabel: { fontSize: 13, fontWeight: '600', color: COLORS.darkGray, marginBottom: 8 },
-  rejectInput: {
-    borderWidth: 1, borderColor: COLORS.gray,
-    borderRadius: 10, padding: 12,
-    fontSize: 14, backgroundColor: COLORS.lightGray,
-    height: 80, textAlignVertical: 'top',
+  profileAvatar: {
+    width: 88, height: 88, borderRadius: 44,
+    backgroundColor: TEAL,
+    alignItems: 'center', justifyContent: 'center',
     marginBottom: 12,
   },
-  rejectActions: { flexDirection: 'row', gap: 10 },
-  cancelRejectBtn: {
-    flex: 1, padding: 12,
-    borderRadius: 10, alignItems: 'center',
-    borderWidth: 1, borderColor: COLORS.gray,
+  profileAvatarText: { fontSize: 32, fontWeight: '800', color: WHITE },
+  profileName: { fontSize: 20, fontWeight: '700', color: DARK, marginBottom: 4, textAlign: 'center' },
+  profileLocation: { fontSize: 13, color: GRAY, textAlign: 'center' },
+
+  statRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },
+  statCard: {
+    flex: 1,
+    backgroundColor: WHITE,
+    borderRadius: 14,
+    borderLeftWidth: 4,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
   },
-  cancelRejectText: { color: COLORS.gray, fontWeight: '600' },
-  confirmRejectBtn: {
-    flex: 1, padding: 12,
-    borderRadius: 10, alignItems: 'center',
-    backgroundColor: '#C62828',
+  statLabel: { fontSize: 11, fontWeight: '700', color: GRAY, letterSpacing: 0.4, marginBottom: 6 },
+  statValue: { fontSize: 26, fontWeight: '800' },
+  statSuffix: { fontSize: 16, fontWeight: '700' },
+
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: DARK, marginTop: 8, marginBottom: 12 },
+  sectionRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8,
   },
-  confirmRejectText: { color: COLORS.white, fontWeight: '700' },
+  viewAllLink: { fontSize: 13, fontWeight: '700', color: TEAL, marginBottom: 12 },
+
+  aboutCard: {
+    backgroundColor: WHITE,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 8,
+  },
+  aboutText: { fontSize: 14, color: DARK, lineHeight: 22 },
+
+  placementCard: {
+    backgroundColor: WHITE,
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  placementAvatar: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: TEAL_LIGHT,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  placementAvatarText: { fontSize: 14, fontWeight: '800', color: TEAL },
+  placementName: { fontSize: 15, fontWeight: '700', color: DARK },
+  placementDept: { fontSize: 12, color: GRAY, marginTop: 2 },
+  statusPill: {
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20,
+  },
+  statusPillText: { fontSize: 11, fontWeight: '700' },
+
+  retryBtn: {
+    backgroundColor: WHITE,
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    borderWidth: 1.5,
+    borderColor: TEAL,
+  },
+  retryBtnText: { color: TEAL, fontSize: 15, fontWeight: '700' },
 });

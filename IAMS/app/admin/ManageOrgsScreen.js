@@ -221,8 +221,16 @@ export default function ManageOrgsScreen({ navigation }) {
 
   const onRefresh = () => { setRefreshing(true); fetchOrgs(); };
 
+  // FIX: previously passed the whole org object as `{ org }`, but
+  // OrgDetailsScreen reads route.params.orgId / route.params.orgName —
+  // so orgId came through as undefined, the API call hit
+  // /admin/org-details/undefined, and Supabase's .single() threw, causing
+  // the "Failed to load organization details" error.
   const handleDetails = (org) => {
-    navigation.navigate('OrgDetail', { org });
+    navigation.navigate('OrgDetail', {
+      orgId: org.org_id || org.host_org_id,
+      orgName: org.org_name || org.name,
+    });
   };
 
   const handleVacancies = (org) => {

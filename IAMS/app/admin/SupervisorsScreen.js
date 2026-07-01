@@ -145,9 +145,16 @@ export default function SupervisorsScreen({ navigation }) {
         api.get('/admin/dashboard'),
       ]);
 
+      // GET /admin/supervisors now returns { supervisors, totals } instead of
+      // a bare array — fall back to the bare-array shape too, just in case.
+      const rawList = Array.isArray(supRes.data)
+        ? supRes.data
+        : supRes.data?.supervisors || [];
+      const apiTotals = Array.isArray(supRes.data) ? {} : supRes.data?.totals || {};
+
       // API returns full_name / supervisor_id; normalize to the name / user_id
       // fields this screen renders and passes along to the assign flow.
-      const list = (supRes.data || []).map(s => ({
+      const list = rawList.map(s => ({
         ...s,
         name: s.name || s.full_name || 'Unknown',
         user_id: s.user_id || s.supervisor_id,
@@ -159,7 +166,8 @@ export default function SupervisorsScreen({ navigation }) {
       const depts = [...new Set(list.map(s => s.department || s.dept).filter(Boolean))];
       setDepartments(depts);
 
-      // Compute stats
+      // Compute stats — prefer totals returned by /admin/supervisors, then
+      // /admin/dashboard, then fall back to client-side derivation.
       const dashStats = dashRes.data?.stats || {};
       const active        = list.filter(s => s.is_active !== false).length;
       const pendingReview = list.filter(s =>
@@ -168,9 +176,9 @@ export default function SupervisorsScreen({ navigation }) {
       ).length;
 
       setStats({
-        total:         dashStats.totalSupervisors || list.length,
-        active:        dashStats.activeSupervisors || active,
-        pendingReview: dashStats.pendingSupervisors || pendingReview,
+        total:         apiTotals.totalSupervisors ?? dashStats.totalSupervisors ?? list.length,
+        active:        apiTotals.activeLoads ?? dashStats.activeSupervisors ?? active,
+        pendingReview: apiTotals.pendingReviews ?? dashStats.pendingSupervisors ?? pendingReview,
       });
     } catch (err) {
       Alert.alert('Error', err.response?.data?.message || 'Failed to load supervisors');

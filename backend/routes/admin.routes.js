@@ -438,17 +438,20 @@ router.get('/pending-orgs', protect, authorize('admin'), async (req, res) => {
 });
 
 // ─── GET /api/admin/org-details/:id ──────────────────────────────────────
+// Extended version — adds total_interns, open_vacancies, completion_rate,
+// and placements (for OrgDetailsScreen's stat cards + Active Placements list)
+// on top of the original org profile + email + review rating fields.
 router.get('/org-details/:id', protect, authorize('admin'), async (req, res) => {
   try {
     const { data: org, error } = await supabase
       .from('host_organizations').select('*').eq('org_id', req.params.id).single();
-    if (error) throw error;
+    if (error || !org) return res.status(404).json({ message: 'Organization not found' });
 
     let email = null;
     if (org.user_id) {
       const { data: user } = await supabase
         .from('users').select('email').eq('user_id', org.user_id).single();
-      email = user?.email;
+      email = user?.email || null;
     }
 
     const { data: reviews } = await supabase
@@ -458,8 +461,56 @@ router.get('/org-details/:id', protect, authorize('admin'), async (req, res) => 
       ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length
       : null;
 
-    res.json({ ...org, email, total_reviews: reviews?.length || 0, avg_rating });
+    // All attachments ever placed at this org, used for total_interns,
+    // completion_rate, and the placements list.
+    const { data: attachments } = await supabase
+      .from('attachments')
+      .select('attachment_id, student_id, status, start_date, end_date, created_at')
+      .eq('org_id', req.params.id)
+      .order('created_at', { ascending: false });
+
+    const allAttachments = attachments || [];
+
+    const activeStatuses = ['ongoing', 'approved'];
+    const total_interns = allAttachments.filter(a => activeStatuses.includes(a.status)).length;
+
+    const completedCount = allAttachments.filter(a => a.status === 'completed').length;
+    const completion_rate = allAttachments.length
+      ? Math.round((completedCount / allAttachments.length) * 100)
+      : null;
+
+    const open_vacancies = Math.max((org.available_slots || 0) - total_interns, 0);
+
+    // Attach student name + department for the placements list.
+    const studentIds = allAttachments.map(a => a.student_id).filter(Boolean);
+    let studentMap = {};
+    if (studentIds.length) {
+      const { data: students } = await supabase
+        .from('students').select('student_id, full_name, department').in('student_id', studentIds);
+      (students || []).forEach(s => studentMap[s.student_id] = s);
+    }
+
+    const placements = allAttachments.map(a => ({
+      attachment_id: a.attachment_id,
+      student_name:  studentMap[a.student_id]?.full_name || 'Unknown',
+      department:    studentMap[a.student_id]?.department || null,
+      status:        a.status,
+      start_date:    a.start_date,
+      end_date:      a.end_date,
+    }));
+
+    res.json({
+      ...org,
+      email,
+      total_reviews: reviews?.length || 0,
+      avg_rating,
+      total_interns,
+      open_vacancies,
+      completion_rate,
+      placements,
+    });
   } catch (err) {
+    console.error('GET /admin/org-details/:id error:', err);
     res.status(500).json({ message: err.message });
   }
 });
