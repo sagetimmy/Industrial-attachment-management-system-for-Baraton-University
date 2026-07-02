@@ -49,7 +49,6 @@ router.post('/', protect, async (req, res) => {
       scope_org_id,
       scope_supervisor_id,
       sent_by: sender.user_id,
-      sent_by_role: sender.role,
     })
     .select()
     .single();
@@ -152,6 +151,7 @@ router.get('/', protect, async (req, res) => {
 
   const announcementsWithReadState = announcements.map((announcement) => ({
     ...announcement,
+    sent_by_role: announcement.sender?.role || announcement.sent_by_role || null,
     is_read: readSet.has(String(announcement.id)),
   }));
 
