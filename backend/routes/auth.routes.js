@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { protect } = require('../middleware/auth.middleware');
+const { registrationLimiter, verificationLimiter } = require('../middleware/rateLimiter');
 const supabase = require('../config/db');
 const { sendVerificationEmail } = require('../config/mailer');
 
@@ -18,9 +19,27 @@ const getRolePermissions = (role) => {
 // Helper: generate 6-digit OTP
 const generateOTP = () => Math.floor(100000 + Math.random() * 900000).toString();
 
+const rollbackRegistration = async ({ auth_id, user_id, email }) => {
+  if (user_id) {
+    await supabase.from('students').delete().eq('user_id', user_id);
+    await supabase.from('supervisors').delete().eq('user_id', user_id);
+    await supabase.from('host_organizations').delete().eq('user_id', user_id);
+    await supabase.from('users').delete().eq('user_id', user_id);
+  }
+
+  if (auth_id) {
+    await supabase.auth.admin.deleteUser(auth_id);
+  }
+
+  if (email) {
+    await supabase.from('password_reset_codes').delete().eq('email', email);
+  }
+};
+
 // POST /api/auth/register
-router.post('/register', async (req, res) => {
+router.post('/register', registrationLimiter, async (req, res) => {
   const { email, password, role, full_name } = req.body;
+  let auth_id = null;
 
   if (!email || !password || !role) {
     return res.status(400).json({ message: 'email, password, and role are required' });
@@ -39,7 +58,7 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ message: error.message });
     }
 
-    const auth_id = data.user?.id;
+    auth_id = data.user?.id;
     if (!auth_id) {
       return res.status(500).json({ message: 'User created but no ID returned' });
     }
@@ -65,13 +84,16 @@ router.post('/register', async (req, res) => {
       .catch(err => console.error(`❌ Email send failed:`, err.response?.data || err.message));
 
   } catch (err) {
+    if (auth_id) {
+      await supabase.auth.admin.deleteUser(auth_id);
+    }
     console.error('❌ /register unexpected error:', err.message);
     return res.status(500).json({ message: err.message });
   }
 });
 
 // POST /api/auth/register-profile
-router.post('/register-profile', async (req, res) => {
+router.post('/register-profile', registrationLimiter, async (req, res) => {
   const {
     auth_id, email, role, full_name, reg_number,
     department, year_of_study, phone,
@@ -79,6 +101,11 @@ router.post('/register-profile', async (req, res) => {
     // Admin-specific fields
     is_super_admin, permissions,
   } = req.body;
+  let createdUserId = null;
+
+  if (!auth_id || !email || !role) {
+    return res.status(400).json({ message: 'auth_id, email, and role are required' });
+  }
 
   try {
     // Build the users row — include is_super_admin for admin role
@@ -101,7 +128,8 @@ router.post('/register-profile', async (req, res) => {
       .select()
       .single();
 
-    if (dbError) return res.status(500).json({ message: dbError.message });
+    if (dbError) throw dbError;
+    createdUserId = newUser.user_id;
 
     if (role === 'student') {
       const { error } = await supabase.from('students')
@@ -136,12 +164,14 @@ router.post('/register-profile', async (req, res) => {
 
     res.status(201).json({ message: 'Profile created successfully', user_id: newUser.user_id });
   } catch (err) {
+    console.error('❌ /register-profile error:', err.message);
+    await rollbackRegistration({ auth_id, user_id: createdUserId, email });
     res.status(500).json({ message: err.message });
   }
 });
 
 // POST /api/auth/verify-email
-router.post('/verify-email', async (req, res) => {
+router.post('/verify-email', verificationLimiter, async (req, res) => {
   const { email, code } = req.body;
 
   if (!email || !code) {
@@ -196,7 +226,7 @@ router.post('/verify-email', async (req, res) => {
 });
 
 // POST /api/auth/resend-code
-router.post('/resend-code', async (req, res) => {
+router.post('/resend-code', verificationLimiter, async (req, res) => {
   const { email } = req.body;
 
   if (!email) {
@@ -222,12 +252,15 @@ router.post('/resend-code', async (req, res) => {
 
     let fullName = 'User';
     if (user?.user_id) {
-      const { data: student } = await supabase
-        .from('students')
-        .select('full_name')
-        .eq('user_id', user.user_id)
-        .maybeSingle();
+      const [{ data: student }, { data: supervisor }, { data: hostOrg }] = await Promise.all([
+        supabase.from('students').select('full_name').eq('user_id', user.user_id).maybeSingle(),
+        supabase.from('supervisors').select('full_name').eq('user_id', user.user_id).maybeSingle(),
+        supabase.from('host_organizations').select('org_name').eq('user_id', user.user_id).maybeSingle(),
+      ]);
+
       if (student?.full_name) fullName = student.full_name;
+      else if (supervisor?.full_name) fullName = supervisor.full_name;
+      else if (hostOrg?.org_name) fullName = hostOrg.org_name;
     }
 
     res.status(200).json({ message: 'Verification code resent' });

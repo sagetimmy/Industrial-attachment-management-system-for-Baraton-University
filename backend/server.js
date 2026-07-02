@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const { generalLimiter } = require('./middleware/rateLimiter');
 
 const app = express();
 
@@ -17,6 +18,8 @@ app.options('*', cors()); // handle preflight requests
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+app.use('/api', generalLimiter);
+
 app.use('/api/auth',          require('./routes/auth.routes'));
 app.use('/api/students',      require('./routes/student.routes'));
 app.use('/api/supervisors',   require('./routes/supervisor.routes'));
@@ -29,8 +32,8 @@ app.use('/api/announcements', require('./routes/announcements'));
 app.use('/api/avatar', require('./routes/avatar.routes'));
 
 app.get('/', (req, res) => res.json({ message: 'IAMS backend is running' }));
-app.get('/api', (req, res) => res.json({ message: 'IAMS API is running' }));
 app.get('/api/health', (req, res) => res.json({ status: 'IAMS API running ✅' }));
+app.get('/api', (req, res) => res.json({ message: 'IAMS API is running' }));
 
 const PORT = process.env.PORT || 5000;
 const HOST = process.env.HOST || '0.0.0.0';

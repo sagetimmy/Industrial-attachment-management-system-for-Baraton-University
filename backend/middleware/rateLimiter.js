@@ -44,19 +44,10 @@ const verificationLimiter = rateLimit({
   message: 'Too many verification attempts, please wait before trying again.',
 });
 
-// File upload limiter - 20 uploads per hour per user
-const uploadLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000,
-  max: 20,
-  keyGenerator: (req) => req.user?.user_id || req.ip,
-  message: 'Too many file uploads, please try again later.',
-});
-
 module.exports = {
   generalLimiter,
   authLimiter,
   passwordResetLimiter,
   registrationLimiter,
   verificationLimiter,
-  uploadLimiter,
 };
