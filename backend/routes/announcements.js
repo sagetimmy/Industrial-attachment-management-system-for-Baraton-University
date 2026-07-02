@@ -76,16 +76,12 @@ router.post('/', protect, async (req, res) => {
 router.get('/', protect, async (req, res) => {
   const user = req.user;
 
+  // Note: users table has no full_name column (it's a role-specific field,
+  // e.g. students.full_name / host_organizations.contact_person), so we only
+  // pull user_id + role here rather than embedding full_name.
   let query = supabase
     .from('announcements')
-    .select(`
-      *,
-      sender:sent_by (
-        user_id,
-        full_name,
-        role
-      )
-    `)
+    .select('*, sender:sent_by ( user_id, role )')
     .order('created_at', { ascending: false });
 
   if (user.role === 'admin') {
