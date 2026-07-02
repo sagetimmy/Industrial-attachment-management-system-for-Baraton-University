@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { protect, authorize } = require('../middleware/auth.middleware');
+const { protect } = require('../middleware/auth.middleware');
 const supabase = require('../config/db');
 const audit = require('../utils/audit');
 
@@ -23,15 +23,14 @@ router.post('/', protect, async (req, res) => {
   if (sender.role === 'supervisor') {
     audience = 'STUDENTS';
     scope_supervisor_id = sender.user_id;
-  } else if (sender.role === 'host') {
+  } else if (sender.role === 'host_org') {
     audience = 'STUDENTS';
-    // get supervisor's org
     const { data: profile } = await supabase
       .from('users')
-      .select('organization_id')
+      .select('org_id')
       .eq('user_id', sender.user_id)
-      .single();
-    scope_org_id = profile?.organization_id || null;
+      .maybeSingle();
+    scope_org_id = profile?.org_id || null;
   } else if (sender.role !== 'admin') {
     return res.status(403).json({ error: 'Not authorized to send announcements.' });
   }
@@ -60,11 +59,14 @@ router.post('/', protect, async (req, res) => {
     return res.status(500).json({ error: 'Failed to create announcement.' });
   }
 
-  await audit(sender.user_id, 'CREATE_ANNOUNCEMENT', {
-    announcement_id: data.id,
-    title,
-    audience,
-  });
+  await audit(
+    sender,
+    'CREATE_ANNOUNCEMENT',
+    'announcements',
+    data.id,
+    `Announcement "${title}" created for ${audience}`,
+    { announcement_id: data.id, title, audience }
+  );
 
   return res.status(201).json({ announcement: data });
 });
@@ -83,9 +85,6 @@ router.get('/', protect, async (req, res) => {
         user_id,
         full_name,
         role
-      ),
-      reads:announcement_reads!left (
-        read_at
       )
     `)
     .order('created_at', { ascending: false });
@@ -119,13 +118,10 @@ router.get('/', protect, async (req, res) => {
   } else if (user.role === 'supervisor') {
     // supervisor sees: ALL, SUPERVISORS, their own sent ones
     query = query.or(`audience.eq.ALL,audience.eq.SUPERVISORS,sent_by.eq.${user.user_id}`);
-  } else if (user.role === 'host') {
+  } else if (user.role === 'host_org') {
     // host sees: ALL, HOST_ORGS, their own sent ones
     query = query.or(`audience.eq.ALL,audience.eq.HOST_ORGS,sent_by.eq.${user.user_id}`);
   }
-
-  // filter reads to only this user's read records
-  query = query.eq('reads.user_id', user.user_id);
 
   const { data, error } = await query;
 
@@ -134,14 +130,32 @@ router.get('/', protect, async (req, res) => {
     return res.status(500).json({ error: 'Failed to fetch announcements.' });
   }
 
-  // flatten read status onto each announcement
-  const announcements = (data || []).map((a) => ({
-    ...a,
-    is_read: Array.isArray(a.reads) && a.reads.length > 0,
-    reads: undefined,
+  const announcements = data || [];
+
+  const announcementIds = announcements.map((announcement) => announcement.id).filter(Boolean);
+  let readSet = new Set();
+
+  if (announcementIds.length) {
+    const { data: readRows, error: readError } = await supabase
+      .from('announcement_reads')
+      .select('announcement_id')
+      .eq('user_id', user.user_id)
+      .in('announcement_id', announcementIds);
+
+    if (readError) {
+      console.error('Fetch announcement reads error:', readError);
+      return res.status(500).json({ error: 'Failed to fetch announcement read state.' });
+    }
+
+    readSet = new Set((readRows || []).map((row) => String(row.announcement_id)));
+  }
+
+  const announcementsWithReadState = announcements.map((announcement) => ({
+    ...announcement,
+    is_read: readSet.has(String(announcement.id)),
   }));
 
-  return res.json({ announcements });
+  return res.json({ announcements: announcementsWithReadState });
 });
 
 // ─── PATCH /announcements/:id/read ──────────────────────────────────────────
@@ -188,7 +202,14 @@ router.delete('/:id', protect, async (req, res) => {
     return res.status(500).json({ error: 'Failed to delete announcement.' });
   }
 
-  await audit(user.user_id, 'DELETE_ANNOUNCEMENT', { announcement_id: id, title: announcement.title });
+  await audit(
+    user,
+    'DELETE_ANNOUNCEMENT',
+    'announcements',
+    id,
+    `Announcement "${announcement.title}" deleted`,
+    { announcement_id: id, title: announcement.title }
+  );
 
   return res.json({ success: true });
 });
