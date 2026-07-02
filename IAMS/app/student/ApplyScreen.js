@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
   ScrollView, Alert, RefreshControl, TextInput,
-  Image
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import * as DocumentPicker from 'expo-document-picker';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import api, { requestWithRetry } from '../../api/axios';
@@ -16,6 +17,12 @@ const formatDateDisplay = (dateStr) => {
   if (!dateStr) return '';
   const d = new Date(dateStr);
   return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+};
+
+const STEP_DESCRIPTIONS = {
+  1: 'Personal & Academic Info',
+  2: 'Supporting Documents',
+  3: 'Review & Submit',
 };
 
 export default function ApplyScreen({ navigation }) {
@@ -37,6 +44,10 @@ export default function ApplyScreen({ navigation }) {
   const [supportingInfo, setSupportingInfo] = useState('');
   const [applications, setApplications] = useState([]);
   const [latestApplication, setLatestApplication] = useState(null);
+
+  // --- Wizard state ---
+  const [currentStep, setCurrentStep] = useState(1);
+  const [documents, setDocuments] = useState([]); // [{ name, uri, mimeType, size }]
 
   // --- Data fetching ---
   const fetchData = async () => {
@@ -62,7 +73,7 @@ export default function ApplyScreen({ navigation }) {
 
   useEffect(() => { fetchData(); }, []);
 
-  // --- Date utilities (same as before) ---
+  // --- Date utilities (unchanged) ---
   const dateInputPattern = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/;
   const normalizeDateInput = (value) => {
     if (!value) return '';
@@ -106,7 +117,6 @@ export default function ApplyScreen({ navigation }) {
     return `${year}-${month}-${day}`;
   };
 
-  // Calculate end date based on duration from start
   const calculateEndDateFromDuration = (start, months) => {
     if (!start) return '';
     const startDateObj = parseDateFromInput(start);
@@ -116,7 +126,6 @@ export default function ApplyScreen({ navigation }) {
     return formatDateYmd(endDateObj);
   };
 
-  // When start date changes, update end date based on duration
   const handleStartDateChange = (value) => {
     const normalized = normalizeDateInput(value);
     setStartDate(normalized);
@@ -127,7 +136,6 @@ export default function ApplyScreen({ navigation }) {
     }
   };
 
-  // When duration changes, recalc end date
   const handleDurationChange = (months) => {
     setDuration(months);
     if (startDate) {
@@ -144,9 +152,93 @@ export default function ApplyScreen({ navigation }) {
     setSkills('');
     setSupportingInfo('');
     setDuration('3');
+    setDocuments([]);
+    setCurrentStep(1);
   }, [selectedOrg]);
 
-  // --- Submit application (unchanged logic) ---
+  // --- Document picking ---
+  const handlePickDocument = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: [
+          'application/pdf',
+          'image/*',
+          'application/msword',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        ],
+        multiple: true,
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled) return;
+      const picked = (result.assets || []).map((a) => ({
+        name: a.name,
+        uri: a.uri,
+        mimeType: a.mimeType,
+        size: a.size,
+      }));
+      setDocuments((prev) => [...prev, ...picked]);
+    } catch (err) {
+      console.error('Document pick error:', err);
+      Alert.alert('Error', 'Failed to select document');
+    }
+  };
+
+  const handleRemoveDocument = (index) => {
+    setDocuments((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const formatFileSize = (bytes) => {
+    if (!bytes) return '';
+    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  // --- Step validation & navigation ---
+  const validateStep1 = () => {
+    if (!selectedOrg) {
+      Alert.alert('Error', 'Please select an organization');
+      return false;
+    }
+    if (selectedOrg.available_slots === 0) {
+      Alert.alert('Error', 'This organization has no available slots');
+      return false;
+    }
+    const normalizedStart = startDate.trim();
+    const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+    if (!normalizedStart || !datePattern.test(normalizedStart)) {
+      Alert.alert('Error', 'Please enter a valid start date (YYYY-MM-DD)');
+      return false;
+    }
+    if (!parseDateFromInput(normalizedStart)) {
+      Alert.alert('Error', 'Please enter a valid calendar date');
+      return false;
+    }
+    return true;
+  };
+
+  const validateStep2 = () => {
+    if (!skills.trim()) {
+      Alert.alert('Error', 'Please add your skills');
+      return false;
+    }
+    return true;
+  };
+
+  const handleNext = () => {
+    if (currentStep === 1 && !validateStep1()) return;
+    if (currentStep === 2 && !validateStep2()) return;
+    setCurrentStep((prev) => Math.min(prev + 1, 3));
+  };
+
+  const handleBackStep = () => {
+    if (currentStep === 1) {
+      navigation.goBack();
+    } else {
+      setCurrentStep((prev) => prev - 1);
+    }
+  };
+
+  // --- Submit application ---
   const handleApply = async () => {
     if (!canSelfPlace) {
       Alert.alert('Permission Disabled', 'Self-placement applications are currently disabled.');
@@ -156,39 +248,14 @@ export default function ApplyScreen({ navigation }) {
       Alert.alert('Application Pending', 'You already have an application under review.');
       return;
     }
+    if (!validateStep1() || !validateStep2()) return;
 
     const normalizedStart = startDate.trim();
     const normalizedEnd = endDate.trim();
     const normalizedSkills = skills.trim();
-    const datePattern = /^\d{4}-\d{2}-\d{2}$/;
-
-    if (!selectedOrg) {
-      Alert.alert('Error', 'Please select an organization');
-      return;
-    }
-    if (selectedOrg.available_slots === 0) {
-      Alert.alert('Error', 'This organization has no available slots');
-      return;
-    }
-    if (!normalizedStart || !normalizedEnd) {
-      Alert.alert('Error', 'Please enter start and end dates');
-      return;
-    }
-    if (!normalizedSkills) {
-      Alert.alert('Error', 'Please add your skills');
-      return;
-    }
-    if (!datePattern.test(normalizedStart) || !datePattern.test(normalizedEnd)) {
-      Alert.alert('Error', 'Dates must be in YYYY-MM-DD format');
-      return;
-    }
     const parsedStart = parseDateFromInput(normalizedStart);
     const parsedEnd = parseDateFromInput(normalizedEnd);
-    if (!parsedStart || !parsedEnd) {
-      Alert.alert('Error', 'Please enter valid calendar dates');
-      return;
-    }
-    if (parsedEnd < parsedStart) {
+    if (!parsedEnd || !parsedStart || parsedEnd < parsedStart) {
       Alert.alert('Error', 'End date must be after start date');
       return;
     }
@@ -203,16 +270,29 @@ export default function ApplyScreen({ navigation }) {
           onPress: async () => {
             setApplying(true);
             try {
+              const formData = new FormData();
+              formData.append('org_id', selectedOrg.org_id);
+              formData.append('start_date', normalizedStart);
+              formData.append('end_date', normalizedEnd);
+              formData.append('skills', normalizedSkills);
+              if (supportingInfo.trim()) {
+                formData.append('supporting_info', supportingInfo.trim());
+              }
+              documents.forEach((doc) => {
+                formData.append('documents', {
+                  uri: doc.uri,
+                  name: doc.name,
+                  type: doc.mimeType || 'application/octet-stream',
+                });
+              });
+
               const res = await requestWithRetry(
-                () => api.post('/applications', {
-                  org_id: selectedOrg.org_id,
-                  start_date: normalizedStart,
-                  end_date: normalizedEnd,
-                  skills: normalizedSkills,
-                  supporting_info: supportingInfo.trim() || undefined,
+                () => api.post('/applications', formData, {
+                  headers: { 'Content-Type': 'multipart/form-data' },
                 }),
                 { retries: 3, baseDelay: 500 }
               );
+
               Alert.alert(
                 'Application Submitted! 🎉',
                 `Your application to ${selectedOrg.org_name} has been submitted.`,
@@ -224,9 +304,11 @@ export default function ApplyScreen({ navigation }) {
               setSkills('');
               setSupportingInfo('');
               setDuration('3');
+              setDocuments([]);
+              setCurrentStep(1);
               if (res?.data?.application) {
                 setLatestApplication(res.data.application);
-                setApplications(prev => [res.data.application, ...prev]);
+                setApplications((prev) => [res.data.application, ...prev]);
               }
             } catch (err) {
               console.error('Apply failed:', err);
@@ -281,7 +363,6 @@ export default function ApplyScreen({ navigation }) {
   }
 
   // --- Main render ---
-  // Determine if we should show the form
   const showForm = (!myAttachment || myAttachment.status === 'rejected') &&
     canSelfPlace &&
     (!latestApplication || !['pending', 'more_info', 'accepted'].includes(latestApplication.status));
@@ -296,33 +377,46 @@ export default function ApplyScreen({ navigation }) {
         {/* ===== Top App Bar ===== */}
         <View style={[styles.topBar, { backgroundColor: theme.surface }]}>
           <View style={styles.topBarLeft}>
-            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-              <Text style={[styles.backText, { color: theme.primary }]}>← Back</Text>
+            <TouchableOpacity onPress={handleBackStep} style={styles.backButton}>
+              <Ionicons name="arrow-back" size={22} color={theme.text} />
             </TouchableOpacity>
             <Text style={[styles.screenTitle, { color: theme.text }]}>Apply for Attachment</Text>
           </View>
           <View style={styles.topBarDots}>
-            <View style={[styles.dot, { backgroundColor: theme.primary }]} />
-            <View style={[styles.dot, { backgroundColor: theme.outlineVariant }]} />
-            <View style={[styles.dot, { backgroundColor: theme.outlineVariant }]} />
+            {[1, 2, 3].map((step) => (
+              <View
+                key={step}
+                style={[styles.dot, { backgroundColor: step <= currentStep ? theme.primary : theme.outlineVariant }]}
+              />
+            ))}
           </View>
         </View>
 
         {/* ===== Step Progress ===== */}
-        <View style={styles.stepContainer}>
-          <View style={styles.stepHeader}>
-            <Text style={[styles.stepLabel, { color: theme.primary }]}>Step 1 of 3</Text>
-            <Text style={[styles.stepDescription, { color: theme.textSecondary }]}>Personal & Academic Info</Text>
+        {showForm && (
+          <View style={styles.stepContainer}>
+            <View style={styles.stepHeader}>
+              <Text style={[styles.stepLabel, { color: theme.primary }]}>STEP {currentStep} OF 3</Text>
+              <Text style={[styles.stepDescription, { color: theme.textSecondary }]}>
+                {STEP_DESCRIPTIONS[currentStep]}
+              </Text>
+            </View>
+            <View style={styles.progressBar}>
+              {[1, 2, 3].map((step) => (
+                <View
+                  key={step}
+                  style={[
+                    step <= currentStep ? styles.progressFill : styles.progressEmpty,
+                    { backgroundColor: step <= currentStep ? theme.primary : theme.outlineVariant },
+                  ]}
+                />
+              ))}
+            </View>
           </View>
-          <View style={styles.progressBar}>
-            <View style={[styles.progressFill, { backgroundColor: theme.primary, width: '33%' }]} />
-            <View style={[styles.progressEmpty, { backgroundColor: theme.outlineVariant }]} />
-            <View style={[styles.progressEmpty, { backgroundColor: theme.outlineVariant }]} />
-          </View>
-        </View>
+        )}
 
-        {/* ===== Pending application / attachment status (if any) ===== */}
-        {myAttachment && (
+        {/* ===== Pending application / attachment status (Step 1 only) ===== */}
+        {currentStep === 1 && myAttachment && (
           <View style={[styles.statusCard, { backgroundColor: theme.background, borderLeftColor: theme.primary }]}>
             <Text style={[styles.statusTitle, { color: theme.textSecondary }]}>Your Current Attachment</Text>
             <View style={styles.statusRow}>
@@ -344,7 +438,7 @@ export default function ApplyScreen({ navigation }) {
           </View>
         )}
 
-        {!myAttachment && latestApplication && (
+        {currentStep === 1 && !myAttachment && latestApplication && (
           <View style={[styles.statusCard, { backgroundColor: theme.background, borderLeftColor: theme.primary }]}>
             <Text style={[styles.statusTitle, { color: theme.textSecondary }]}>Your Application Status</Text>
             <View style={styles.statusRow}>
@@ -386,10 +480,9 @@ export default function ApplyScreen({ navigation }) {
           </View>
         )}
 
-        {/* ===== MAIN FORM ===== */}
-        {showForm && (
+        {/* ===== STEP 1: Personal & Academic Info ===== */}
+        {showForm && currentStep === 1 && (
           <>
-            {/* ---- Selected Organization Card ---- */}
             <View style={styles.section}>
               <Text style={[styles.sectionTitle, { color: theme.text }]}>Selected Organization</Text>
               {selectedOrg ? (
@@ -425,12 +518,10 @@ export default function ApplyScreen({ navigation }) {
               )}
             </View>
 
-            {/* ---- Personal Information ---- */}
             <View style={styles.section}>
               <Text style={[styles.sectionTitle, { color: theme.text }]}>Personal Information</Text>
-              <View style={styles.formGrid}>
-                {/* Full Name */}
-                <View style={styles.formField}>
+              <View style={styles.stackedFields}>
+                <View style={styles.formFieldFull}>
                   <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>FULL NAME</Text>
                   <TextInput
                     style={[styles.input, { backgroundColor: theme.surface, color: theme.text, borderColor: theme.outlineVariant }]}
@@ -439,8 +530,7 @@ export default function ApplyScreen({ navigation }) {
                     placeholderTextColor={theme.textSecondary}
                   />
                 </View>
-                {/* Registration Number */}
-                <View style={styles.formField}>
+                <View style={styles.formFieldFull}>
                   <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>REGISTRATION NUMBER</Text>
                   <TextInput
                     style={[styles.input, { backgroundColor: theme.surface, color: theme.text, borderColor: theme.outlineVariant }]}
@@ -449,8 +539,7 @@ export default function ApplyScreen({ navigation }) {
                     placeholderTextColor={theme.textSecondary}
                   />
                 </View>
-                {/* Course / Program */}
-                <View style={styles.formField}>
+                <View style={styles.formFieldFull}>
                   <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>COURSE / PROGRAM</Text>
                   <TextInput
                     style={[styles.input, { backgroundColor: theme.surface, color: theme.text, borderColor: theme.outlineVariant }]}
@@ -459,8 +548,7 @@ export default function ApplyScreen({ navigation }) {
                     placeholderTextColor={theme.textSecondary}
                   />
                 </View>
-                {/* Year of Study */}
-                <View style={styles.formField}>
+                <View style={styles.formFieldFull}>
                   <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>YEAR OF STUDY</Text>
                   <TextInput
                     style={[styles.input, { backgroundColor: theme.surface, color: theme.text, borderColor: theme.outlineVariant }]}
@@ -472,122 +560,58 @@ export default function ApplyScreen({ navigation }) {
               </View>
             </View>
 
-            {/* ---- Attachment Details ---- */}
             <View style={styles.section}>
               <Text style={[styles.sectionTitle, { color: theme.text }]}>Attachment Details</Text>
-              <View style={styles.formGrid}>
-                {/* Preferred Start Date */}
-                <View style={styles.formField}>
+              <View style={styles.stackedFields}>
+                <View style={styles.formFieldFull}>
                   <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>PREFERRED START DATE</Text>
-                  <TextInput
-                    style={[styles.input, { backgroundColor: theme.surface, color: theme.text, borderColor: theme.outlineVariant }]}
-                    value={startDate}
-                    onChangeText={handleStartDateChange}
-                    placeholder="YYYY-MM-DD"
-                    placeholderTextColor={theme.textSecondary}
-                    autoCapitalize="none"
-                  />
-                </View>
-                {/* Duration */}
-                <View style={styles.formField}>
-                  <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>DURATION</Text>
-                  <View style={styles.durationPicker}>
-                    <TouchableOpacity
-                      style={[
-                        styles.durationOption,
-                        duration === '3' && { backgroundColor: theme.primary, borderColor: theme.primary }
-                      ]}
-                      onPress={() => handleDurationChange('3')}
-                    >
-                      <Text style={[
-                        styles.durationText,
-                        duration === '3' ? { color: theme.white } : { color: theme.text }
-                      ]}>
-                        3 Months
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[
-                        styles.durationOption,
-                        duration === '6' && { backgroundColor: theme.primary, borderColor: theme.primary }
-                      ]}
-                      onPress={() => handleDurationChange('6')}
-                    >
-                      <Text style={[
-                        styles.durationText,
-                        duration === '6' ? { color: theme.white } : { color: theme.text }
-                      ]}>
-                        6 Months
-                      </Text>
-                    </TouchableOpacity>
+                  <View style={[styles.dateInputWrap, { borderColor: theme.outlineVariant, backgroundColor: theme.surface }]}>
+                    <TextInput
+                      style={[styles.dateInput, { color: theme.text }]}
+                      value={startDate}
+                      onChangeText={handleStartDateChange}
+                      placeholder="mm/dd/yyyy"
+                      placeholderTextColor={theme.textSecondary}
+                      autoCapitalize="none"
+                    />
+                    <Ionicons name="calendar-outline" size={18} color={theme.textSecondary} />
                   </View>
                 </View>
-                {/* End Date (auto-calculated) */}
-                <View style={[styles.formField, styles.fullWidth]}>
-                  <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>END DATE (auto‑calculated)</Text>
-                  <TextInput
-                    style={[styles.input, { backgroundColor: theme.surface, color: theme.text, borderColor: theme.outlineVariant }]}
-                    value={endDate}
-                    editable={false}
-                    placeholder="Will be set based on start + duration"
-                    placeholderTextColor={theme.textSecondary}
-                  />
-                </View>
 
-                {/* Skills (additional field) */}
-                <View style={[styles.formField, styles.fullWidth]}>
-                  <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>SKILLS (comma separated)</Text>
-                  <TextInput
-                    style={[styles.input, { backgroundColor: theme.surface, color: theme.text, borderColor: theme.outlineVariant }]}
-                    value={skills}
-                    onChangeText={setSkills}
-                    placeholder="e.g. JavaScript, Data Analysis, Communication"
-                    placeholderTextColor={theme.textSecondary}
-                  />
-                </View>
-
-                {/* Supporting Info */}
-                <View style={[styles.formField, styles.fullWidth]}>
-                  <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>SUPPORTING INFORMATION</Text>
-                  <TextInput
-                    style={[styles.textArea, { backgroundColor: theme.surface, color: theme.text, borderColor: theme.outlineVariant }]}
-                    value={supportingInfo}
-                    onChangeText={setSupportingInfo}
-                    placeholder="Share relevant experience, projects, or documents..."
-                    placeholderTextColor={theme.textSecondary}
-                    multiline
-                    numberOfLines={4}
-                    textAlignVertical="top"
-                  />
+                <View style={styles.formFieldFull}>
+                  <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>DURATION</Text>
+                  <TouchableOpacity
+                    style={[styles.selectField, { borderColor: theme.outlineVariant, backgroundColor: theme.surface }]}
+                    onPress={() => handleDurationChange(duration === '3' ? '6' : '3')}
+                  >
+                    <Text style={[styles.selectFieldText, { color: theme.text }]}>
+                      {duration === '3' ? '3 Months (Standard)' : '6 Months'}
+                    </Text>
+                    <Ionicons name="chevron-down" size={18} color={theme.textSecondary} />
+                  </TouchableOpacity>
                 </View>
               </View>
             </View>
 
-            {/* ---- Submit Button ---- */}
             <View style={styles.submitContainer}>
-              <TouchableOpacity
-                style={[styles.submitButton, { backgroundColor: theme.primary }]}
-                onPress={handleApply}
-                disabled={applying}
-              >
-                {applying ? (
-                  <Spinner color={theme.white} size="small" />
-                ) : (
-                  <Text style={[styles.submitButtonText, { color: theme.white }]}>
-                    Submit Application 📋
-                  </Text>
-                )}
+              <TouchableOpacity style={[styles.submitButton, { backgroundColor: theme.primary }]} onPress={handleNext}>
+                <Text style={[styles.submitButtonText, { color: theme.white }]}>Next: Upload Documents</Text>
+                <Ionicons name="arrow-forward" size={18} color={theme.white} style={{ marginLeft: 8 }} />
               </TouchableOpacity>
               <Text style={[styles.submitHelper, { color: theme.textSecondary }]}>
                 You can save your progress and continue later.
               </Text>
             </View>
 
-            {/* ---- Organization List (to select) ---- */}
             <View style={styles.section}>
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>
-                Available Organizations ({organizations.length})
-              </Text>
+              <View style={styles.rowBetween}>
+                <Text style={[styles.sectionTitle, { color: theme.text }]}>
+                  Other Organizations ({organizations.length})
+                </Text>
+                <TouchableOpacity>
+                  <Text style={[styles.viewDirectory, { color: theme.primary }]}>View Directory</Text>
+                </TouchableOpacity>
+              </View>
               {organizations.length === 0 ? (
                 <View style={[styles.emptyCard, { backgroundColor: theme.background }]}>
                   <Text style={styles.emptyIcon}>🏢</Text>
@@ -620,15 +644,23 @@ export default function ApplyScreen({ navigation }) {
                           📍 {org.location}
                         </Text>
                       </View>
-                      <View style={[
-                        styles.slotBadge,
-                        org.available_slots === 0 ? { backgroundColor: '#FFEBEE' } : { backgroundColor: '#E8F5E9' }
-                      ]}>
-                        <Text style={[
-                          styles.slotBadgeText,
-                          org.available_slots === 0 ? { color: '#C62828' } : { color: '#2E7D32' }
+                      <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                        <View style={[
+                          styles.slotBadge,
+                          org.available_slots === 0 ? { backgroundColor: '#FFEBEE' } : { backgroundColor: '#E8F5E9' }
                         ]}>
-                          {org.available_slots === 0 ? 'FULL' : `${org.available_slots} slots`}
+                          <Text style={[
+                            styles.slotBadgeText,
+                            org.available_slots === 0 ? { color: '#C62828' } : { color: '#2E7D32' }
+                          ]}>
+                            {org.available_slots === 0 ? 'FULL' : `${org.available_slots} slots`}
+                          </Text>
+                        </View>
+                        <Text style={[
+                          styles.slotAction,
+                          { color: org.available_slots === 0 ? theme.textSecondary : theme.primary }
+                        ]}>
+                          {org.available_slots === 0 ? 'UNAVAILABLE' : 'SELECT'}
                         </Text>
                       </View>
                     </View>
@@ -636,10 +668,132 @@ export default function ApplyScreen({ navigation }) {
                 ))
               )}
             </View>
-
-            <View style={{ height: 80 }} />
           </>
         )}
+
+        {/* ===== STEP 2: Supporting Documents ===== */}
+        {showForm && currentStep === 2 && (
+          <>
+            <View style={styles.section}>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>Skills</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: theme.surface, color: theme.text, borderColor: theme.outlineVariant }]}
+                value={skills}
+                onChangeText={setSkills}
+                placeholder="e.g. JavaScript, Data Analysis, Communication"
+                placeholderTextColor={theme.textSecondary}
+              />
+            </View>
+
+            <View style={styles.section}>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>Supporting Documents</Text>
+              <Text style={[styles.helperText, { color: theme.textSecondary }]}>
+                Optional — attach your CV, introduction letter, or ID copy.
+              </Text>
+
+              {documents.map((doc, i) => (
+                <View key={`${doc.name}-${i}`} style={[styles.docRow, { borderColor: theme.outlineVariant, backgroundColor: theme.background }]}>
+                  <Ionicons name="document-text-outline" size={20} color={theme.primary} />
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={[styles.docName, { color: theme.text }]} numberOfLines={1}>{doc.name}</Text>
+                    {!!doc.size && <Text style={[styles.docSize, { color: theme.textSecondary }]}>{formatFileSize(doc.size)}</Text>}
+                  </View>
+                  <TouchableOpacity onPress={() => handleRemoveDocument(i)}>
+                    <Ionicons name="close-circle" size={20} color={theme.textSecondary} />
+                  </TouchableOpacity>
+                </View>
+              ))}
+
+              <TouchableOpacity
+                style={[styles.uploadBox, { borderColor: theme.outlineVariant }]}
+                onPress={handlePickDocument}
+              >
+                <Ionicons name="cloud-upload-outline" size={24} color={theme.primary} />
+                <Text style={[styles.uploadBoxText, { color: theme.primary }]}>Tap to upload documents</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.section}>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>Supporting Information</Text>
+              <TextInput
+                style={[styles.textArea, { backgroundColor: theme.surface, color: theme.text, borderColor: theme.outlineVariant }]}
+                value={supportingInfo}
+                onChangeText={setSupportingInfo}
+                placeholder="Share relevant experience, projects, or documents..."
+                placeholderTextColor={theme.textSecondary}
+                multiline
+                numberOfLines={4}
+                textAlignVertical="top"
+              />
+            </View>
+
+            <View style={styles.submitContainer}>
+              <TouchableOpacity style={[styles.submitButton, { backgroundColor: theme.primary }]} onPress={handleNext}>
+                <Text style={[styles.submitButtonText, { color: theme.white }]}>Next: Review Application</Text>
+                <Ionicons name="arrow-forward" size={18} color={theme.white} style={{ marginLeft: 8 }} />
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
+
+        {/* ===== STEP 3: Review & Submit ===== */}
+        {showForm && currentStep === 3 && (
+          <>
+            <View style={styles.section}>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>Review Your Application</Text>
+
+              <View style={[styles.reviewCard, { backgroundColor: theme.background }]}>
+                <Text style={[styles.reviewLabel, { color: theme.textSecondary }]}>ORGANIZATION</Text>
+                <Text style={[styles.reviewValue, { color: theme.text }]}>{selectedOrg?.org_name}</Text>
+
+                <Text style={[styles.reviewLabel, { color: theme.textSecondary, marginTop: 12 }]}>ATTACHMENT PERIOD</Text>
+                <Text style={[styles.reviewValue, { color: theme.text }]}>
+                  {formatDateDisplay(startDate)} — {formatDateDisplay(endDate)} ({duration} months)
+                </Text>
+
+                <Text style={[styles.reviewLabel, { color: theme.textSecondary, marginTop: 12 }]}>SKILLS</Text>
+                <Text style={[styles.reviewValue, { color: theme.text }]}>{skills}</Text>
+
+                {!!supportingInfo && (
+                  <>
+                    <Text style={[styles.reviewLabel, { color: theme.textSecondary, marginTop: 12 }]}>SUPPORTING INFORMATION</Text>
+                    <Text style={[styles.reviewValue, { color: theme.text }]}>{supportingInfo}</Text>
+                  </>
+                )}
+
+                <Text style={[styles.reviewLabel, { color: theme.textSecondary, marginTop: 12 }]}>DOCUMENTS</Text>
+                {documents.length === 0 ? (
+                  <Text style={[styles.reviewValue, { color: theme.textSecondary }]}>No documents attached</Text>
+                ) : (
+                  documents.map((doc, i) => (
+                    <Text key={i} style={[styles.reviewValue, { color: theme.text }]}>• {doc.name}</Text>
+                  ))
+                )}
+              </View>
+            </View>
+
+            <View style={styles.submitContainer}>
+              <TouchableOpacity
+                style={[styles.submitButton, { backgroundColor: theme.primary }]}
+                onPress={handleApply}
+                disabled={applying}
+              >
+                {applying ? (
+                  <Spinner color={theme.white} size="small" />
+                ) : (
+                  <Text style={[styles.submitButtonText, { color: theme.white }]}>
+                    Submit Application 📋
+                  </Text>
+                )}
+              </TouchableOpacity>
+              <Text style={[styles.submitHelper, { color: theme.textSecondary }]}>
+                You can save your progress and continue later.
+              </Text>
+            </View>
+          </>
+        )}
+
+        <View style={{ height: 80 }} />
       </ScrollView>
 
       {/* ===== Bottom Navigation Shell ===== */}
@@ -688,7 +842,6 @@ const styles = StyleSheet.create({
   },
   topBarLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   backButton: { padding: 4 },
-  backText: { fontSize: 16, fontWeight: '600' },
   screenTitle: { fontSize: 18, fontWeight: '700' },
   topBarDots: { flexDirection: 'row', gap: 4 },
   dot: { width: 8, height: 8, borderRadius: 4 },
@@ -698,9 +851,9 @@ const styles = StyleSheet.create({
   stepHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
   stepLabel: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase' },
   stepDescription: { fontSize: 13, fontWeight: '400' },
-  progressBar: { flexDirection: 'row', height: 6, borderRadius: 3, overflow: 'hidden' },
-  progressFill: { flex: 1 },
-  progressEmpty: { flex: 1, opacity: 0.2 },
+  progressBar: { flexDirection: 'row', height: 6, borderRadius: 3, overflow: 'hidden', gap: 4 },
+  progressFill: { flex: 1, borderRadius: 3 },
+  progressEmpty: { flex: 1, borderRadius: 3, opacity: 0.5 },
 
   // Status Cards
   statusCard: {
@@ -731,6 +884,9 @@ const styles = StyleSheet.create({
   // Sections
   section: { paddingHorizontal: 16, marginBottom: 24 },
   sectionTitle: { fontSize: 16, fontWeight: '700', marginBottom: 12 },
+  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  viewDirectory: { fontSize: 13, fontWeight: '600' },
+  helperText: { fontSize: 12, marginBottom: 12, marginTop: -6 },
 
   // Selected Org Card
   orgCard: {
@@ -771,9 +927,8 @@ const styles = StyleSheet.create({
   selectOrgText: { fontSize: 14 },
 
   // Form
-  formGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  formField: { flex: 1, minWidth: '45%' },
-  fullWidth: { flex: 1, minWidth: '100%' },
+  stackedFields: { gap: 14 },
+  formFieldFull: { width: '100%' },
   fieldLabel: { fontSize: 12, fontWeight: '600', marginBottom: 4, letterSpacing: 0.5 },
   input: {
     borderWidth: 1,
@@ -791,22 +946,58 @@ const styles = StyleSheet.create({
     fontSize: 15,
     minHeight: 100,
   },
-  durationPicker: { flexDirection: 'row', gap: 8 },
-  durationOption: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#ddd',
+  dateInputWrap: {
+    flexDirection: 'row',
     alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    height: 48,
   },
-  durationText: { fontSize: 14, fontWeight: '500' },
+  dateInput: { flex: 1, fontSize: 15 },
+  selectField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    height: 48,
+  },
+  selectFieldText: { fontSize: 15 },
+
+  // Documents
+  docRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 10,
+  },
+  docName: { fontSize: 13, fontWeight: '600' },
+  docSize: { fontSize: 11, marginTop: 2 },
+  uploadBox: {
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderRadius: 12,
+    paddingVertical: 24,
+    alignItems: 'center',
+    gap: 6,
+  },
+  uploadBoxText: { fontSize: 13, fontWeight: '600' },
+
+  // Review
+  reviewCard: { borderRadius: 16, padding: 16 },
+  reviewLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
+  reviewValue: { fontSize: 14, marginTop: 4 },
 
   // Submit
   submitContainer: { paddingHorizontal: 16, marginTop: 8, marginBottom: 24 },
   submitButton: {
     height: 52,
     borderRadius: 30,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
@@ -841,6 +1032,7 @@ const styles = StyleSheet.create({
   orgListItemLocation: { fontSize: 12, marginTop: 2 },
   slotBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   slotBadgeText: { fontSize: 12, fontWeight: '600' },
+  slotAction: { fontSize: 11, fontWeight: '700' },
 
   // Bottom Navigation
   bottomNav: {

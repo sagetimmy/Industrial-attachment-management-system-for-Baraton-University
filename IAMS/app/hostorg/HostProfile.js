@@ -9,7 +9,10 @@ import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  Image,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { useAuth } from '../../context/AuthContext';
 import { COLORS } from '../../constants/colors';
 import api from '../../api/axios';
@@ -20,6 +23,8 @@ const HostProfile = ({ navigation, route }) => {
   const canEditOrgProfile = hasRolePermission(user, 'editOrgProfile');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [orgLogoUrl, setOrgLogoUrl] = useState(null);
 
   const [formData, setFormData] = useState({
     org_name: '',
@@ -41,6 +46,7 @@ const HostProfile = ({ navigation, route }) => {
         phone: route.params.org.phone || '',
         available_slots: route.params.org.available_slots || 0,
       });
+      setOrgLogoUrl(route.params.org.org_logo_url || null);
     } else {
       // Otherwise fetch from dashboard
       fetchOrgData();
@@ -59,6 +65,7 @@ const HostProfile = ({ navigation, route }) => {
           phone: response.data.org.phone || '',
           available_slots: response.data.org.available_slots || 0,
         });
+        setOrgLogoUrl(response.data.org.org_logo_url || null);
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to load profile data');
@@ -115,6 +122,56 @@ const HostProfile = ({ navigation, route }) => {
     }
   };
 
+  const handleChangeLogo = async () => {
+    if (!canEditOrgProfile) {
+      Alert.alert('Permission Disabled', 'Editing the organization profile is currently disabled.');
+      return;
+    }
+
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission needed', 'Please allow photo library access to upload a logo.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (result.canceled) return;
+
+      setUploadingLogo(true);
+
+      const manipulated = await ImageManipulator.manipulateAsync(
+        result.assets[0].uri,
+        [{ resize: { width: 512, height: 512 } }],
+        { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
+      );
+
+      const logoFormData = new FormData();
+      logoFormData.append('logo', {
+        uri: manipulated.uri,
+        name: 'logo.jpg',
+        type: 'image/jpeg',
+      });
+
+      const response = await api.post('/host-orgs/logo', logoFormData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      setOrgLogoUrl(response.data.org_logo_url);
+    } catch (error) {
+      const message = error.response?.data?.message || 'Could not upload logo. Please try again.';
+      Alert.alert('Upload Failed', message);
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
+
   const handleInputChange = (field, value) => {
     setFormData(prev => ({
       ...prev,
@@ -162,6 +219,8 @@ const HostProfile = ({ navigation, route }) => {
     );
   }
 
+  const orgInitial = formData.org_name?.trim().charAt(0).toUpperCase() || '?';
+
   return (
     <KeyboardAvoidingView style={styles.container} behavior="padding">
       {/* Header */}
@@ -178,6 +237,37 @@ const HostProfile = ({ navigation, route }) => {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        {/* Logo */}
+        <View style={styles.logoWrapper}>
+          <TouchableOpacity
+            style={styles.logoCircle}
+            onPress={handleChangeLogo}
+            disabled={uploadingLogo || !canEditOrgProfile}
+            activeOpacity={0.8}
+          >
+            {orgLogoUrl ? (
+              <Image source={{ uri: orgLogoUrl }} style={styles.logoImage} />
+            ) : (
+              <Text style={styles.logoInitial}>{orgInitial}</Text>
+            )}
+
+            {uploadingLogo && (
+              <View style={styles.logoLoadingOverlay}>
+                <ActivityIndicator size="small" color="white" />
+              </View>
+            )}
+
+            {canEditOrgProfile && (
+              <View style={styles.cameraBadge}>
+                <Text style={styles.cameraBadgeText}>📷</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+          <Text style={styles.logoHint}>
+            {canEditOrgProfile ? 'Tap to change logo' : 'Organization Logo'}
+          </Text>
+        </View>
+
         {/* Info Card */}
         <View style={styles.infoCard}>
           <Text style={styles.infoTitle}>📋 Organization Information</Text>
@@ -301,6 +391,62 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  logoWrapper: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  logoCircle: {
+    width: 96,
+    height: 96,
+    borderRadius: 20,
+    backgroundColor: COLORS.secondary,
+    borderWidth: 3,
+    borderColor: 'white',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+  },
+  logoImage: {
+    width: '100%',
+    height: '100%',
+  },
+  logoInitial: {
+    color: 'white',
+    fontSize: 34,
+    fontWeight: '800',
+  },
+  logoLoadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cameraBadge: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'white',
+  },
+  cameraBadgeText: {
+    fontSize: 12,
+  },
+  logoHint: {
+    fontSize: 12,
+    color: '#888',
+    marginTop: 8,
   },
   infoCard: {
     backgroundColor: 'white',

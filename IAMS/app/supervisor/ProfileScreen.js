@@ -3,6 +3,9 @@ import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert,
   ActivityIndicator, Image
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../api/axios';
 
@@ -18,8 +21,9 @@ const ON_TRACK_BG = '#E3F1EE';
 const ON_TRACK_TEXT = '#1B6B5A';
 
 export default function SupervisorProfileScreen({ navigation }) {
-  const { user, logout } = useAuth();
+  const { user, logout, fetchUserProfile } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [profile, setProfile] = useState(null);
   const [stats, setStats] = useState({ activeStudents: 0, reviewsPending: 0, avgScore: 0 });
   const [students, setStudents] = useState([]);
@@ -27,6 +31,14 @@ export default function SupervisorProfileScreen({ navigation }) {
   useEffect(() => {
     fetchProfile();
   }, []);
+
+  // Keep local `profile` photo in sync whenever the global user object
+  // changes (e.g. after fetchUserProfile() runs post-upload)
+  useEffect(() => {
+    if (user?.avatar_url) {
+      setProfile(prev => (prev ? { ...prev, photo_url: user.avatar_url } : prev));
+    }
+  }, [user]);
 
   const fetchProfile = async () => {
     try {
@@ -43,7 +55,8 @@ export default function SupervisorProfileScreen({ navigation }) {
         staff_id: supervisorData.staff_id || '',
         office: supervisorData.office || '',
         title: supervisorData.title || 'Supervisor',
-        photo_url: supervisorData.photo_url || user?.photo_url || null,
+        // avatar_url (set via /avatar upload) is the source of truth; photo_url is a legacy fallback
+        photo_url: user?.avatar_url || supervisorData.photo_url || null,
       });
 
       setStats({
@@ -61,9 +74,57 @@ export default function SupervisorProfileScreen({ navigation }) {
         phone: user?.phone || '',
         department: user?.department || '',
         title: 'Supervisor',
+        photo_url: user?.avatar_url || null,
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleChangePhoto = async () => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission needed', 'Please allow photo library access to upload a profile photo.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (result.canceled) return;
+
+      setUploadingPhoto(true);
+
+      const manipulated = await ImageManipulator.manipulateAsync(
+        result.assets[0].uri,
+        [{ resize: { width: 512, height: 512 } }],
+        { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
+      );
+
+      const photoFormData = new FormData();
+      photoFormData.append('photo', {
+        uri: manipulated.uri,
+        name: 'avatar.jpg',
+        type: 'image/jpeg',
+      });
+
+      await api.post('/avatar', photoFormData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      // Refresh the global user object so the new avatar_url
+      // propagates everywhere (header, drawer, other screens)
+      await fetchUserProfile();
+    } catch (err) {
+      const message = err.response?.data?.message || 'Could not upload photo. Please try again.';
+      Alert.alert('Upload Failed', message);
+    } finally {
+      setUploadingPhoto(false);
     }
   };
 
@@ -78,6 +139,7 @@ export default function SupervisorProfileScreen({ navigation }) {
     full_name: user?.full_name || 'Supervisor',
     email: user?.email || '',
     title: 'Supervisor',
+    photo_url: user?.avatar_url || null,
   };
 
   const initials = profileData.full_name
@@ -88,7 +150,7 @@ export default function SupervisorProfileScreen({ navigation }) {
     .slice(0, 2) || 'S';
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
@@ -96,7 +158,7 @@ export default function SupervisorProfileScreen({ navigation }) {
             <Text style={styles.backButton}>←</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Supervisor Profile</Text>
-          <TouchableOpacity onPress={() => navigation.navigate('EditProfile')}>
+          <TouchableOpacity onPress={() => navigation.navigate('SupervisorEditProfile')}>
             <Text style={styles.editButton}>✎</Text>
           </TouchableOpacity>
         </View>
@@ -109,7 +171,12 @@ export default function SupervisorProfileScreen({ navigation }) {
           <>
             {/* Avatar + Name */}
             <View style={styles.avatarSection}>
-              <View style={styles.avatarWrap}>
+              <TouchableOpacity
+                style={styles.avatarWrap}
+                onPress={handleChangePhoto}
+                disabled={uploadingPhoto}
+                activeOpacity={0.8}
+              >
                 {profileData.photo_url ? (
                   <Image source={{ uri: profileData.photo_url }} style={styles.avatarImage} />
                 ) : (
@@ -117,8 +184,17 @@ export default function SupervisorProfileScreen({ navigation }) {
                     <Text style={styles.avatarText}>{initials}</Text>
                   </View>
                 )}
-                <View style={styles.onlineDot} />
-              </View>
+
+                {uploadingPhoto && (
+                  <View style={styles.avatarLoadingOverlay}>
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  </View>
+                )}
+
+                <View style={styles.cameraBadge}>
+                  <Text style={styles.cameraBadgeText}>📷</Text>
+                </View>
+              </TouchableOpacity>
               <Text style={styles.name}>{profileData.full_name}</Text>
               <Text style={styles.role}>{profileData.title}</Text>
               {!!profileData.department && (
@@ -280,7 +356,7 @@ export default function SupervisorProfileScreen({ navigation }) {
 
         <View style={{ height: 40 }} />
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -301,7 +377,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 14,
-    paddingTop: 16,
   },
   backButton: {
     fontSize: 20,
@@ -344,16 +419,28 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
   },
-  onlineDot: {
+  avatarLoadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 50,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cameraBadge: {
     position: 'absolute',
     bottom: 4,
     right: 4,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: ONLINE_GREEN,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: TEAL,
+    justifyContent: 'center',
+    alignItems: 'center',
     borderWidth: 2,
     borderColor: BG,
+  },
+  cameraBadgeText: {
+    fontSize: 12,
   },
   name: {
     fontSize: 19,

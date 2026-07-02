@@ -35,6 +35,7 @@ import EvaluationsScreen from './app/supervisor/EvaluationsScreen';
 import ReportsScreen from './app/supervisor/ReportsScreen';
 import SupervisorSettings from './app/supervisor/SupervisorSettings';
 import SupervisorAnnouncementsScreen from './app/supervisor/AnnouncementsScreen';
+import SupervisorEditProfileScreen from './app/supervisor/SupervisorEditProfile';
 
 // Admin screens
 import AdminDashboard from './app/admin/AdminDashboard';
@@ -161,6 +162,7 @@ function RootNavigator() {
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         <Stack.Screen name="SupervisorDashboard" component={SupervisorDashboard}         />
         <Stack.Screen name="Profile"             component={SupervisorProfileScreen}      />
+        <Stack.Screen name="SupervisorEditProfile" component={SupervisorEditProfileScreen} />
         <Stack.Screen name="MyStudents"          component={MyStudentsScreen}             />
         <Stack.Screen name="ReviewLogbooks"      component={ReviewLogbooksScreen}         />
         <Stack.Screen name="LogbookDetail"       component={LogbookDetailScreen}          />

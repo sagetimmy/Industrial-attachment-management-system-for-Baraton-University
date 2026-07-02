@@ -4,16 +4,22 @@ import {
   ActivityIndicator, RefreshControl, TextInput, useWindowDimensions,
   Image
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { COLORS } from '../../constants/colors';
 import api from '../../api/axios';
 import Card from '../../components/Card';
 import Button from '../../components/Button';
 
-function AvatarPlaceholder({ initials, color = '#0F6E56' }) {
+function AvatarPlaceholder({ initials, color = '#0F6E56', size = 48 }) {
   return (
-    <View style={[styles.avatar, { backgroundColor: color }]}>
-      <Text style={styles.avatarText}>{initials}</Text>
+    <View
+      style={[
+        styles.avatar,
+        { backgroundColor: color, width: size, height: size, borderRadius: size / 2 },
+      ]}
+    >
+      <Text style={[styles.avatarText, { fontSize: size * 0.33 }]}>{initials}</Text>
     </View>
   );
 }
@@ -75,7 +81,7 @@ function StatusBadge({ status }) {
   );
 }
 
-function StudentCard({ student, onPress }) {
+function StudentCard({ student, onPress, isTablet }) {
   // Calculate progress based on logbook entries
   const progress = Math.min((student.logbook_count || 0) * 15, 100);
 
@@ -99,21 +105,25 @@ function StudentCard({ student, onPress }) {
   const lastActive = student.lastActive || 'Never';
 
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.7}
+      style={isTablet ? styles.studentCardTabletWrapper : undefined}
+    >
       <Card style={styles.studentCard}>
         <View style={styles.studentHeader}>
           <View style={styles.studentInfo}>
             <AvatarPlaceholder initials={initials} color="#0F6E56" />
             <View style={styles.studentName}>
-              <Text style={styles.name}>{student.full_name}</Text>
-              <Text style={styles.company}>{student.org_name || 'N/A'}</Text>
+              <Text style={styles.name} numberOfLines={1}>{student.full_name}</Text>
+              <Text style={styles.company} numberOfLines={1}>{student.org_name || 'N/A'}</Text>
             </View>
           </View>
           <StatusBadge status={getStatus()} />
         </View>
 
         <View style={styles.progressSection}>
-          <View>
+          <View style={{ flex: 1 }}>
             <Text style={styles.label}>PROGRAM PROGRESS</Text>
             <View style={styles.progressContainer}>
               <ProgressBar percentage={progress} color={progressColor} />
@@ -136,6 +146,7 @@ function StudentCard({ student, onPress }) {
 
 export default function MyStudentsScreen({ navigation }) {
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [students, setStudents] = useState([]);
   const [filteredStudents, setFilteredStudents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -143,6 +154,8 @@ export default function MyStudentsScreen({ navigation }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('all');
   const isTablet = width >= 768;
+  const horizontalPadding = width >= 1024 ? 32 : width >= 768 ? 24 : 16;
+  const maxContentWidth = 1000;
 
   const fetchStudents = async () => {
     try {
@@ -243,11 +256,10 @@ export default function MyStudentsScreen({ navigation }) {
     });
   };
 
-  const handleAssignStudent = () => {
-    Alert.alert('Assign Student', 'Navigate to assignment screen', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Proceed', onPress: () => console.log('Assign student') },
-    ]);
+  const handleBack = () => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    }
   };
 
   const onRefresh = () => {
@@ -257,98 +269,112 @@ export default function MyStudentsScreen({ navigation }) {
 
   if (loading) {
     return (
-      <View style={styles.centerContainer}>
+      <View style={[styles.centerContainer, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
         <ActivityIndicator size="large" color={COLORS.primary} />
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <View
+      style={[
+        styles.container,
+        {
+          paddingTop: insets.top,
+          paddingLeft: insets.left,
+          paddingRight: insets.right,
+        },
+      ]}
+    >
       <ScrollView
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[
+          styles.content,
+          {
+            paddingHorizontal: horizontalPadding,
+            paddingBottom: insets.bottom + 24,
+          },
+        ]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.title}>My Students</Text>
-            <View style={styles.totalBadge}>
-              <Text style={styles.totalText}>{students.length} TOTAL</Text>
+        <View style={[styles.contentInner, { maxWidth: maxContentWidth, alignSelf: 'center', width: '100%' }]}>
+          {/* Header */}
+          <View style={styles.header}>
+            <TouchableOpacity
+              onPress={handleBack}
+              style={styles.backButton}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={styles.backButtonIcon}>←</Text>
+            </TouchableOpacity>
+
+            <View style={styles.headerTitleRow}>
+              <Text style={[styles.title, isTablet && styles.titleTablet]}>My Students</Text>
+              <View style={styles.totalBadge}>
+                <Text style={styles.totalText}>{students.length} TOTAL</Text>
+              </View>
             </View>
           </View>
-        </View>
 
-        {/* Search Bar */}
-        <View style={styles.searchContainer}>
-          <Text style={styles.searchIcon}>🔍</Text>
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search by name or company..."
-            value={searchQuery}
-            onChangeText={handleSearch}
-            placeholderTextColor="#CCCCCC"
-          />
-        </View>
+          {/* Search Bar */}
+          <View style={styles.searchContainer}>
+            <Text style={styles.searchIcon}>🔍</Text>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search by name or company..."
+              value={searchQuery}
+              onChangeText={handleSearch}
+              placeholderTextColor="#CCCCCC"
+            />
+          </View>
 
-        {/* Filter Tabs */}
-        <View style={styles.filterContainer}>
-          {[
-            { id: 'all', label: 'All Students' },
-            { id: 'pending', label: 'Pending Approval' },
-            { id: 'low-progress', label: 'Low Progress' },
-          ].map(filter => (
-            <TouchableOpacity
-              key={filter.id}
-              style={[
-                styles.filterTab,
-                activeFilter === filter.id && styles.filterTabActive,
-              ]}
-              onPress={() => handleFilterChange(filter.id)}
-            >
-              <Text
+          {/* Filter Tabs */}
+          <View style={styles.filterContainer}>
+            {[
+              { id: 'all', label: 'All Students' },
+              { id: 'pending', label: 'Pending Approval' },
+              { id: 'low-progress', label: 'Low Progress' },
+            ].map(filter => (
+              <TouchableOpacity
+                key={filter.id}
                 style={[
-                  styles.filterTabText,
-                  activeFilter === filter.id && styles.filterTabTextActive,
+                  styles.filterTab,
+                  activeFilter === filter.id && styles.filterTabActive,
                 ]}
+                onPress={() => handleFilterChange(filter.id)}
               >
-                {filter.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Students List */}
-        {filteredStudents.length > 0 ? (
-          <View style={styles.studentsList}>
-            {filteredStudents.map((student, index) => (
-              <StudentCard
-                key={`${student.attachment_id}-${index}`}
-                student={student}
-                onPress={() => handleStudentPress(student)}
-              />
+                <Text
+                  style={[
+                    styles.filterTabText,
+                    activeFilter === filter.id && styles.filterTabTextActive,
+                  ]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                >
+                  {filter.label}
+                </Text>
+              </TouchableOpacity>
             ))}
           </View>
-        ) : (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyStateText}>No students found</Text>
-          </View>
-        )}
 
-        {/* Assign New Student Section */}
-        <View style={styles.assignSection}>
-          <View style={styles.assignContent}>
-            <Text style={styles.assignIcon}>👥</Text>
-            <Text style={styles.assignText}>Assign New Student</Text>
-          </View>
-          <TouchableOpacity
-            style={styles.assignButton}
-            onPress={handleAssignStudent}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.assignButtonText}>+</Text>
-          </TouchableOpacity>
+          {/* Students List */}
+          {filteredStudents.length > 0 ? (
+            <View style={[styles.studentsList, isTablet && styles.studentsListTablet]}>
+              {filteredStudents.map((student, index) => (
+                <StudentCard
+                  key={`${student.attachment_id}-${index}`}
+                  student={student}
+                  onPress={() => handleStudentPress(student)}
+                  isTablet={isTablet}
+                />
+              ))}
+            </View>
+          ) : (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyStateText}>No students found</Text>
+            </View>
+          )}
         </View>
       </ScrollView>
     </View>
@@ -361,8 +387,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#F4F4F4',
   },
   content: {
-    paddingHorizontal: 16,
-    paddingBottom: 24,
+    flexGrow: 1,
+  },
+  contentInner: {
+    flex: 1,
   },
   centerContainer: {
     flex: 1,
@@ -375,18 +403,40 @@ const styles = StyleSheet.create({
   header: {
     marginBottom: 24,
   },
+  backButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  backButtonIcon: {
+    fontSize: 18,
+    color: '#1A3A33',
+    fontWeight: '700',
+  },
+  headerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   title: {
     fontSize: 28,
     fontWeight: '700',
     color: '#000000',
-    marginBottom: 8,
+  },
+  titleTablet: {
+    fontSize: 32,
   },
   totalBadge: {
     backgroundColor: '#E0F2F1',
     paddingHorizontal: 12,
-    paddingVertical: 4,
+    paddingVertical: 5,
     borderRadius: 12,
-    alignSelf: 'flex-start',
   },
   totalText: {
     fontSize: 12,
@@ -429,6 +479,7 @@ const styles = StyleSheet.create({
   filterTab: {
     flex: 1,
     paddingVertical: 10,
+    paddingHorizontal: 4,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
@@ -447,6 +498,14 @@ const styles = StyleSheet.create({
 
   // Students list & cards
   studentsList: {},
+  studentsListTablet: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  studentCardTabletWrapper: {
+    width: '48.5%',
+  },
   studentCard: {
     marginBottom: 12,
   },
@@ -462,15 +521,11 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
   },
   avatarText: {
     color: '#FFFFFF',
-    fontSize: 16,
     fontWeight: '700',
   },
   studentName: {
@@ -546,46 +601,5 @@ const styles = StyleSheet.create({
   emptyStateText: {
     fontSize: 14,
     color: '#888888',
-  },
-
-  // Assign section
-  assignSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 12,
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    borderColor: '#C0D8D2',
-    backgroundColor: '#FFFFFF',
-  },
-  assignContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  assignIcon: {
-    fontSize: 18,
-    marginRight: 8,
-  },
-  assignText: {
-    fontSize: 14,
-    color: '#888888',
-    fontWeight: '600',
-  },
-  assignButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#0F6E56',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  assignButtonText: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: '700',
-    lineHeight: 20,
   },
 });

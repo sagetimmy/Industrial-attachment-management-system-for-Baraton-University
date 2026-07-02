@@ -1,8 +1,21 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 const { protect } = require('../middleware/auth.middleware');
 const { getRolePermissions, requireRolePermission } = require('../utils/rolePermissions');
 const supabase = require('../config/db');
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB cap
+  fileFilter: (req, file, cb) => {
+    const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowed.includes(file.mimetype)) {
+      return cb(new Error('Only JPEG, PNG, or WEBP images are allowed'));
+    }
+    cb(null, true);
+  },
+});
 
 // GET /api/host-orgs/dashboard
 router.get('/dashboard', protect, async (req, res) => {
@@ -79,6 +92,60 @@ router.put('/profile', protect, requireRolePermission('editOrgProfile'), async (
     res.json({ message: 'Profile updated successfully!' });
   } catch (err) {
     res.status(500).json({ message: err.message });
+  }
+});
+
+// POST /api/host-orgs/logo  (multipart/form-data, field name "logo")
+router.post('/logo', protect, requireRolePermission('editOrgProfile'), upload.single('logo'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'No file uploaded' });
+    }
+
+    const { data: org, error: orgError } = await supabase
+      .from('host_organizations')
+      .select('org_id')
+      .eq('user_id', req.user.user_id)
+      .single();
+
+    if (orgError || !org) return res.status(404).json({ message: 'Organization not found' });
+
+    const ext = req.file.mimetype === 'image/png' ? 'png' : 'jpg';
+    const filePath = `${org.org_id}/logo.${ext}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('org-logos')
+      .upload(filePath, req.file.buffer, {
+        contentType: req.file.mimetype,
+        upsert: true, // overwrite previous logo
+      });
+
+    if (uploadError) {
+      console.error('Supabase upload error:', uploadError);
+      return res.status(500).json({ message: 'Failed to upload logo' });
+    }
+
+    const { data: publicUrlData } = supabase.storage
+      .from('org-logos')
+      .getPublicUrl(filePath);
+
+    // cache-bust so the new logo shows immediately instead of a cached old one
+    const logoUrl = `${publicUrlData.publicUrl}?t=${Date.now()}`;
+
+    const { error: dbError } = await supabase
+      .from('host_organizations')
+      .update({ org_logo_url: logoUrl })
+      .eq('org_id', org.org_id);
+
+    if (dbError) {
+      console.error('DB update error:', dbError);
+      return res.status(500).json({ message: 'Logo uploaded but failed to save reference' });
+    }
+
+    res.json({ org_logo_url: logoUrl });
+  } catch (err) {
+    console.error('Logo upload error:', err.message);
+    res.status(500).json({ message: 'Something went wrong uploading the logo' });
   }
 });
 

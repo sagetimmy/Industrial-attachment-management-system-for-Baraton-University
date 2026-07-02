@@ -118,8 +118,7 @@ export default function SupervisorSettings({ navigation }) {
     ]);
   };
 
-  const handleMenu = () => {
-    if (navigation.openDrawer) return navigation.openDrawer();
+  const handleBack = () => {
     if (navigation.canGoBack()) return navigation.goBack();
     return navigation.navigate('SupervisorDashboard');
   };
@@ -137,8 +136,8 @@ export default function SupervisorSettings({ navigation }) {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <TouchableOpacity style={styles.menuBtn} onPress={handleMenu}>
-            <MaterialCommunityIcons name="menu" size={22} color={PRIMARY} />
+          <TouchableOpacity style={styles.menuBtn} onPress={handleBack}>
+            <MaterialCommunityIcons name="arrow-left" size={22} color={PRIMARY} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Settings</Text>
         </View>
@@ -222,8 +221,6 @@ export default function SupervisorSettings({ navigation }) {
         </TouchableOpacity>
         <Text style={styles.footerText}>Connected as {displayEmail}</Text>
       </ScrollView>
-
-      <BottomNav navigation={navigation} />
     </SafeAreaView>
   );
 }
@@ -293,39 +290,6 @@ function Divider() {
   return <View style={styles.divider} />;
 }
 
-function BottomNav({ navigation }) {
-  const tabs = [
-    { label: 'Home', icon: 'home-variant', screen: 'SupervisorDashboard' },
-    { label: 'Students', icon: 'account-group', screen: 'MyStudents' },
-    { label: 'Reviews', icon: 'clipboard-text-outline', screen: 'ReviewLogbooks' },
-    { label: 'Reports', icon: 'file-document-outline', screen: 'Reports' },
-    { label: 'Settings', icon: 'cog', screen: 'SupervisorSettings', active: true },
-  ];
-
-  return (
-    <View style={styles.bottomNav}>
-      {tabs.map((tab) => (
-        <TouchableOpacity
-          key={tab.label}
-          style={styles.bottomItem}
-          onPress={() => !tab.active && navigation.navigate(tab.screen)}
-          activeOpacity={0.7}
-        >
-          <MaterialCommunityIcons
-            name={tab.icon}
-            size={22}
-            color={tab.active ? PRIMARY : TEXT_SUB}
-          />
-          <Text style={[styles.bottomLabel, tab.active && styles.bottomLabelActive]}>
-            {tab.label}
-          </Text>
-          {tab.active && <View style={styles.bottomDot} />}
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: BG },
   header: {
@@ -360,7 +324,7 @@ const styles = StyleSheet.create({
   },
   avatarText: { color: PRIMARY, fontWeight: '700' },
   scroll: { flex: 1 },
-  scrollContent: { paddingBottom: 120 },
+  scrollContent: { paddingBottom: 40 },
   sectionLabel: {
     marginTop: 18,
     marginBottom: 10,
@@ -440,26 +404,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: TEXT_SUB,
     fontSize: 12,
-  },
-  bottomNav: {
-    height: 64,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    backgroundColor: SURFACE,
-    borderTopWidth: 1,
-    borderTopColor: OUTLINE_SOFT,
-    paddingBottom: 8,
-  },
-  bottomItem: { alignItems: 'center', justifyContent: 'center', gap: 2, flex: 1 },
-  bottomLabel: { fontSize: 10, color: TEXT_SUB, fontWeight: '600' },
-  bottomLabelActive: { color: PRIMARY },
-  bottomDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: PRIMARY,
-    marginTop: 2,
   },
   loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: BG },
   loadingText: { marginTop: 10, color: TEXT_SUB },
