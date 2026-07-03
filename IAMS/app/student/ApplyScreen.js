@@ -43,7 +43,6 @@ export default function ApplyScreen({ navigation }) {
   const [applications, setApplications] = useState([]);
   const [latestApplication, setLatestApplication] = useState(null);
 
-  // ── Personal Info fields — editable, seeded from profile ──
   const [fullName, setFullName] = useState(user?.full_name || user?.name || '');
   const [regNumber, setRegNumber] = useState(user?.registration_number || user?.reg_no || '');
   const [course, setCourse] = useState(user?.course || user?.program || '');
@@ -727,7 +726,7 @@ export default function ApplyScreen({ navigation }) {
 
             <View style={styles.submitContainer}>
               <TouchableOpacity style={[styles.submitButton, { backgroundColor: theme.primary }]} onPress={handleNext}>
-                <Text style={[styles.submitButtonText, { color: theme.white }]}>Next: Review Application</Text>
+                <Text style={[styles.submitButtonText, { color: theme.white }]}>Next step</Text>
                 <Ionicons name="arrow-forward" size={18} color={theme.white} style={{ marginLeft: 8 }} />
               </TouchableOpacity>
             </View>
@@ -795,33 +794,8 @@ export default function ApplyScreen({ navigation }) {
           </>
         )}
 
-        <View style={{ height: 80 }} />
+        <View style={{ height: 40 }} />
       </ScrollView>
-
-      {/* ===== Bottom Navigation Shell ===== */}
-      <View style={[styles.bottomNav, { backgroundColor: theme.surface, borderTopColor: theme.outlineVariant }]}>
-        <TouchableOpacity style={styles.navItem}>
-          <Text style={[styles.navIcon, { color: theme.textSecondary }]}>🏠</Text>
-          <Text style={[styles.navLabel, { color: theme.textSecondary }]}>Home</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem}>
-          <Text style={[styles.navIcon, { color: theme.textSecondary }]}>🔍</Text>
-          <Text style={[styles.navLabel, { color: theme.textSecondary }]}>Search</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.navItem, styles.navItemActive]}>
-          <Text style={[styles.navIcon, { color: theme.primary }]}>📖</Text>
-          <Text style={[styles.navLabel, { color: theme.primary }]}>Logbook</Text>
-          <View style={[styles.navIndicator, { backgroundColor: theme.primary }]} />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem}>
-          <Text style={[styles.navIcon, { color: theme.textSecondary }]}>📊</Text>
-          <Text style={[styles.navLabel, { color: theme.textSecondary }]}>Reports</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem}>
-          <Text style={[styles.navIcon, { color: theme.textSecondary }]}>👤</Text>
-          <Text style={[styles.navLabel, { color: theme.textSecondary }]}>Profile</Text>
-        </TouchableOpacity>
-      </View>
     </View>
   );
 }
@@ -1020,28 +994,4 @@ const styles = StyleSheet.create({
   slotBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   slotBadgeText: { fontSize: 12, fontWeight: '600' },
   slotAction: { fontSize: 11, fontWeight: '700' },
-
-  bottomNav: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    height: 60,
-    borderTopWidth: 1,
-    paddingHorizontal: 8,
-    paddingBottom: 8,
-  },
-  navItem: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  navItemActive: { position: 'relative' },
-  navIcon: { fontSize: 24, marginBottom: 2 },
-  navLabel: { fontSize: 10, fontWeight: '600' },
-  navIndicator: {
-    position: 'absolute',
-    bottom: 0,
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    marginTop: 2,
-  },
 });
