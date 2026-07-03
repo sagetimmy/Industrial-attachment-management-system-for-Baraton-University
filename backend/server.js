@@ -6,6 +6,8 @@ const { generalLimiter } = require('./middleware/rateLimiter');
 
 const app = express();
 
+app.set('trust proxy', 1); // Railway sits behind a proxy — required for express-rate-limit to work correctly
+
 // ── CORS fix for web browser ──
 app.use(cors({
   origin: true,
