@@ -12,7 +12,6 @@ import Spinner from '../../components/Spinner';
 
 const { height } = Dimensions.get('window');
 
-// Educational theme colors
 const NAVY   = '#0D1B3E';
 const BLUE   = '#1A56DB';
 const GOLD   = '#D4A017';
@@ -20,6 +19,8 @@ const WHITE  = '#FFFFFF';
 const GRAY   = '#9CA3AF';
 const INPUT_BG = '#F3F6FB';
 const BORDER   = '#D1D9E6';
+
+const heroImage = require('../../assets/graduation-bg.jpg.png');
 
 export default function LoginScreen({ navigation }) {
   const { login } = useAuth();
@@ -55,68 +56,82 @@ export default function LoginScreen({ navigation }) {
     setLoading(false);
   };
 
+  const heroContent = (
+    <>
+      <View style={styles.heroOverlay} />
+
+      <View style={styles.iconDecor}>
+        <Ionicons name="book-outline" size={24} color={WHITE} style={styles.decorIcon} />
+        <MaterialCommunityIcons name="school" size={24} color={WHITE} style={styles.decorIcon} />
+        <Ionicons name="ribbon-outline" size={24} color={WHITE} style={styles.decorIcon} />
+      </View>
+
+      <View style={styles.heroContent}>
+        <Text
+          style={styles.welcomeText}
+          numberOfLines={2}
+          adjustsFontSizeToFit
+          allowFontScaling={false}
+        >
+          University of Eastern Africa, Baraton
+        </Text>
+        <Text style={styles.appName} allowFontScaling={false}>IAMS</Text>
+
+        <View style={styles.subtitleRow}>
+          <View style={styles.goldLine} />
+          <Text
+            style={styles.subtitleText}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            allowFontScaling={false}
+          >
+            Industrial Attachment Management
+          </Text>
+          <View style={styles.goldLine} />
+        </View>
+
+        <Text style={styles.capEmoji}>🎓</Text>
+      </View>
+    </>
+  );
+
   return (
     <SafeAreaView style={styles.root}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        {/* ── Hero top section with graduation photo ── */}
-        <ImageBackground
-          source={require('../../assets/graduation-bg.jpg.png')}
-          style={styles.hero}
-          resizeMode="cover"
-          imageStyle={{ opacity: 0.9 }}
-        >
-          {/* Dark blue overlay for text readability */}
-          <View style={styles.heroOverlay} />
-
-          {/* Educational icons and decorative elements */}
-          <View style={styles.iconDecor}>
-            <Ionicons name="book-outline" size={24} color={WHITE} style={styles.decorIcon} />
-            <MaterialCommunityIcons name="school" size={24} color={WHITE} style={styles.decorIcon} />
-            <Ionicons name="ribbon-outline" size={24} color={WHITE} style={styles.decorIcon} />
+        {Platform.OS === 'web' ? (
+          <View
+            style={[
+              styles.hero,
+              {
+                backgroundImage: `url(${heroImage})`,
+                backgroundSize: 'cover',
+                backgroundPosition: 'center',
+                backgroundRepeat: 'no-repeat',
+              },
+            ]}
+          >
+            {heroContent}
           </View>
+        ) : (
+          <ImageBackground
+            source={heroImage}
+            style={styles.hero}
+            resizeMode="cover"
+            imageStyle={{ opacity: 0.9 }}
+          >
+            {heroContent}
+          </ImageBackground>
+        )}
 
-          {/* Hero content */}
-          <View style={styles.heroContent}>
-            <Text
-              style={styles.welcomeText}
-              numberOfLines={2}
-              adjustsFontSizeToFit
-              allowFontScaling={false}
-            >
-              University of Eastern Africa, Baraton
-            </Text>
-            <Text style={styles.appName} allowFontScaling={false}>IAMS</Text>
-
-            {/* Gold divider with subtitle */}
-            <View style={styles.subtitleRow}>
-              <View style={styles.goldLine} />
-              <Text
-                style={styles.subtitleText}
-                numberOfLines={1}
-                adjustsFontSizeToFit
-                allowFontScaling={false}
-              >
-                Industrial Attachment Management
-              </Text>
-              <View style={styles.goldLine} />
-            </View>
-
-            {/* Graduation cap emoji */}
-            <Text style={styles.capEmoji}>🎓</Text>
-          </View>
-        </ImageBackground>
-
-        {/* ── White card bottom sheet with form ── */}
         <ScrollView
           style={styles.card}
           contentContainerStyle={styles.cardContent}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* Email input */}
           <View style={styles.inputWrap}>
             <Ionicons name="mail-outline" size={20} color={BLUE} style={styles.inputIcon} />
             <TextInput
@@ -131,7 +146,6 @@ export default function LoginScreen({ navigation }) {
             />
           </View>
 
-          {/* Password input */}
           <View style={styles.inputWrap}>
             <MaterialCommunityIcons name="lock-outline" size={20} color={BLUE} style={styles.inputIcon} />
             <TextInput
@@ -148,7 +162,6 @@ export default function LoginScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          {/* Forgot password */}
           <View style={styles.optionsRow}>
             <View style={{ flex: 1 }} />
             <TouchableOpacity onPress={() => navigation.navigate('ForgotPassword')}>
@@ -156,7 +169,6 @@ export default function LoginScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          {/* Sign In button */}
           <TouchableOpacity
             style={[styles.signInBtn, loading && { opacity: 0.7 }]}
             onPress={handleLogin}
@@ -173,7 +185,6 @@ export default function LoginScreen({ navigation }) {
             )}
           </TouchableOpacity>
 
-          {/* Register link */}
           <View style={styles.registerRow}>
             <Text style={styles.registerText} allowFontScaling={false}>Don't have an account? </Text>
             <TouchableOpacity onPress={() => navigation.navigate('Register')}>
@@ -188,8 +199,6 @@ export default function LoginScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: WHITE },
-
-  // Hero section with graduation photo
   hero: {
     height: height * 0.45,
     minHeight: 320,
@@ -197,10 +206,8 @@ const styles = StyleSheet.create({
   },
   heroOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(13, 27, 62, 0.50)', // Semi-transparent navy overlay
+    backgroundColor: 'rgba(13, 27, 62, 0.50)',
   },
-
-  // Decorative educational icons
   iconDecor: {
     position: 'absolute',
     top: 40,
@@ -211,10 +218,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 40,
     opacity: 0.4,
   },
-  decorIcon: {
-    opacity: 0.6,
-  },
-
+  decorIcon: { opacity: 0.6 },
   heroContent: {
     paddingHorizontal: 24,
     paddingBottom: 32,
@@ -251,12 +255,7 @@ const styles = StyleSheet.create({
     width: '100%',
     justifyContent: 'center',
   },
-  goldLine: {
-    height: 2,
-    backgroundColor: GOLD,
-    maxWidth: 40,
-    flex: 1,
-  },
+  goldLine: { height: 2, backgroundColor: GOLD, maxWidth: 40, flex: 1 },
   subtitleText: {
     color: WHITE,
     fontSize: 13,
@@ -265,13 +264,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     flexShrink: 1,
   },
-  capEmoji: {
-    fontSize: 32,
-    marginTop: 12,
-    textAlign: 'center',
-  },
-
-  // Card section
+  capEmoji: { fontSize: 32, marginTop: 12, textAlign: 'center' },
   card: {
     flex: 1,
     backgroundColor: WHITE,
@@ -279,13 +272,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 32,
     marginTop: -28,
   },
-  cardContent: {
-    paddingHorizontal: 24,
-    paddingTop: 32,
-    paddingBottom: 40,
-  },
-
-  // Input fields
+  cardContent: { paddingHorizontal: 24, paddingTop: 32, paddingBottom: 40 },
   inputWrap: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -297,9 +284,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     height: 56,
   },
-  inputIcon: {
-    marginRight: 12,
-  },
+  inputIcon: { marginRight: 12 },
   input: {
     flex: 1,
     fontSize: 15,
@@ -308,30 +293,15 @@ const styles = StyleSheet.create({
     paddingVertical: 0,
     textAlignVertical: 'center',
   },
-  eyeBtn: {
-    padding: 6,
-  },
-
-  // Options row (Remember me + Forgot password)
+  eyeBtn: { padding: 6 },
   optionsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 24,
   },
-  rememberRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-
-  forgotText: {
-    fontSize: 14,
-    color: BLUE,
-    fontWeight: '600',
-  },
-
-  // Sign in button
+  rememberRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  forgotText: { fontSize: 14, color: BLUE, fontWeight: '600' },
   signInBtn: {
     backgroundColor: BLUE,
     borderRadius: 14,
@@ -346,27 +316,8 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 6,
   },
-  signInText: {
-    color: WHITE,
-    fontSize: 17,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-
-  // Register link
-  registerRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-  },
-  registerText: {
-    fontSize: 14,
-    color: '#6B7280',
-  },
-  registerLink: {
-    fontSize: 14,
-    color: BLUE,
-    fontWeight: '700',
-  },
+  signInText: { color: WHITE, fontSize: 17, fontWeight: '700', textAlign: 'center' },
+  registerRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap' },
+  registerText: { fontSize: 14, color: '#6B7280' },
+  registerLink: { fontSize: 14, color: BLUE, fontWeight: '700' },
 });

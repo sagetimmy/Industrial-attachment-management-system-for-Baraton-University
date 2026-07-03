@@ -3,7 +3,7 @@ import {
   View, Text, TouchableOpacity, StyleSheet,
   ScrollView, Alert, RefreshControl, TextInput,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
@@ -12,7 +12,6 @@ import { COLORS } from '../../constants/colors';
 import { hasRolePermission } from '../../utils/permissions';
 import Spinner from '../../components/Spinner';
 
-// Helper to format date for display
 const formatDateDisplay = (dateStr) => {
   if (!dateStr) return '';
   const d = new Date(dateStr);
@@ -30,7 +29,6 @@ export default function ApplyScreen({ navigation }) {
   const { user } = useAuth();
   const canSelfPlace = hasRolePermission(user, 'selfPlacement');
 
-  // --- State ---
   const [organizations, setOrganizations] = useState([]);
   const [myAttachment, setMyAttachment] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -39,17 +37,21 @@ export default function ApplyScreen({ navigation }) {
   const [selectedOrg, setSelectedOrg] = useState(null);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [duration, setDuration] = useState('3'); // months
+  const [duration, setDuration] = useState('3');
   const [skills, setSkills] = useState('');
   const [supportingInfo, setSupportingInfo] = useState('');
   const [applications, setApplications] = useState([]);
   const [latestApplication, setLatestApplication] = useState(null);
 
-  // --- Wizard state ---
-  const [currentStep, setCurrentStep] = useState(1);
-  const [documents, setDocuments] = useState([]); // [{ name, uri, mimeType, size }]
+  // ── Personal Info fields — editable, seeded from profile ──
+  const [fullName, setFullName] = useState(user?.full_name || user?.name || '');
+  const [regNumber, setRegNumber] = useState(user?.registration_number || user?.reg_no || '');
+  const [course, setCourse] = useState(user?.course || user?.program || '');
+  const [yearOfStudy, setYearOfStudy] = useState(user?.year_of_study || 1);
 
-  // --- Data fetching ---
+  const [currentStep, setCurrentStep] = useState(1);
+  const [documents, setDocuments] = useState([]);
+
   const fetchData = async () => {
     try {
       const [orgsRes, attachRes, appsRes] = await Promise.all([
@@ -73,7 +75,6 @@ export default function ApplyScreen({ navigation }) {
 
   useEffect(() => { fetchData(); }, []);
 
-  // --- Date utilities (unchanged) ---
   const dateInputPattern = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/;
   const normalizeDateInput = (value) => {
     if (!value) return '';
@@ -145,7 +146,10 @@ export default function ApplyScreen({ navigation }) {
     }
   };
 
-  // Reset form when selected org changes
+  const handleYearCycle = () => {
+    setYearOfStudy((prev) => (prev >= 4 ? 1 : prev + 1));
+  };
+
   useEffect(() => {
     setStartDate('');
     setEndDate('');
@@ -156,7 +160,6 @@ export default function ApplyScreen({ navigation }) {
     setCurrentStep(1);
   }, [selectedOrg]);
 
-  // --- Document picking ---
   const handlePickDocument = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -193,7 +196,6 @@ export default function ApplyScreen({ navigation }) {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
-  // --- Step validation & navigation ---
   const validateStep1 = () => {
     if (!selectedOrg) {
       Alert.alert('Error', 'Please select an organization');
@@ -201,6 +203,10 @@ export default function ApplyScreen({ navigation }) {
     }
     if (selectedOrg.available_slots === 0) {
       Alert.alert('Error', 'This organization has no available slots');
+      return false;
+    }
+    if (!fullName.trim()) {
+      Alert.alert('Error', 'Please enter your full name');
       return false;
     }
     const normalizedStart = startDate.trim();
@@ -238,7 +244,6 @@ export default function ApplyScreen({ navigation }) {
     }
   };
 
-  // --- Submit application ---
   const handleApply = async () => {
     if (!canSelfPlace) {
       Alert.alert('Permission Disabled', 'Self-placement applications are currently disabled.');
@@ -272,6 +277,10 @@ export default function ApplyScreen({ navigation }) {
             try {
               const formData = new FormData();
               formData.append('org_id', selectedOrg.org_id);
+              formData.append('full_name', fullName.trim());
+              formData.append('reg_number', regNumber.trim());
+              formData.append('course', course.trim());
+              formData.append('year_of_study', String(yearOfStudy));
               formData.append('start_date', normalizedStart);
               formData.append('end_date', normalizedEnd);
               formData.append('skills', normalizedSkills);
@@ -331,7 +340,6 @@ export default function ApplyScreen({ navigation }) {
     fetchData();
   };
 
-  // --- Helper for status colors ---
   const statusColor = (status) => {
     switch (status) {
       case 'ongoing': return { bg: '#E8F5E9', text: '#2E7D32' };
@@ -352,7 +360,6 @@ export default function ApplyScreen({ navigation }) {
     }
   };
 
-  // --- Loading state ---
   if (loading) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: theme.surface }]}>
@@ -362,7 +369,6 @@ export default function ApplyScreen({ navigation }) {
     );
   }
 
-  // --- Main render ---
   const showForm = (!myAttachment || myAttachment.status === 'rejected') &&
     canSelfPlace &&
     (!latestApplication || !['pending', 'more_info', 'accepted'].includes(latestApplication.status));
@@ -469,7 +475,6 @@ export default function ApplyScreen({ navigation }) {
           </View>
         )}
 
-        {/* ===== If form is not allowed ===== */}
         {!showForm && !myAttachment && !latestApplication && !canSelfPlace && (
           <View style={[styles.emptyCard, { backgroundColor: theme.background }]}>
             <Text style={styles.emptyIcon}>🔒</Text>
@@ -488,23 +493,17 @@ export default function ApplyScreen({ navigation }) {
               {selectedOrg ? (
                 <View style={[styles.orgCard, { backgroundColor: theme.surface }]}>
                   <View style={styles.orgCardContent}>
-                    <View style={[styles.orgAvatar, { backgroundColor: theme.secondary }]}>
-                      <Text style={[styles.orgAvatarText, { color: theme.white }]}>
-                        {selectedOrg.org_name?.charAt(0).toUpperCase()}
-                      </Text>
+                    <View style={[styles.orgAvatar, { backgroundColor: theme.primaryLight || '#E3F1EE' }]}>
+                      <MaterialCommunityIcons name="office-building" size={26} color={theme.primary} />
                     </View>
                     <View style={styles.orgCardInfo}>
                       <Text style={[styles.orgCardName, { color: theme.text }]}>{selectedOrg.org_name}</Text>
                       <View style={styles.orgLocationRow}>
-                        <Text style={[styles.orgCardLocation, { color: theme.textSecondary }]}>
-                          📍 {selectedOrg.location}
-                        </Text>
+                        <Ionicons name="location-outline" size={13} color={theme.textSecondary} />
+                        <Text style={[styles.orgCardLocation, { color: theme.textSecondary }]}> {selectedOrg.location}</Text>
                       </View>
                     </View>
-                    <TouchableOpacity
-                      style={[styles.changeButton, { backgroundColor: theme.primaryLight }]}
-                      onPress={() => setSelectedOrg(null)}
-                    >
+                    <TouchableOpacity onPress={() => setSelectedOrg(null)}>
                       <Text style={[styles.changeButtonText, { color: theme.primary }]}>CHANGE</Text>
                     </TouchableOpacity>
                   </View>
@@ -525,8 +524,9 @@ export default function ApplyScreen({ navigation }) {
                   <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>FULL NAME</Text>
                   <TextInput
                     style={[styles.input, { backgroundColor: theme.surface, color: theme.text, borderColor: theme.outlineVariant }]}
-                    value={user?.full_name || user?.name || ''}
-                    editable={false}
+                    value={fullName}
+                    onChangeText={setFullName}
+                    placeholder="e.g. John Doe"
                     placeholderTextColor={theme.textSecondary}
                   />
                 </View>
@@ -534,8 +534,9 @@ export default function ApplyScreen({ navigation }) {
                   <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>REGISTRATION NUMBER</Text>
                   <TextInput
                     style={[styles.input, { backgroundColor: theme.surface, color: theme.text, borderColor: theme.outlineVariant }]}
-                    value={user?.registration_number || user?.reg_no || ''}
-                    editable={false}
+                    value={regNumber}
+                    onChangeText={setRegNumber}
+                    placeholder="SCT211-0000/2024"
                     placeholderTextColor={theme.textSecondary}
                   />
                 </View>
@@ -543,19 +544,21 @@ export default function ApplyScreen({ navigation }) {
                   <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>COURSE / PROGRAM</Text>
                   <TextInput
                     style={[styles.input, { backgroundColor: theme.surface, color: theme.text, borderColor: theme.outlineVariant }]}
-                    value={user?.course || user?.program || ''}
-                    editable={false}
+                    value={course}
+                    onChangeText={setCourse}
+                    placeholder="BSc. Computer Science"
                     placeholderTextColor={theme.textSecondary}
                   />
                 </View>
                 <View style={styles.formFieldFull}>
                   <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>YEAR OF STUDY</Text>
-                  <TextInput
-                    style={[styles.input, { backgroundColor: theme.surface, color: theme.text, borderColor: theme.outlineVariant }]}
-                    value={user?.year_of_study ? `Year ${user.year_of_study}` : ''}
-                    editable={false}
-                    placeholderTextColor={theme.textSecondary}
-                  />
+                  <TouchableOpacity
+                    style={[styles.selectField, { borderColor: theme.outlineVariant, backgroundColor: theme.surface }]}
+                    onPress={handleYearCycle}
+                  >
+                    <Text style={[styles.selectFieldText, { color: theme.text }]}>Year {yearOfStudy}</Text>
+                    <Ionicons name="chevron-down" size={18} color={theme.textSecondary} />
+                  </TouchableOpacity>
                 </View>
               </View>
             </View>
@@ -570,7 +573,7 @@ export default function ApplyScreen({ navigation }) {
                       style={[styles.dateInput, { color: theme.text }]}
                       value={startDate}
                       onChangeText={handleStartDateChange}
-                      placeholder="mm/dd/yyyy"
+                      placeholder="dd/mm/yyyy"
                       placeholderTextColor={theme.textSecondary}
                       autoCapitalize="none"
                     />
@@ -595,12 +598,9 @@ export default function ApplyScreen({ navigation }) {
 
             <View style={styles.submitContainer}>
               <TouchableOpacity style={[styles.submitButton, { backgroundColor: theme.primary }]} onPress={handleNext}>
-                <Text style={[styles.submitButtonText, { color: theme.white }]}>Next: Upload Documents</Text>
+                <Text style={[styles.submitButtonText, { color: theme.white }]}>Next step</Text>
                 <Ionicons name="arrow-forward" size={18} color={theme.white} style={{ marginLeft: 8 }} />
               </TouchableOpacity>
-              <Text style={[styles.submitHelper, { color: theme.textSecondary }]}>
-                You can save your progress and continue later.
-              </Text>
             </View>
 
             <View style={styles.section}>
@@ -633,10 +633,8 @@ export default function ApplyScreen({ navigation }) {
                     disabled={org.available_slots === 0}
                   >
                     <View style={styles.orgListItemContent}>
-                      <View style={[styles.orgAvatarSmall, { backgroundColor: theme.secondary }]}>
-                        <Text style={[styles.orgAvatarTextSmall, { color: theme.white }]}>
-                          {org.org_name?.charAt(0).toUpperCase()}
-                        </Text>
+                      <View style={[styles.orgAvatarSmall, { backgroundColor: theme.primaryLight || '#E3F1EE' }]}>
+                        <MaterialCommunityIcons name="office-building" size={18} color={theme.primary} />
                       </View>
                       <View style={styles.orgListItemInfo}>
                         <Text style={[styles.orgListItemName, { color: theme.text }]}>{org.org_name}</Text>
@@ -743,7 +741,11 @@ export default function ApplyScreen({ navigation }) {
               <Text style={[styles.sectionTitle, { color: theme.text }]}>Review Your Application</Text>
 
               <View style={[styles.reviewCard, { backgroundColor: theme.background }]}>
-                <Text style={[styles.reviewLabel, { color: theme.textSecondary }]}>ORGANIZATION</Text>
+                <Text style={[styles.reviewLabel, { color: theme.textSecondary }]}>APPLICANT</Text>
+                <Text style={[styles.reviewValue, { color: theme.text }]}>{fullName} · {regNumber}</Text>
+                <Text style={[styles.reviewValue, { color: theme.text }]}>{course} · Year {yearOfStudy}</Text>
+
+                <Text style={[styles.reviewLabel, { color: theme.textSecondary, marginTop: 12 }]}>ORGANIZATION</Text>
                 <Text style={[styles.reviewValue, { color: theme.text }]}>{selectedOrg?.org_name}</Text>
 
                 <Text style={[styles.reviewLabel, { color: theme.textSecondary, marginTop: 12 }]}>ATTACHMENT PERIOD</Text>
@@ -824,14 +826,12 @@ export default function ApplyScreen({ navigation }) {
   );
 }
 
-// --- Styles ---
 const styles = StyleSheet.create({
   container: { flex: 1 },
   scrollContent: { paddingBottom: 20 },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loadingText: { marginTop: 10, color: COLORS.gray },
 
-  // Top App Bar
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -846,7 +846,6 @@ const styles = StyleSheet.create({
   topBarDots: { flexDirection: 'row', gap: 4 },
   dot: { width: 8, height: 8, borderRadius: 4 },
 
-  // Step Progress
   stepContainer: { paddingHorizontal: 16, marginTop: 8, marginBottom: 16 },
   stepHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
   stepLabel: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase' },
@@ -855,7 +854,6 @@ const styles = StyleSheet.create({
   progressFill: { flex: 1, borderRadius: 3 },
   progressEmpty: { flex: 1, borderRadius: 3, opacity: 0.5 },
 
-  // Status Cards
   statusCard: {
     backgroundColor: '#fff',
     marginHorizontal: 16,
@@ -875,20 +873,17 @@ const styles = StyleSheet.create({
   statusBadge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10 },
   statusText: { fontSize: 12, fontWeight: '700', textTransform: 'capitalize' },
 
-  // Empty / disabled
   emptyCard: { margin: 16, padding: 30, borderRadius: 16, alignItems: 'center' },
   emptyIcon: { fontSize: 40, marginBottom: 10 },
   emptyTitle: { fontSize: 16, fontWeight: '700' },
   emptyText: { fontSize: 13, textAlign: 'center', marginTop: 6 },
 
-  // Sections
   section: { paddingHorizontal: 16, marginBottom: 24 },
   sectionTitle: { fontSize: 16, fontWeight: '700', marginBottom: 12 },
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   viewDirectory: { fontSize: 13, fontWeight: '600' },
   helperText: { fontSize: 12, marginBottom: 12, marginTop: -6 },
 
-  // Selected Org Card
   orgCard: {
     borderRadius: 16,
     padding: 16,
@@ -909,13 +904,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 12,
   },
-  orgAvatarText: { fontSize: 22, fontWeight: 'bold' },
   orgCardInfo: { flex: 1 },
   orgCardName: { fontSize: 16, fontWeight: '700' },
   orgLocationRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
   orgCardLocation: { fontSize: 13 },
-  changeButton: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
-  changeButtonText: { fontSize: 12, fontWeight: '600' },
+  changeButtonText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.3 },
   selectOrgPlaceholder: {
     padding: 16,
     borderRadius: 12,
@@ -926,7 +919,6 @@ const styles = StyleSheet.create({
   },
   selectOrgText: { fontSize: 14 },
 
-  // Form
   stackedFields: { gap: 14 },
   formFieldFull: { width: '100%' },
   fieldLabel: { fontSize: 12, fontWeight: '600', marginBottom: 4, letterSpacing: 0.5 },
@@ -966,7 +958,6 @@ const styles = StyleSheet.create({
   },
   selectFieldText: { fontSize: 15 },
 
-  // Documents
   docRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -987,12 +978,10 @@ const styles = StyleSheet.create({
   },
   uploadBoxText: { fontSize: 13, fontWeight: '600' },
 
-  // Review
   reviewCard: { borderRadius: 16, padding: 16 },
   reviewLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
   reviewValue: { fontSize: 14, marginTop: 4 },
 
-  // Submit
   submitContainer: { paddingHorizontal: 16, marginTop: 8, marginBottom: 24 },
   submitButton: {
     height: 52,
@@ -1009,7 +998,6 @@ const styles = StyleSheet.create({
   submitButtonText: { fontSize: 16, fontWeight: '700' },
   submitHelper: { fontSize: 13, textAlign: 'center', marginTop: 12 },
 
-  // Organization list items
   orgListItem: {
     marginBottom: 10,
     padding: 12,
@@ -1026,7 +1014,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 12,
   },
-  orgAvatarTextSmall: { fontSize: 16, fontWeight: 'bold' },
   orgListItemInfo: { flex: 1 },
   orgListItemName: { fontSize: 14, fontWeight: '600' },
   orgListItemLocation: { fontSize: 12, marginTop: 2 },
@@ -1034,7 +1021,6 @@ const styles = StyleSheet.create({
   slotBadgeText: { fontSize: 12, fontWeight: '600' },
   slotAction: { fontSize: 11, fontWeight: '700' },
 
-  // Bottom Navigation
   bottomNav: {
     position: 'absolute',
     bottom: 0,
@@ -1046,14 +1032,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingBottom: 8,
   },
-  navItem: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  navItemActive: {
-    position: 'relative',
-  },
+  navItem: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  navItemActive: { position: 'relative' },
   navIcon: { fontSize: 24, marginBottom: 2 },
   navLabel: { fontSize: 10, fontWeight: '600' },
   navIndicator: {

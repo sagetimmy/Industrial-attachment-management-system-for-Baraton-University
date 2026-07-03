@@ -1,4 +1,5 @@
 const express = require('express');
+const multer = require('multer');
 const router = express.Router();
 const { protect } = require('../middleware/auth.middleware');
 const { requireRolePermission } = require('../utils/rolePermissions');
@@ -16,9 +17,30 @@ const APPLICATION_SCHEMA_COLUMNS = [
   'skills',
   'supporting_info',
   'response_message',
+  'document_urls',
   'created_at',
   'responded_at',
 ];
+
+// ── Multer setup for supporting documents ──
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB per file
+  fileFilter: (req, file, cb) => {
+    const allowed = [
+      'application/pdf',
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ];
+    if (!allowed.includes(file.mimetype)) {
+      return cb(new Error('Only PDF, DOC, DOCX, JPEG, PNG, or WEBP files are allowed'));
+    }
+    cb(null, true);
+  },
+});
 
 const normalizeApplication = (application) => {
   if (!application) return application;
@@ -156,7 +178,7 @@ const createAttachmentFallback = async ({ student, org_id, start_date, end_date,
 const getStudentByUserId = async (userId) => {
   const { data, error } = await supabase
     .from('students')
-    .select('student_id, full_name, reg_number, user_id')
+    .select('student_id, full_name, reg_number, department, year_of_study, user_id')
     .eq('user_id', userId)
     .single();
   return { student: data, error };
@@ -171,9 +193,44 @@ const getOrgByUserId = async (userId) => {
   return { org: data, error };
 };
 
+// ── Upload supporting documents to Supabase Storage ──
+// Returns an array of public URLs, or [] if no files were provided.
+const uploadApplicationDocuments = async (studentId, files) => {
+  if (!files || files.length === 0) return [];
+
+  const urls = [];
+  for (const file of files) {
+    const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const filePath = `${studentId}/${Date.now()}_${safeName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('application-documents')
+      .upload(filePath, file.buffer, {
+        contentType: file.mimetype,
+        upsert: false,
+      });
+
+    if (uploadError) {
+      console.error('Document upload error:', uploadError);
+      continue; // skip this file, don't fail the whole application
+    }
+
+    const { data: publicUrlData } = supabase.storage
+      .from('application-documents')
+      .getPublicUrl(filePath);
+
+    urls.push(publicUrlData.publicUrl);
+  }
+
+  return urls;
+};
+
 // POST /api/applications
-router.post('/', protect, requireRolePermission('selfPlacement'), async (req, res) => {
-  const { org_id, start_date, end_date, skills, supporting_info } = req.body || {};
+router.post('/', protect, requireRolePermission('selfPlacement'), upload.array('documents', 5), async (req, res) => {
+  const {
+    org_id, start_date, end_date, skills, supporting_info,
+    full_name, reg_number, course, year_of_study,
+  } = req.body || {};
 
   if (!org_id || !start_date || !end_date || !skills) {
     return res.status(400).json({ message: 'Organization, start date, end date, and skills are required.' });
@@ -203,6 +260,29 @@ router.post('/', protect, requireRolePermission('selfPlacement'), async (req, re
       return res.status(400).json({ message: 'You already have a pending application under review.' });
     }
 
+    // ── Option A: treat edited Personal Info as a profile update ──
+    const profileUpdates = {};
+    if (full_name && full_name.trim()) profileUpdates.full_name = full_name.trim();
+    if (reg_number && reg_number.trim()) profileUpdates.reg_number = reg_number.trim();
+    if (course && course.trim()) profileUpdates.department = course.trim();
+    if (year_of_study && !Number.isNaN(Number(year_of_study))) {
+      profileUpdates.year_of_study = Number(year_of_study);
+    }
+
+    if (Object.keys(profileUpdates).length > 0) {
+      const { error: profileErr } = await supabase
+        .from('students')
+        .update(profileUpdates)
+        .eq('student_id', student.student_id);
+      if (profileErr) {
+        console.error('Failed to update student profile:', profileErr.message);
+        // Non-fatal — continue with application submission even if this fails
+      }
+    }
+
+    // ── Upload any attached documents ──
+    const documentUrls = await uploadApplicationDocuments(student.student_id, req.files);
+
     let { data: application, error } = await supabase
       .from('applications')
       .insert({
@@ -212,6 +292,7 @@ router.post('/', protect, requireRolePermission('selfPlacement'), async (req, re
         end_date,
         skills,
         supporting_info: supporting_info || null,
+        document_urls: documentUrls.length ? documentUrls : null,
         status: 'pending',
       })
       .select()
@@ -233,7 +314,7 @@ router.post('/', protect, requireRolePermission('selfPlacement'), async (req, re
     if (org?.user_id) {
       await notify(
         org.user_id,
-        `📥 New application from ${student.full_name || 'a student'} (${student.reg_number || 'N/A'})${org.org_name ? ` for ${org.org_name}` : ''}.`
+        `📥 New application from ${full_name || student.full_name || 'a student'} (${reg_number || student.reg_number || 'N/A'})${org.org_name ? ` for ${org.org_name}` : ''}.`
       );
     }
 
