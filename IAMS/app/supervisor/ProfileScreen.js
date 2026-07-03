@@ -8,6 +8,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../api/axios';
+import { confirmLogout } from '../../utils/confirmLogout';
 
 const TEAL = '#1B6B5A';
 const TEAL_LIGHT = '#E3F1EE';
@@ -128,13 +129,8 @@ export default function SupervisorProfileScreen({ navigation }) {
     }
   };
 
-  const handleLogout = () => {
-    Alert.alert('Logout', 'Are you sure you want to logout?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Logout', style: 'destructive', onPress: () => logout() },
-    ]);
-  };
-
+  const handleLogout = () => confirmLogout(logout);
+  
   const profileData = profile || {
     full_name: user?.full_name || 'Supervisor',
     email: user?.email || '',

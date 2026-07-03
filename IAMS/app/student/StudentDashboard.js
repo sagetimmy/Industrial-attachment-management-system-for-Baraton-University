@@ -11,6 +11,7 @@ import api from '../../api/axios';
 import Spinner from '../../components/Spinner';
 import AnnouncementBanner from '../shared/AnnouncementBanner';
 
+
 const TEAL       = '#0F6E56';
 const TEAL_LIGHT = '#E1F5EE';
 const TEAL_MID   = '#9FE1CB';
@@ -19,7 +20,7 @@ const AMBER_LIGHT= '#FAEEDA';
 const CORAL      = '#D85A30';
 const AMBER_DARK = '#92400E';
 
-// ─── Session Banner ───────────────────────────────────────────────────────────
+// Session Banner
 function SessionBanner({ session, sessionActive, sessionLoading, onDetails }) {
   if (sessionLoading) {
     return (
@@ -78,7 +79,7 @@ const sb = StyleSheet.create({
   detailsLink:    { fontSize: 11, fontWeight: '700', color: TEAL, letterSpacing: 0.4 },
 });
 
-// ─── Main Dashboard ───────────────────────────────────────────────────────────
+// Main Dashboard 
 export default function StudentDashboard({ navigation }) {
   const { user, logout } = useAuth();
   const { theme } = useTheme();
@@ -91,7 +92,7 @@ export default function StudentDashboard({ navigation }) {
   const [loading, setLoading]                 = useState(true);
   const [refreshing, setRefreshing]           = useState(false);
 
-  // ── Session state ──────────────────────────────────────────────────────────
+  //  Session state 
   const [session, setSession]               = useState(null);
   const [sessionActive, setSessionActive]   = useState(false);
   const [sessionLoading, setSessionLoading] = useState(true);

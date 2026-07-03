@@ -17,6 +17,7 @@ import Constants from 'expo-constants';
 import api from '../../api/axios';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import { confirmLogout } from '../../utils/confirmLogout';
 
 const PRIMARY = '#005f53';
 const PRIMARY_LIGHT = '#E0F5F1';
@@ -111,12 +112,7 @@ export default function SupervisorSettings({ navigation }) {
     }
   };
 
-  const handleLogout = () => {
-    Alert.alert('Logout', 'Are you sure you want to logout?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Logout', style: 'destructive', onPress: logout },
-    ]);
-  };
+  const handleLogout = () => confirmLogout(logout);
 
   const handleBack = () => {
     if (navigation.canGoBack()) return navigation.goBack();

@@ -11,6 +11,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import api from '../../api/axios';
 import { useAuth } from '../../context/AuthContext';
 import Spinner from '../../components/Spinner';
+import { confirmLogout } from '../../utils/confirmLogout';
 
 const NAVY      = '#0D1B2E';
 const NAVY_CARD = '#162338';
@@ -191,18 +192,9 @@ export default function AdminDashboard({ navigation }) {
     fetchNotifications();
   };
 
-  const handleLogout = () => {
-    Alert.alert('Logout', 'Are you sure you want to logout?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Logout',
-        style: 'destructive',
-        onPress: async () => {
-          try { await logout(); } catch { Alert.alert('Error', 'Failed to logout'); }
-        },
-      },
-    ]);
-  };
+  const handleLogout = () => confirmLogout(async () => {
+  try { await logout(); } catch { Alert.alert('Error', 'Failed to logout'); }
+});
 
   const handleMarkAllRead = async () => {
     try {

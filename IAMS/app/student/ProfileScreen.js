@@ -10,6 +10,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../api/axios';
 import Spinner from '../../components/Spinner';
+import { confirmLogout } from '../../utils/confirmLogout';
 
 const TEAL = '#2EC4A0';
 const DARK = '#111827';
@@ -114,12 +115,7 @@ export default function ProfileScreen({ navigation }) {
   const initials = profile?.full_name?.trim().charAt(0).toUpperCase() || '?';
   const avatarUrl = profile?.avatar_url || null;
 
-  const handleLogout = () => {
-    Alert.alert('Logout', 'Are you sure you want to logout?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Logout', style: 'destructive', onPress: logout },
-    ]);
-  };
+  const handleLogout = () => confirmLogout(logout);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
