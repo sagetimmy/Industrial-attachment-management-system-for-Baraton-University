@@ -24,6 +24,7 @@ import PrivacyPolicyScreen from './app/shared/PrivacyPolicyScreen';
 import StudentDashboard from './app/student/StudentDashboard';
 import ApplyScreen from './app/student/ApplyScreen';
 import StudentAnnouncementsScreen from './app/student/AnnouncementsScreen';
+import StudentSiteVisitsScreen from './app/student/StudentSiteVisitsScreen';
 
 // Supervisor screens
 import SupervisorDashboard from './app/supervisor/SupervisorDashboard';
@@ -180,6 +181,7 @@ function RootNavigator() {
         <Stack.Screen name="StudentDashboard" component={StudentDashboard}           />
         <Stack.Screen name="Apply"            component={ApplyScreen}                />
         <Stack.Screen name="Logbook"          component={LogbookScreen}              />
+        <Stack.Screen name="SiteVisits"       component={StudentSiteVisitsScreen}           />
         <Stack.Screen name="LogbookDetail"    component={LogbookDetailScreen}        />
         <Stack.Screen name="Stats"            component={PlaceholderScreen}          />
         <Stack.Screen name="Reports"          component={PlaceholderScreen}          />
@@ -188,7 +190,6 @@ function RootNavigator() {
         <Stack.Screen name="Notifications"    component={NotificationsScreen}        />
         <Stack.Screen name="Feedback"         component={FeedbackScreen}             />
         <Stack.Screen name="PrivacyPolicy"    component={PrivacyPolicyScreen}        />
-        {/* ← NEW */}
         <Stack.Screen name="Announcements"    component={StudentAnnouncementsScreen} />
       </Stack.Navigator>
     );
@@ -210,7 +211,6 @@ function RootNavigator() {
         <Stack.Screen name="Notifications"       component={NotificationsScreen}          />
         <Stack.Screen name="SupervisorSettings"  component={SupervisorSettings}           />
         <Stack.Screen name="PrivacyPolicy"       component={PrivacyPolicyScreen}          />
-        {/* ← NEW */}
         <Stack.Screen name="Announcements"       component={SupervisorAnnouncementsScreen} />
       </Stack.Navigator>
     );

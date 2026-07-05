@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, Alert, RefreshControl, Image, ActivityIndicator
+  ScrollView, Alert, RefreshControl, Image, ActivityIndicator, Modal
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -28,6 +28,8 @@ export default function ProfileScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [viewerVisible, setViewerVisible] = useState(false);
+  const [actionSheetVisible, setActionSheetVisible] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -55,6 +57,31 @@ export default function ProfileScreen({ navigation }) {
   }, [user]);
 
   const onRefresh = () => { setRefreshing(true); fetchData(); };
+
+  // FIX: navigation.goBack() silently does nothing if this screen has no
+  // history to pop (e.g. it was opened via navigate() from a different
+  // navigator, via reset(), or as a deep-link/initial route). This falls
+  // back to a known screen instead of doing nothing.
+  const handleBack = () => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.navigate('StudentDashboard');
+    }
+  };
+
+  // FIX: Alert.alert with multiple custom-labeled buttons doesn't render on
+  // web (react-native-web maps it to window.confirm, which only supports
+  // OK/Cancel) — so the 3-option alert silently did nothing. Using a custom
+  // modal instead works identically on web and native.
+  const handleAvatarPress = () => {
+    const avatarUrl = profile?.avatar_url || null;
+    if (!avatarUrl) {
+      handleChangePhoto();
+      return;
+    }
+    setActionSheetVisible(true);
+  };
 
   const handleChangePhoto = async () => {
     try {
@@ -124,16 +151,16 @@ export default function ProfileScreen({ navigation }) {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[TEAL]} />}
       >
         <View style={styles.banner}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+          <TouchableOpacity style={styles.backBtn} onPress={handleBack} activeOpacity={0.7}>
             <Ionicons name="arrow-back" size={20} color={WHITE} />
             <Text style={styles.backText}>Back</Text>
           </TouchableOpacity>
         </View>
 
-        <View style={styles.avatarWrapper}>
+        <View style={styles.avatarWrapper} pointerEvents="box-none">
           <TouchableOpacity
             style={styles.avatarCircle}
-            onPress={handleChangePhoto}
+            onPress={handleAvatarPress}
             disabled={uploadingPhoto}
             activeOpacity={0.8}
           >
@@ -167,7 +194,9 @@ export default function ProfileScreen({ navigation }) {
           </View>
           <InfoRow icon="person-outline" label="FULL NAME" value={profile?.full_name || 'N/A'} />
           <View style={styles.divider} />
-          <InfoRow icon="school-outline" label="COURSE" value={profile?.department || 'N/A'} />
+          <InfoRow icon="book-outline" label="COURSE" value={profile?.course || profile?.program || 'N/A'} />
+          <View style={styles.divider} />
+          <InfoRow icon="school-outline" label="DEPARTMENT" value={profile?.department || 'N/A'} />
           <View style={styles.divider} />
           <InfoRow icon="calendar-outline" label="YEAR OF STUDY" value={profile?.year_of_study || 'N/A'} />
           <View style={styles.divider} />
@@ -218,6 +247,53 @@ export default function ProfileScreen({ navigation }) {
 
         <View style={{ height: 60 }} />
       </ScrollView>
+
+      <Modal visible={actionSheetVisible} transparent animationType="fade" onRequestClose={() => setActionSheetVisible(false)}>
+        <TouchableOpacity
+          style={styles.sheetBackdrop}
+          activeOpacity={1}
+          onPress={() => setActionSheetVisible(false)}
+        >
+          <View style={styles.sheetCard}>
+            <Text style={styles.sheetTitle}>Profile Photo</Text>
+            <TouchableOpacity
+              style={styles.sheetOption}
+              onPress={() => { setActionSheetVisible(false); setViewerVisible(true); }}
+            >
+              <Ionicons name="eye-outline" size={20} color={DARK} />
+              <Text style={styles.sheetOptionText}>View Photo</Text>
+            </TouchableOpacity>
+            <View style={styles.sheetDivider} />
+            <TouchableOpacity
+              style={styles.sheetOption}
+              onPress={() => { setActionSheetVisible(false); handleChangePhoto(); }}
+            >
+              <Ionicons name="camera-outline" size={20} color={DARK} />
+              <Text style={styles.sheetOptionText}>Change Photo</Text>
+            </TouchableOpacity>
+            <View style={styles.sheetDivider} />
+            <TouchableOpacity style={styles.sheetOption} onPress={() => setActionSheetVisible(false)}>
+              <Ionicons name="close-outline" size={20} color={RED} />
+              <Text style={[styles.sheetOptionText, { color: RED }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      <Modal visible={viewerVisible} transparent animationType="fade" onRequestClose={() => setViewerVisible(false)}>
+        <TouchableOpacity
+          style={styles.viewerBackdrop}
+          activeOpacity={1}
+          onPress={() => setViewerVisible(false)}
+        >
+          <TouchableOpacity style={styles.viewerCloseBtn} onPress={() => setViewerVisible(false)}>
+            <Ionicons name="close" size={26} color={WHITE} />
+          </TouchableOpacity>
+          {avatarUrl && (
+            <Image source={{ uri: avatarUrl }} style={styles.viewerImage} resizeMode="contain" />
+          )}
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -239,7 +315,7 @@ const styles = StyleSheet.create({
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loadingText: { marginTop: 10, color: GRAY },
   banner: { height: 80, backgroundColor: TEAL, justifyContent: 'flex-end', alignItems: 'flex-start', paddingHorizontal: 16, paddingBottom: 12 },
-  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, position: 'relative', zIndex: 20 },
   backText: { color: WHITE, fontSize: 15, fontWeight: '600' },
   avatarWrapper: { alignItems: 'center', marginTop: -50, marginBottom: 12 },
   avatarCircle: { width: 100, height: 100, borderRadius: 50, backgroundColor: DARK, borderWidth: 4, borderColor: WHITE, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
@@ -275,4 +351,13 @@ const styles = StyleSheet.create({
   attachRole: { fontSize: 12, color: GRAY },
   logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginHorizontal: 16, paddingVertical: 16, borderRadius: 30, borderWidth: 1.5, borderColor: RED, gap: 8, marginBottom: 10 },
   logoutText: { color: RED, fontSize: 15, fontWeight: '700' },
+  viewerBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center' },
+  viewerImage: { width: '90%', height: '70%' },
+  viewerCloseBtn: { position: 'absolute', top: 50, right: 20, zIndex: 10, padding: 8 },
+  sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  sheetCard: { backgroundColor: WHITE, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 8, paddingBottom: 24 },
+  sheetTitle: { textAlign: 'center', fontSize: 13, fontWeight: '700', color: GRAY, paddingVertical: 12 },
+  sheetOption: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 24, paddingVertical: 16 },
+  sheetOptionText: { fontSize: 15, fontWeight: '600', color: DARK },
+  sheetDivider: { height: 1, backgroundColor: BORDER, marginHorizontal: 16 },
 });

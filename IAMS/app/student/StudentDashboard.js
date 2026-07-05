@@ -179,14 +179,14 @@ export default function StudentDashboard({ navigation }) {
       locked:   !sessionActive,
     },
     {
-      title: 'My Logbook', subtitle: 'Update weekly logs',
-      icon: 'book-outline', screen: 'Logbook',
-      color: '#C87941', circleBg: 'rgba(200,121,65,0.12)',
-    },
-    {
       title: 'Grades', subtitle: 'View performance',
       icon: 'star-outline', screen: 'Feedback',
       color: '#2E7D32', circleBg: 'rgba(46,125,50,0.12)',
+    },
+    {
+      title: 'Site Visits', subtitle: 'Scheduled supervisor visits',
+      icon: 'calendar-outline', screen: 'SiteVisits',
+      color: '#8E44AD', circleBg: 'rgba(142,68,173,0.12)',
     },
     {
       title: 'Settings', subtitle: 'Account & preferences',
@@ -257,11 +257,17 @@ export default function StudentDashboard({ navigation }) {
         {/* ── Top bar ───────────────────────────────────────────────────── */}
         <View style={s.topBar}>
           <View style={s.avatarRow}>
-            <View style={s.avatar}>
-              <Text style={s.avatarText}>
-                {(user?.full_name ?? 'S')[0].toUpperCase()}
-              </Text>
-            </View>
+            <TouchableOpacity onPress={() => navigation.navigate('Profile')} activeOpacity={0.8}>
+              <View style={s.avatar}>
+                {user?.avatar_url ? (
+                  <Image source={{ uri: user.avatar_url }} style={s.avatarImage} />
+                ) : (
+                  <Text style={s.avatarText}>
+                    {(user?.full_name ?? 'S')[0].toUpperCase()}
+                  </Text>
+                )}
+              </View>
+            </TouchableOpacity>
             <View>
               <Text style={[s.greetingText, { color: theme.text }]}>
                 {getGreeting()}, {firstName} 👋
@@ -530,7 +536,9 @@ const s = StyleSheet.create({
     width: 44, height: 44, borderRadius: 22,
     backgroundColor: TEAL,
     alignItems: 'center', justifyContent: 'center',
+    overflow: 'hidden',
   },
+  avatarImage:  { width: '100%', height: '100%' },
   avatarText:   { color: '#fff', fontSize: 18, fontWeight: '600' },
   greetingText: { fontSize: 15, fontWeight: '500' },
   programText:  { fontSize: 12, marginTop: 2 },

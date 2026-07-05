@@ -24,7 +24,7 @@ export default function RegisterScreen({ navigation }) {
   const [showRoleDropdown, setShowRoleDropdown] = useState(false);
   const [form, setForm] = useState({
     full_name: '', reg_number: '', email: '',
-    password: '', confirm_password: '', department: '', year_of_study: '',
+    password: '', confirm_password: '', department: '', course: '', year_of_study: '',
     phone: '',
     org_name: '', industry: '', location: '',
     official_email: '', website: '', description: '',
@@ -65,6 +65,11 @@ export default function RegisterScreen({ navigation }) {
 
     if (role === 'student' && !form.reg_number) {
       Alert.alert('Error', 'Registration number is required for students');
+      return;
+    }
+
+    if (role === 'student' && !form.course) {
+      Alert.alert('Error', 'Course is required for students');
       return;
     }
 
@@ -242,6 +247,16 @@ export default function RegisterScreen({ navigation }) {
                 value={form.reg_number}
                 onChangeText={(v) => handleChange('reg_number', v)}
                 autoCapitalize="characters"
+              />
+            </View>
+            <View style={styles.inputWrap}>
+              <MaterialCommunityIcons name="book-education-outline" size={20} color={BLUE} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Course (e.g. BSc Information Systems & Computing)"
+                placeholderTextColor={GRAY}
+                value={form.course}
+                onChangeText={(v) => handleChange('course', v)}
               />
             </View>
             <View style={styles.inputWrap}>

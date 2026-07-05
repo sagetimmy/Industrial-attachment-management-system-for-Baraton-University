@@ -42,6 +42,10 @@ export default function LoginScreen({ navigation }) {
     setLoading(true);
     try {
       await login(email.trim(), password);
+      // Don't setLoading(false) here on success — the screen is about to
+      // unmount once AuthContext's `user` state propagates and RootNavigator
+      // switches to the dashboard stack. Turning the spinner off first just
+      // creates a visible flash back to the login form during that gap.
     } catch (err) {
       if (err.response?.data?.requiresVerification) {
         navigation.navigate('Verify', { email });
@@ -52,8 +56,8 @@ export default function LoginScreen({ navigation }) {
             : err.message || 'Something went wrong');
         Alert.alert('Login Failed', message);
       }
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const heroContent = (

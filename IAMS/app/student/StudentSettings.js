@@ -8,6 +8,7 @@ import {
   Switch,
   Alert,
   Platform,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
@@ -50,6 +51,7 @@ export default function StudentSettings({ navigation }) {
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [orgInfoVisible, setOrgInfoVisible] = useState(false);
 
   const initials = useMemo(() => {
     const base = profile?.full_name || user?.full_name || '';
@@ -148,21 +150,15 @@ export default function StudentSettings({ navigation }) {
     );
   };
 
+  // FIX: replaced Alert.alert-based org info popup with a proper modal.
+  // Alert.alert with a 2-button "Clear Notifications" confirm elsewhere in
+  // this file is a real native-style confirm dialog and is fine, but a
+  // plain informational alert built from conditionally-joined lines was
+  // fragile on web — this modal is more reliable and shows fuller detail.
   const handleSupervisorInfo = () => {
-    if (!attachment) {
-      Alert.alert('No Attachment', 'You do not have an active attachment yet.');
-      return;
-    }
-    Alert.alert(
-      attachment.org_name || 'Organization',
-      [
-        attachment.contact_person ? `Contact: ${attachment.contact_person}` : null,
-        attachment.org_phone ? `Phone: ${attachment.org_phone}` : null,
-        attachment.location ? `Location: ${attachment.location}` : null,
-      ].filter(Boolean).join('\n') || 'No organization contact info available.'
-    );
+    setOrgInfoVisible(true);
   };
- 
+
   const handleLogout = () => {
     Alert.alert('Logout', 'Are you sure you want to logout?', [
       { text: 'Cancel', style: 'cancel' },
@@ -296,6 +292,64 @@ export default function StudentSettings({ navigation }) {
         </TouchableOpacity>
         <Text style={styles.versionText}>IAMS Version 1.0.0</Text>
       </ScrollView>
+
+      <Modal
+        visible={orgInfoVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setOrgInfoVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.sheetBackdrop}
+          activeOpacity={1}
+          onPress={() => setOrgInfoVisible(false)}
+        >
+          <View style={styles.sheetCard}>
+            {!attachment ? (
+              <>
+                <View style={styles.sheetIconWrap}>
+                  <MaterialCommunityIcons name="office-building-outline" size={28} color={TEXT_SUB} />
+                </View>
+                <Text style={styles.sheetTitle}>No Attachment Yet</Text>
+                <Text style={styles.sheetSubtext}>You do not have an active attachment yet.</Text>
+              </>
+            ) : (
+              <>
+                <View style={styles.sheetIconWrap}>
+                  <MaterialCommunityIcons name="office-building" size={28} color={PRIMARY} />
+                </View>
+                <Text style={styles.sheetTitle}>{attachment.org_name || 'Organization'}</Text>
+
+                {attachment.contact_person && (
+                  <View style={styles.sheetDetailRow}>
+                    <Ionicons name="person-outline" size={16} color={TEXT_SUB} />
+                    <Text style={styles.sheetDetailText}>{attachment.contact_person}</Text>
+                  </View>
+                )}
+                {attachment.org_phone && (
+                  <View style={styles.sheetDetailRow}>
+                    <Ionicons name="call-outline" size={16} color={TEXT_SUB} />
+                    <Text style={styles.sheetDetailText}>{attachment.org_phone}</Text>
+                  </View>
+                )}
+                {attachment.location && (
+                  <View style={styles.sheetDetailRow}>
+                    <Ionicons name="location-outline" size={16} color={TEXT_SUB} />
+                    <Text style={styles.sheetDetailText}>{attachment.location}</Text>
+                  </View>
+                )}
+                {!attachment.contact_person && !attachment.org_phone && !attachment.location && (
+                  <Text style={styles.sheetSubtext}>No organization contact info available.</Text>
+                )}
+              </>
+            )}
+
+            <TouchableOpacity style={styles.sheetCloseBtn} onPress={() => setOrgInfoVisible(false)}>
+              <Text style={styles.sheetCloseBtnText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -451,4 +505,32 @@ const styles = StyleSheet.create({
   },
   loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: BG },
   loadingText: { marginTop: 10, color: TEXT_SUB },
+
+  sheetBackdrop: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.4)',
+    alignItems: 'center', justifyContent: 'center', padding: 24,
+  },
+  sheetCard: {
+    width: '100%', maxWidth: 360,
+    backgroundColor: SURFACE, borderRadius: 20,
+    padding: 24, alignItems: 'center',
+  },
+  sheetIconWrap: {
+    width: 56, height: 56, borderRadius: 28,
+    backgroundColor: PRIMARY_LIGHT,
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 14,
+  },
+  sheetTitle: { fontSize: 17, fontWeight: '800', color: TEXT, textAlign: 'center', marginBottom: 6 },
+  sheetSubtext: { fontSize: 13, color: TEXT_SUB, textAlign: 'center', marginTop: 4 },
+  sheetDetailRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginTop: 8, alignSelf: 'stretch', justifyContent: 'center',
+  },
+  sheetDetailText: { fontSize: 14, color: TEXT, fontWeight: '500' },
+  sheetCloseBtn: {
+    marginTop: 20, paddingHorizontal: 32, paddingVertical: 12,
+    backgroundColor: PRIMARY, borderRadius: 12, alignSelf: 'stretch',
+  },
+  sheetCloseBtnText: { color: '#fff', fontWeight: '700', fontSize: 14, textAlign: 'center' },
 });

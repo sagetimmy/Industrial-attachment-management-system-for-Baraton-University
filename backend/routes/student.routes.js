@@ -301,13 +301,14 @@ router.get('/my-attachment', protect, async (req, res) => {
 
 // ─── POST /api/students/logbook ─────────────────────────────────────────────
 router.post('/logbook', protect, requireRolePermission('editLogbooks'), upload.single('document'), async (req, res) => {
-  const { week_number, description, tasks_done, challenges } = req.body;
+  const { week_number, description, tasks_done, challenges, hours_worked } = req.body;
   const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const requestStart = Date.now();
 
   try {
     console.log(`[logbook:${requestId}] request`, {
       week_number,
+      hours_worked,
       user_id: req.user.user_id,
       file: req.file ? { name: req.file.originalname, size: req.file.size } : null,
     });
@@ -323,6 +324,13 @@ router.post('/logbook', protect, requireRolePermission('editLogbooks'), upload.s
       return res.status(403).json({
         message: 'Logbook submissions are closed. No active attachment session.',
       });
+    }
+
+    // FIX: hours_worked is now a real, student-entered value instead of a
+    // derived count of newlines in tasks_done (which was almost always 1).
+    const parsedHours = Number(hours_worked);
+    if (!hours_worked || Number.isNaN(parsedHours) || parsedHours <= 0) {
+      return res.status(400).json({ message: 'A valid number of hours worked is required' });
     }
 
     const { data: student, error: sErr } = await supabase
@@ -394,6 +402,7 @@ router.post('/logbook', protect, requireRolePermission('editLogbooks'), upload.s
         description,
         tasks_done:   tasks_done || '',
         challenges:   challenges || '',
+        hours_worked: parsedHours,
         document_url,
         status: 'submitted'
       });
@@ -457,6 +466,80 @@ router.get('/logbook', protect, async (req, res) => {
     res.json(data || []);
   } catch (err) {
     console.error('GET /logbook error:', err.message);
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// ─── GET /api/students/site-visits ──────────────────────────────────────────
+router.get('/site-visits', protect, async (req, res) => {
+  try {
+    console.log('📅 Fetching site visits for user_id:', req.user.user_id);
+
+    const { data: student, error: sErr } = await supabase
+      .from('students')
+      .select('student_id')
+      .eq('user_id', req.user.user_id)
+      .single();
+
+    if (sErr || !student) {
+      console.log('Student not found');
+      return res.json([]);
+    }
+
+    const { data: attachments, error: attachError } = await supabase
+      .from('attachments')
+      .select('attachment_id')
+      .eq('student_id', student.student_id);
+
+    if (attachError || !attachments || attachments.length === 0) {
+      console.log('No attachments found');
+      return res.json([]);
+    }
+
+    const attachmentIds = attachments.map(a => a.attachment_id);
+
+    const { data: visits, error } = await supabase
+      .from('site_visits')
+      .select('*')
+      .in('attachment_id', attachmentIds)
+      .order('visit_date', { ascending: false });
+
+    if (error) {
+      console.error('Site visits query error:', error);
+      return res.json([]);
+    }
+
+    if (!visits || visits.length === 0) {
+      return res.json([]);
+    }
+
+    const supervisorIds = [...new Set(visits.map(v => v.supervisor_id).filter(Boolean))];
+    let supervisorMap = {};
+
+    if (supervisorIds.length > 0) {
+      const { data: supervisors, error: supError } = await supabase
+        .from('supervisors')
+        .select('supervisor_id, full_name, phone')
+        .in('supervisor_id', supervisorIds);
+
+      if (!supError && supervisors) {
+        supervisorMap = supervisors.reduce((acc, s) => {
+          acc[s.supervisor_id] = s;
+          return acc;
+        }, {});
+      }
+    }
+
+    const result = visits.map(v => ({
+      ...v,
+      supervisor_name: supervisorMap[v.supervisor_id]?.full_name || 'Not assigned',
+      supervisor_phone: supervisorMap[v.supervisor_id]?.phone || null,
+    }));
+
+    console.log('✅ Site visits found:', result.length);
+    res.json(result);
+  } catch (err) {
+    console.error('GET /site-visits error:', err.message);
     res.status(500).json({ message: err.message });
   }
 });

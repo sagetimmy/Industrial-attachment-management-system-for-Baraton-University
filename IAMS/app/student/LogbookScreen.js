@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   ScrollView, Alert, RefreshControl,
-  FlatList,
+  FlatList, Image,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import * as DocumentPicker from 'expo-document-picker';
@@ -44,6 +44,7 @@ export default function LogbookScreen({ navigation }) {
     description: '',
     tasks_done: '',
     challenges: '',
+    hours_worked: '',
   });
 
   const fetchData = async () => {
@@ -94,6 +95,12 @@ export default function LogbookScreen({ navigation }) {
       Alert.alert('Error', 'Week number and description are required');
       return;
     }
+
+    if (!form.hours_worked || isNaN(Number(form.hours_worked)) || Number(form.hours_worked) <= 0) {
+      Alert.alert('Error', 'Please enter a valid number of hours worked this week');
+      return;
+    }
+
     setSubmitting(true);
     try {
       const buildFormData = () => {
@@ -102,6 +109,7 @@ export default function LogbookScreen({ navigation }) {
         formData.append('description', form.description);
         formData.append('tasks_done', form.tasks_done);
         formData.append('challenges', form.challenges);
+        formData.append('hours_worked', form.hours_worked);
         if (document) {
           formData.append('document', {
             uri: document.uri,
@@ -120,7 +128,7 @@ export default function LogbookScreen({ navigation }) {
         { retries: 3, baseDelay: 800 }
       );
       Alert.alert('Success! 🎉', 'Logbook entry submitted successfully!');
-      setForm({ week_number: '', description: '', tasks_done: '', challenges: '' });
+      setForm({ week_number: '', description: '', tasks_done: '', challenges: '', hours_worked: '' });
       setDocument(null);
       setShowForm(false);
       fetchData();
@@ -175,8 +183,12 @@ export default function LogbookScreen({ navigation }) {
           <Text style={s.backText}>Back</Text>
         </TouchableOpacity>
         <Text style={s.headerTitle}>Logbook</Text>
-        <TouchableOpacity onPress={() => navigation.navigate('Profile')}>
-          <Text style={s.profileIcon}>👤</Text>
+        <TouchableOpacity onPress={() => navigation.navigate('Profile')} style={s.profileAvatar}>
+          {user?.avatar_url ? (
+            <Image source={{ uri: user.avatar_url }} style={s.profileAvatarImage} />
+          ) : (
+            <Text style={s.profileIcon}>👤</Text>
+          )}
         </TouchableOpacity>
       </View>
 
@@ -254,6 +266,15 @@ export default function LogbookScreen({ navigation }) {
                   keyboardType="numeric"
                 />
 
+                <Text style={s.label}>Hours Worked This Week *</Text>
+                <TextInput
+                  style={s.input}
+                  placeholder="e.g. 40"
+                  value={form.hours_worked}
+                  onChangeText={(v) => setForm({ ...form, hours_worked: v })}
+                  keyboardType="numeric"
+                />
+
                 <Text style={s.label}>What did you do this week? *</Text>
                 <TextInput
                   style={[s.input, s.textArea]}
@@ -311,7 +332,7 @@ export default function LogbookScreen({ navigation }) {
                   style={s.cancelBtn}
                   onPress={() => {
                     setShowForm(false);
-                    setForm({ week_number: '', description: '', tasks_done: '', challenges: '' });
+                    setForm({ week_number: '', description: '', tasks_done: '', challenges: '', hours_worked: '' });
                     setDocument(null);
                   }}
                 >
@@ -346,10 +367,10 @@ export default function LogbookScreen({ navigation }) {
                     }).toUpperCase()}
                   </Text>
                 </View>
-                {entry.tasks_done ? (
+                {entry.hours_worked ? (
                   <View style={s.hoursBadge}>
                     <Text style={s.hoursText}>
-                      {entry.tasks_done.split('\n').length}.0 HOURS
+                      {entry.hours_worked} HOURS
                     </Text>
                   </View>
                 ) : null}
@@ -426,6 +447,12 @@ const s = StyleSheet.create({
   backText: { fontSize: 15, fontWeight: '600', color: '#333' },
   headerTitle: { fontSize: 18, fontWeight: '600', color: '#111' },
   profileIcon: { fontSize: 22 },
+  profileAvatar: {
+    width: 34, height: 34, borderRadius: 17,
+    alignItems: 'center', justifyContent: 'center',
+    overflow: 'hidden', backgroundColor: TEAL_LIGHT,
+  },
+  profileAvatarImage: { width: '100%', height: '100%' },
 
   // week strip
   weekStripWrap: {

@@ -96,7 +96,7 @@ router.post('/register', registrationLimiter, async (req, res) => {
 router.post('/register-profile', registrationLimiter, async (req, res) => {
   const {
     auth_id, email, role, full_name, reg_number,
-    department, year_of_study, phone,
+    department, course, year_of_study, phone,
     org_name, location, contact_person, available_slots,
     // Admin-specific fields
     is_super_admin, permissions,
@@ -133,7 +133,7 @@ router.post('/register-profile', registrationLimiter, async (req, res) => {
 
     if (role === 'student') {
       const { error } = await supabase.from('students')
-        .insert({ user_id: newUser.user_id, full_name, reg_number, department, year_of_study: year_of_study || 1, phone });
+        .insert({ user_id: newUser.user_id, full_name, reg_number, department, course, year_of_study: year_of_study || 1, phone });
       if (error) throw error;
     } else if (role === 'supervisor') {
       const { error } = await supabase.from('supervisors')

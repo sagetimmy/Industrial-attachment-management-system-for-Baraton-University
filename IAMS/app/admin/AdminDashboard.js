@@ -268,7 +268,7 @@ export default function AdminDashboard({ navigation }) {
       icon: 'people-outline',
     },
     {
-      label: 'ACTIVE',
+      label: 'ACTIVE ATTACHMENTS',
       value: activeAttachments,
       change: `${percentOf(activeAttachments, totalAttachments)}% active`,
       up: true,

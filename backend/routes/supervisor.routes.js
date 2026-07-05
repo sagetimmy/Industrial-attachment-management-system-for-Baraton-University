@@ -84,11 +84,15 @@ router.get('/dashboard', protect, async (req, res) => {
 
     if (stErr) throw stErr;
 
+    // FIX: attachments!inner(...) is required here. Without !inner, the
+    // .eq('attachments.supervisor_id', ...) filter does NOT restrict which
+    // logbook_entries rows come back — it was returning entries for every
+    // student regardless of supervisor assignment.
     const { data: pendingLogs, error: lErr } = await supabase
       .from('logbook_entries')
       .select(`
         entry_id, week_number, submitted_at, description,
-        attachments!logbook_entries_attachment_id_fkey (
+        attachments!logbook_entries_attachment_id_fkey!inner (
           supervisor_id,
           students!attachments_student_id_fkey (full_name, reg_number)
         )
@@ -194,6 +198,10 @@ router.get('/logbooks', protect, async (req, res) => {
 
     const supervisorAssignmentId = getSupervisorAssignmentId(supervisor, req.user.user_id);
 
+    // FIX: added !inner to the attachments embed. This was the source of
+    // the bug — any supervisor account could see every logbook entry in the
+    // system, because .eq('attachments.supervisor_id', ...) was silently
+    // not restricting rows without an inner join.
     const { data, error } = await supabase
       .from('logbook_entries')
       .select(`
@@ -209,7 +217,7 @@ router.get('/logbooks', protect, async (req, res) => {
         supervisor_feedback,
         reviewed_at,
         attachment_id,
-        attachments!logbook_entries_attachment_id_fkey (
+        attachments!logbook_entries_attachment_id_fkey!inner (
           attachment_id,
           supervisor_id,
           students!attachments_student_id_fkey (full_name, reg_number),
