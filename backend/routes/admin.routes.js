@@ -325,6 +325,73 @@ router.get('/orgs', protect, authorize('admin'), async (req, res) => {
   }
 });
 
+// ─── GET /api/admin/vacancies ──────────────────────────────────────────────
+// Derived, not a separate table: available_slots on host_organizations
+// minus how many students currently have an ongoing/approved attachment
+// there. Same math as /orgs, scoped to orgs that actually have an opening.
+// Optional ?orgId= scopes the list to a single org (used by the
+// "Vacancies" button on ManageOrgsScreen); omit it for the global view.
+router.get('/vacancies', protect, authorize('admin'), async (req, res) => {
+  try {
+    const { orgId } = req.query;
+
+    let query = supabase
+      .from('host_organizations')
+      .select('org_id, org_name, location, contact_person, phone, available_slots, is_approved')
+      .eq('is_approved', true)
+      .order('org_name', { ascending: true });
+
+    if (orgId) query = query.eq('org_id', orgId);
+
+    const { data: orgs, error } = await query;
+    if (error) throw error;
+
+    const orgIds = orgs.map(o => o.org_id).filter(Boolean);
+    let internCountMap = {};
+    if (orgIds.length) {
+      const { data: attachments, error: attErr } = await supabase
+        .from('attachments')
+        .select('org_id, status')
+        .in('org_id', orgIds)
+        .in('status', ['ongoing', 'approved']);
+      if (attErr) throw attErr;
+
+      attachments.forEach(a => {
+        internCountMap[a.org_id] = (internCountMap[a.org_id] || 0) + 1;
+      });
+    }
+
+    const vacancies = orgs
+      .map(o => {
+        const intern_count  = internCountMap[o.org_id] || 0;
+        const vacancy_count = Math.max((o.available_slots || 0) - intern_count, 0);
+        return {
+          org_id:          o.org_id,
+          org_name:        o.org_name,
+          location:        o.location,
+          contact_person:  o.contact_person,
+          phone:           o.phone,
+          available_slots: o.available_slots || 0,
+          intern_count,
+          vacancy_count,
+        };
+      })
+      // Only orgs with an actual open slot show up as a "vacancy"
+      .filter(v => v.vacancy_count > 0)
+      .sort((a, b) => b.vacancy_count - a.vacancy_count);
+
+    const stats = {
+      totalVacancies: vacancies.reduce((sum, v) => sum + v.vacancy_count, 0),
+      orgsHiring:     vacancies.length,
+    };
+
+    res.json({ vacancies, stats });
+  } catch (err) {
+    console.error('GET /admin/vacancies error:', err);
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // ─── GET /api/admin/role-permissions ──────────────────────────────────────
 router.get('/role-permissions', protect, authorize('admin'), async (req, res) => {
   try {

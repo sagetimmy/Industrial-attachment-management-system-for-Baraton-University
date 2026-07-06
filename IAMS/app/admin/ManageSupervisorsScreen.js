@@ -32,7 +32,7 @@ const T = {
 // per-supervisor capacity field in the schema, so this is a shared constant
 // rather than per-supervisor data. Adjust here if a real capacity column
 // gets added later.
-const NOMINAL_CAPACITY = 10;
+const NOMINAL_CAPACITY = 15;
 
 function getInitials(name = '') {
   return name
