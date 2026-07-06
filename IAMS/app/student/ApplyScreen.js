@@ -12,6 +12,16 @@ import { COLORS } from '../../constants/colors';
 import { hasRolePermission } from '../../utils/permissions';
 import Spinner from '../../components/Spinner';
 
+// ── Design accents (match IAMS design system used elsewhere in the app) ─────
+const TEAL       = '#1B7A65';
+const TEAL_DARK  = '#0F2419';
+const MINT_BG    = '#E3F1EE';
+const ORANGE     = '#E8711A';
+const GRAY       = '#7A8F86';
+const BORDER     = '#D8E4DF';
+const DISABLED_BG = '#EEF1F0';
+const PILL_DARK  = '#123527';
+
 const formatDateDisplay = (dateStr) => {
   if (!dateStr) return '';
   const d = new Date(dateStr);
@@ -134,6 +144,13 @@ export default function ApplyScreen({ navigation }) {
     } else {
       setEndDate('');
     }
+  };
+
+  // End date can still be overridden by hand — the segmented duration
+  // control keeps re-deriving it from start date, but a manual edit here
+  // takes precedence until start/duration change again.
+  const handleEndDateChange = (value) => {
+    setEndDate(normalizeDateInput(value));
   };
 
   const handleDurationChange = (months) => {
@@ -339,23 +356,13 @@ export default function ApplyScreen({ navigation }) {
     fetchData();
   };
 
-  const statusColor = (status) => {
-    switch (status) {
-      case 'ongoing': return { bg: '#E8F5E9', text: '#2E7D32' };
-      case 'pending': return { bg: '#FFF3E0', text: theme.primary };
-      case 'completed': return { bg: '#E3F2FD', text: theme.secondary };
-      case 'rejected': return { bg: '#FFEBEE', text: '#C62828' };
-      default: return { bg: theme.surface, text: theme.textSecondary };
-    }
-  };
-
   const applicationMeta = (status) => {
     switch (status) {
       case 'accepted': return { label: 'ACCEPTED', bg: '#E8F5E9', text: '#2E7D32' };
       case 'rejected': return { label: 'REJECTED', bg: '#FFEBEE', text: '#C62828' };
       case 'more_info': return { label: 'MORE INFO', bg: '#E3F2FD', text: '#185FA5' };
       case 'pending':
-      default: return { label: 'PENDING', bg: '#FFF3E0', text: theme.primary };
+      default: return { label: 'PENDING', bg: PILL_DARK, text: '#FFFFFF' };
     }
   };
 
@@ -372,6 +379,8 @@ export default function ApplyScreen({ navigation }) {
     canSelfPlace &&
     (!latestApplication || !['pending', 'more_info', 'accepted'].includes(latestApplication.status));
 
+  const percentComplete = Math.round((currentStep / 3) * 100);
+
   return (
     <View style={[styles.container, { backgroundColor: theme.surface }]}>
       <ScrollView
@@ -381,95 +390,85 @@ export default function ApplyScreen({ navigation }) {
       >
         {/* ===== Top App Bar ===== */}
         <View style={[styles.topBar, { backgroundColor: theme.surface }]}>
-          <View style={styles.topBarLeft}>
-            <TouchableOpacity onPress={handleBackStep} style={styles.backButton}>
-              <Ionicons name="arrow-back" size={22} color={theme.text} />
-            </TouchableOpacity>
+          <TouchableOpacity onPress={handleBackStep} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={22} color={theme.text} />
+          </TouchableOpacity>
+          <View style={styles.topBarTextBlock}>
             <Text style={[styles.screenTitle, { color: theme.text }]}>Apply for Attachment</Text>
+            {showForm && (
+              <Text style={[styles.stepSubtitle, { color: theme.textSecondary }]}>
+                STEP {currentStep} OF 3: {STEP_DESCRIPTIONS[currentStep].toUpperCase()}
+              </Text>
+            )}
           </View>
-          <View style={styles.topBarDots}>
-            {[1, 2, 3].map((step) => (
-              <View
-                key={step}
-                style={[styles.dot, { backgroundColor: step <= currentStep ? theme.primary : theme.outlineVariant }]}
-              />
-            ))}
-          </View>
+          {showForm && (
+            <View style={styles.progressBlock}>
+              <Text style={[styles.progressPercent, { color: theme.text }]}>{percentComplete}% Complete</Text>
+              <View style={[styles.progressTrack, { backgroundColor: theme.outlineVariant }]}>
+                <View style={[styles.progressTrackFill, { width: `${percentComplete}%`, backgroundColor: TEAL }]} />
+              </View>
+            </View>
+          )}
         </View>
 
-        {/* ===== Step Progress ===== */}
-        {showForm && (
-          <View style={styles.stepContainer}>
-            <View style={styles.stepHeader}>
-              <Text style={[styles.stepLabel, { color: theme.primary }]}>STEP {currentStep} OF 3</Text>
-              <Text style={[styles.stepDescription, { color: theme.textSecondary }]}>
-                {STEP_DESCRIPTIONS[currentStep]}
-              </Text>
-            </View>
-            <View style={styles.progressBar}>
-              {[1, 2, 3].map((step) => (
-                <View
-                  key={step}
-                  style={[
-                    step <= currentStep ? styles.progressFill : styles.progressEmpty,
-                    { backgroundColor: step <= currentStep ? theme.primary : theme.outlineVariant },
-                  ]}
-                />
-              ))}
-            </View>
-          </View>
-        )}
-
-        {/* ===== Pending application / attachment status (Step 1 only) ===== */}
+        {/* ===== Application Status (Step 1 only) ===== */}
         {currentStep === 1 && myAttachment && (
-          <View style={[styles.statusCard, { backgroundColor: theme.background, borderLeftColor: theme.primary }]}>
-            <Text style={[styles.statusTitle, { color: theme.textSecondary }]}>Your Current Attachment</Text>
-            <View style={styles.statusRow}>
-              <View style={styles.statusLeft}>
-                <Text style={[styles.orgName, { color: theme.text }]}>{myAttachment.org_name}</Text>
-                <Text style={[styles.orgLocation, { color: theme.textSecondary }]}>📍 {myAttachment.location}</Text>
-                {myAttachment.start_date && (
-                  <Text style={[styles.dates, { color: theme.primary }]}>
-                    📅 {formatDateDisplay(myAttachment.start_date)} — {formatDateDisplay(myAttachment.end_date)}
-                  </Text>
-                )}
-              </View>
-              <View style={[styles.statusBadge, { backgroundColor: statusColor(myAttachment.status).bg }]}>
-                <Text style={[styles.statusText, { color: statusColor(myAttachment.status).text }]}>
-                  {myAttachment.status}
+          <View style={styles.statusCard}>
+            <View style={styles.statusIconBox}>
+              <Ionicons name="information-circle-outline" size={20} color={TEAL} />
+            </View>
+            <View style={styles.statusTextBlock}>
+              <Text style={styles.statusLabel}>APPLICATION STATUS</Text>
+              <Text style={styles.statusHeadline}>{myAttachment.org_name}</Text>
+              <Text style={styles.statusSubtext}>📍 {myAttachment.location}</Text>
+              {myAttachment.start_date && (
+                <Text style={styles.statusSubtext}>
+                  📅 {formatDateDisplay(myAttachment.start_date)} — {formatDateDisplay(myAttachment.end_date)}
                 </Text>
-              </View>
+              )}
+            </View>
+            <View style={[styles.statusPill, { backgroundColor: PILL_DARK }]}>
+              <Text style={styles.statusPillText}>{myAttachment.status?.toUpperCase()}</Text>
             </View>
           </View>
         )}
 
         {currentStep === 1 && !myAttachment && latestApplication && (
-          <View style={[styles.statusCard, { backgroundColor: theme.background, borderLeftColor: theme.primary }]}>
-            <Text style={[styles.statusTitle, { color: theme.textSecondary }]}>Your Application Status</Text>
-            <View style={styles.statusRow}>
-              <View style={styles.statusLeft}>
-                <Text style={[styles.orgName, { color: theme.text }]}>{latestApplication.org_name}</Text>
-                {latestApplication.start_date && (
-                  <Text style={[styles.dates, { color: theme.primary }]}>
-                    📅 {formatDateDisplay(latestApplication.start_date)} — {formatDateDisplay(latestApplication.end_date)}
-                  </Text>
-                )}
-                {latestApplication.skills && (
-                  <Text style={[styles.detailText, { color: theme.textSecondary }]}>
-                    Skills: {latestApplication.skills}
-                  </Text>
-                )}
-                {latestApplication.response_message && (
-                  <Text style={[styles.responseText, { color: theme.text }]}>
-                    💬 {latestApplication.response_message}
-                  </Text>
-                )}
-              </View>
-              <View style={[styles.statusBadge, { backgroundColor: applicationMeta(latestApplication.status).bg }]}>
-                <Text style={[styles.statusText, { color: applicationMeta(latestApplication.status).text }]}>
-                  {applicationMeta(latestApplication.status).label}
+          <View style={styles.statusCard}>
+            <View style={styles.statusIconBox}>
+              <Ionicons name="information-circle-outline" size={20} color={TEAL} />
+            </View>
+            <View style={styles.statusTextBlock}>
+              <Text style={styles.statusLabel}>APPLICATION STATUS</Text>
+              <Text style={styles.statusHeadline}>{latestApplication.org_name}</Text>
+              {latestApplication.start_date && (
+                <Text style={styles.statusSubtext}>
+                  📅 {formatDateDisplay(latestApplication.start_date)} — {formatDateDisplay(latestApplication.end_date)}
                 </Text>
-              </View>
+              )}
+              {latestApplication.response_message && (
+                <Text style={styles.statusResponse}>💬 {latestApplication.response_message}</Text>
+              )}
+            </View>
+            <View style={[styles.statusPill, { backgroundColor: applicationMeta(latestApplication.status).bg }]}>
+              <Text style={[styles.statusPillText, { color: applicationMeta(latestApplication.status).text }]}>
+                {applicationMeta(latestApplication.status).label}
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {currentStep === 1 && !myAttachment && !latestApplication && showForm && (
+          <View style={styles.statusCard}>
+            <View style={styles.statusIconBox}>
+              <Ionicons name="information-circle-outline" size={20} color={TEAL} />
+            </View>
+            <View style={styles.statusTextBlock}>
+              <Text style={styles.statusLabel}>APPLICATION STATUS</Text>
+              <Text style={styles.statusHeadline}>No Active Application Found</Text>
+            </View>
+            <View style={[styles.statusPill, { backgroundColor: PILL_DARK }]}>
+              <Text style={styles.statusPillText}>PENDING</Text>
             </View>
           </View>
         )}
@@ -488,22 +487,19 @@ export default function ApplyScreen({ navigation }) {
         {showForm && currentStep === 1 && (
           <>
             <View style={styles.section}>
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>Selected Organization</Text>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>Organization Details</Text>
               {selectedOrg ? (
-                <View style={[styles.orgCard, { backgroundColor: theme.surface }]}>
+                <View style={styles.orgCard}>
                   <View style={styles.orgCardContent}>
-                    <View style={[styles.orgAvatar, { backgroundColor: theme.primaryLight || '#E3F1EE' }]}>
-                      <MaterialCommunityIcons name="office-building" size={26} color={theme.primary} />
+                    <View style={styles.orgAvatar}>
+                      <MaterialCommunityIcons name="office-building" size={26} color={TEAL} />
                     </View>
                     <View style={styles.orgCardInfo}>
-                      <Text style={[styles.orgCardName, { color: theme.text }]}>{selectedOrg.org_name}</Text>
-                      <View style={styles.orgLocationRow}>
-                        <Ionicons name="location-outline" size={13} color={theme.textSecondary} />
-                        <Text style={[styles.orgCardLocation, { color: theme.textSecondary }]}> {selectedOrg.location}</Text>
-                      </View>
+                      <Text style={styles.orgCardName}>{selectedOrg.org_name}</Text>
+                      <Text style={styles.orgCardLocation}>{selectedOrg.location}</Text>
                     </View>
                     <TouchableOpacity onPress={() => setSelectedOrg(null)}>
-                      <Text style={[styles.changeButtonText, { color: theme.primary }]}>CHANGE</Text>
+                      <Text style={styles.changeButtonText}>CHANGE</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -517,100 +513,104 @@ export default function ApplyScreen({ navigation }) {
             </View>
 
             <View style={styles.section}>
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>Personal Information</Text>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>Application Form</Text>
               <View style={styles.stackedFields}>
                 <View style={styles.formFieldFull}>
-                  <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>FULL NAME</Text>
-                  <TextInput
-                    style={[styles.input, { backgroundColor: theme.surface, color: theme.text, borderColor: theme.outlineVariant }]}
-                    value={fullName}
-                    onChangeText={setFullName}
-                    placeholder="e.g. John Doe"
-                    placeholderTextColor={theme.textSecondary}
-                  />
-                </View>
-                <View style={styles.formFieldFull}>
-                  <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>REGISTRATION NUMBER</Text>
-                  <TextInput
-                    style={[styles.input, { backgroundColor: theme.surface, color: theme.text, borderColor: theme.outlineVariant }]}
-                    value={regNumber}
-                    onChangeText={setRegNumber}
-                    placeholder="SCT211-0000/2024"
-                    placeholderTextColor={theme.textSecondary}
-                  />
-                </View>
-                <View style={styles.formFieldFull}>
-                  <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>COURSE / PROGRAM</Text>
-                  <TextInput
-                    style={[styles.input, { backgroundColor: theme.surface, color: theme.text, borderColor: theme.outlineVariant }]}
-                    value={course}
-                    onChangeText={setCourse}
-                    placeholder="BSc. Computer Science"
-                    placeholderTextColor={theme.textSecondary}
-                  />
-                </View>
-                <View style={styles.formFieldFull}>
-                  <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>YEAR OF STUDY</Text>
-                  <TouchableOpacity
-                    style={[styles.selectField, { borderColor: theme.outlineVariant, backgroundColor: theme.surface }]}
-                    onPress={handleYearCycle}
-                  >
-                    <Text style={[styles.selectFieldText, { color: theme.text }]}>Year {yearOfStudy}</Text>
-                    <Ionicons name="chevron-down" size={18} color={theme.textSecondary} />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.section}>
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>Attachment Details</Text>
-              <View style={styles.stackedFields}>
-                <View style={styles.formFieldFull}>
-                  <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>PREFERRED START DATE</Text>
-                  <View style={[styles.dateInputWrap, { borderColor: theme.outlineVariant, backgroundColor: theme.surface }]}>
-                    <TextInput
-                      style={[styles.dateInput, { color: theme.text }]}
-                      value={startDate}
-                      onChangeText={handleStartDateChange}
-                      placeholder="dd/mm/yyyy"
-                      placeholderTextColor={theme.textSecondary}
-                      autoCapitalize="none"
-                    />
-                    <Ionicons name="calendar-outline" size={18} color={theme.textSecondary} />
+                  <Text style={styles.fieldLabel}>FULL NAME (READ ONLY)</Text>
+                  <View style={styles.readOnlyField}>
+                    <Text style={styles.readOnlyFieldText}>{fullName || '—'}</Text>
                   </View>
                 </View>
 
                 <View style={styles.formFieldFull}>
-                  <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>DURATION</Text>
-                  <TouchableOpacity
-                    style={[styles.selectField, { borderColor: theme.outlineVariant, backgroundColor: theme.surface }]}
-                    onPress={() => handleDurationChange(duration === '3' ? '6' : '3')}
-                  >
-                    <Text style={[styles.selectFieldText, { color: theme.text }]}>
-                      {duration === '3' ? '3 Months (Standard)' : '6 Months'}
-                    </Text>
+                  <Text style={styles.fieldLabel}>STUDENT ID (READ ONLY)</Text>
+                  <View style={styles.readOnlyField}>
+                    <Text style={styles.readOnlyFieldText}>{regNumber || '—'}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.formFieldFull}>
+                  <Text style={styles.fieldLabel}>ATTACHMENT ROLE</Text>
+                  <View style={[styles.selectField, { borderColor: BORDER, backgroundColor: theme.surface }]}>
+                    <MaterialCommunityIcons name="briefcase-outline" size={18} color={GRAY} style={{ marginRight: 8 }} />
+                    <TextInput
+                      style={[styles.selectFieldInput, { color: theme.text }]}
+                      value={course}
+                      onChangeText={setCourse}
+                      placeholder="e.g. Software Engineering"
+                      placeholderTextColor={theme.textSecondary}
+                    />
                     <Ionicons name="chevron-down" size={18} color={theme.textSecondary} />
-                  </TouchableOpacity>
+                  </View>
+                </View>
+
+                <View style={styles.formFieldFull}>
+                  <Text style={styles.fieldLabel}>ATTACHMENT DURATION</Text>
+                  <View style={styles.durationToggle}>
+                    {['3', '6'].map((months) => {
+                      const active = duration === months;
+                      return (
+                        <TouchableOpacity
+                          key={months}
+                          style={[
+                            styles.durationOption,
+                            active
+                              ? { backgroundColor: theme.surface, borderColor: TEAL, borderWidth: 1.5 }
+                              : { backgroundColor: DISABLED_BG, borderColor: 'transparent' },
+                          ]}
+                          onPress={() => handleDurationChange(months)}
+                        >
+                          <Text style={[styles.durationOptionText, active ? { color: theme.text } : { color: GRAY }]}>
+                            {months} Months
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                <View style={styles.formFieldFull}>
+                  <Text style={styles.fieldLabel}>START DATE</Text>
+                  <View style={[styles.dateInputWrap, { borderColor: BORDER, backgroundColor: theme.surface }]}>
+                    <TextInput
+                      style={[styles.dateInput, { color: theme.text }]}
+                      value={startDate}
+                      onChangeText={handleStartDateChange}
+                      placeholder="mm/dd/yyyy"
+                      placeholderTextColor={theme.textSecondary}
+                      autoCapitalize="none"
+                    />
+                    <Ionicons name="calendar-outline" size={18} color={GRAY} />
+                  </View>
+                </View>
+
+                <View style={styles.formFieldFull}>
+                  <Text style={styles.fieldLabel}>END DATE</Text>
+                  <View style={[styles.dateInputWrap, { borderColor: BORDER, backgroundColor: theme.surface }]}>
+                    <TextInput
+                      style={[styles.dateInput, { color: theme.text }]}
+                      value={endDate}
+                      onChangeText={handleEndDateChange}
+                      placeholder="mm/dd/yyyy"
+                      placeholderTextColor={theme.textSecondary}
+                      autoCapitalize="none"
+                    />
+                    <Ionicons name="calendar-outline" size={18} color={GRAY} />
+                  </View>
                 </View>
               </View>
             </View>
 
-            <View style={styles.submitContainer}>
-              <TouchableOpacity style={[styles.submitButton, { backgroundColor: theme.primary }]} onPress={handleNext}>
-                <Text style={[styles.submitButtonText, { color: theme.white }]}>Next step</Text>
-                <Ionicons name="arrow-forward" size={18} color={theme.white} style={{ marginLeft: 8 }} />
-              </TouchableOpacity>
-            </View>
-
             <View style={styles.section}>
               <View style={styles.rowBetween}>
-                <Text style={[styles.sectionTitle, { color: theme.text }]}>
-                  Other Organizations ({organizations.length})
+                <Text style={[styles.sectionTitle, { color: theme.text, marginBottom: 0 }]}>
+                  Other Organizations
                 </Text>
                 <TouchableOpacity>
-                  <Text style={[styles.viewDirectory, { color: theme.primary }]}>View Directory</Text>
+                  <Text style={styles.viewDirectory}>View Directory</Text>
                 </TouchableOpacity>
               </View>
+              <View style={{ height: 12 }} />
               {organizations.length === 0 ? (
                 <View style={[styles.emptyCard, { backgroundColor: theme.background }]}>
                   <Text style={styles.emptyIcon}>🏢</Text>
@@ -625,20 +625,20 @@ export default function ApplyScreen({ navigation }) {
                     key={org.org_id}
                     style={[
                       styles.orgListItem,
-                      { backgroundColor: theme.background },
-                      selectedOrg?.org_id === org.org_id && { borderColor: theme.primary, borderWidth: 2 }
+                      { backgroundColor: theme.surface },
+                      selectedOrg?.org_id === org.org_id && { borderColor: TEAL, borderWidth: 2 }
                     ]}
                     onPress={() => org.available_slots > 0 && setSelectedOrg(org)}
                     disabled={org.available_slots === 0}
                   >
                     <View style={styles.orgListItemContent}>
-                      <View style={[styles.orgAvatarSmall, { backgroundColor: theme.primaryLight || '#E3F1EE' }]}>
-                        <MaterialCommunityIcons name="office-building" size={18} color={theme.primary} />
+                      <View style={styles.orgAvatarSmall}>
+                        <MaterialCommunityIcons name="office-building" size={18} color={GRAY} />
                       </View>
                       <View style={styles.orgListItemInfo}>
                         <Text style={[styles.orgListItemName, { color: theme.text }]}>{org.org_name}</Text>
                         <Text style={[styles.orgListItemLocation, { color: theme.textSecondary }]}>
-                          📍 {org.location}
+                          {org.location}
                         </Text>
                       </View>
                       <View style={{ alignItems: 'flex-end', gap: 4 }}>
@@ -650,12 +650,12 @@ export default function ApplyScreen({ navigation }) {
                             styles.slotBadgeText,
                             org.available_slots === 0 ? { color: '#C62828' } : { color: '#2E7D32' }
                           ]}>
-                            {org.available_slots === 0 ? 'FULL' : `${org.available_slots} slots`}
+                            {org.available_slots === 0 ? 'FULL' : `${org.available_slots} SLOTS`}
                           </Text>
                         </View>
                         <Text style={[
                           styles.slotAction,
-                          { color: org.available_slots === 0 ? theme.textSecondary : theme.primary }
+                          { color: org.available_slots === 0 ? theme.textSecondary : ORANGE }
                         ]}>
                           {org.available_slots === 0 ? 'UNAVAILABLE' : 'SELECT'}
                         </Text>
@@ -664,6 +664,13 @@ export default function ApplyScreen({ navigation }) {
                   </TouchableOpacity>
                 ))
               )}
+            </View>
+
+            <View style={styles.submitContainer}>
+              <TouchableOpacity style={styles.submitButton} onPress={handleNext}>
+                <Text style={styles.submitButtonText}>Next Step</Text>
+                <Ionicons name="arrow-forward" size={18} color="#FFFFFF" style={{ marginLeft: 8 }} />
+              </TouchableOpacity>
             </View>
           </>
         )}
@@ -674,7 +681,7 @@ export default function ApplyScreen({ navigation }) {
             <View style={styles.section}>
               <Text style={[styles.sectionTitle, { color: theme.text }]}>Skills</Text>
               <TextInput
-                style={[styles.input, { backgroundColor: theme.surface, color: theme.text, borderColor: theme.outlineVariant }]}
+                style={[styles.input, { backgroundColor: theme.surface, color: theme.text, borderColor: BORDER }]}
                 value={skills}
                 onChangeText={setSkills}
                 placeholder="e.g. JavaScript, Data Analysis, Communication"
@@ -689,8 +696,8 @@ export default function ApplyScreen({ navigation }) {
               </Text>
 
               {documents.map((doc, i) => (
-                <View key={`${doc.name}-${i}`} style={[styles.docRow, { borderColor: theme.outlineVariant, backgroundColor: theme.background }]}>
-                  <Ionicons name="document-text-outline" size={20} color={theme.primary} />
+                <View key={`${doc.name}-${i}`} style={[styles.docRow, { borderColor: BORDER, backgroundColor: theme.background }]}>
+                  <Ionicons name="document-text-outline" size={20} color={TEAL} />
                   <View style={{ flex: 1, marginLeft: 10 }}>
                     <Text style={[styles.docName, { color: theme.text }]} numberOfLines={1}>{doc.name}</Text>
                     {!!doc.size && <Text style={[styles.docSize, { color: theme.textSecondary }]}>{formatFileSize(doc.size)}</Text>}
@@ -701,19 +708,16 @@ export default function ApplyScreen({ navigation }) {
                 </View>
               ))}
 
-              <TouchableOpacity
-                style={[styles.uploadBox, { borderColor: theme.outlineVariant }]}
-                onPress={handlePickDocument}
-              >
-                <Ionicons name="cloud-upload-outline" size={24} color={theme.primary} />
-                <Text style={[styles.uploadBoxText, { color: theme.primary }]}>Tap to upload documents</Text>
+              <TouchableOpacity style={[styles.uploadBox, { borderColor: BORDER }]} onPress={handlePickDocument}>
+                <Ionicons name="cloud-upload-outline" size={24} color={TEAL} />
+                <Text style={styles.uploadBoxText}>Tap to upload documents</Text>
               </TouchableOpacity>
             </View>
 
             <View style={styles.section}>
               <Text style={[styles.sectionTitle, { color: theme.text }]}>Supporting Information</Text>
               <TextInput
-                style={[styles.textArea, { backgroundColor: theme.surface, color: theme.text, borderColor: theme.outlineVariant }]}
+                style={[styles.textArea, { backgroundColor: theme.surface, color: theme.text, borderColor: BORDER }]}
                 value={supportingInfo}
                 onChangeText={setSupportingInfo}
                 placeholder="Share relevant experience, projects, or documents..."
@@ -725,9 +729,9 @@ export default function ApplyScreen({ navigation }) {
             </View>
 
             <View style={styles.submitContainer}>
-              <TouchableOpacity style={[styles.submitButton, { backgroundColor: theme.primary }]} onPress={handleNext}>
-                <Text style={[styles.submitButtonText, { color: theme.white }]}>Next step</Text>
-                <Ionicons name="arrow-forward" size={18} color={theme.white} style={{ marginLeft: 8 }} />
+              <TouchableOpacity style={styles.submitButton} onPress={handleNext}>
+                <Text style={styles.submitButtonText}>Next Step</Text>
+                <Ionicons name="arrow-forward" size={18} color="#FFFFFF" style={{ marginLeft: 8 }} />
               </TouchableOpacity>
             </View>
           </>
@@ -740,29 +744,29 @@ export default function ApplyScreen({ navigation }) {
               <Text style={[styles.sectionTitle, { color: theme.text }]}>Review Your Application</Text>
 
               <View style={[styles.reviewCard, { backgroundColor: theme.background }]}>
-                <Text style={[styles.reviewLabel, { color: theme.textSecondary }]}>APPLICANT</Text>
+                <Text style={styles.reviewLabel}>APPLICANT</Text>
                 <Text style={[styles.reviewValue, { color: theme.text }]}>{fullName} · {regNumber}</Text>
                 <Text style={[styles.reviewValue, { color: theme.text }]}>{course} · Year {yearOfStudy}</Text>
 
-                <Text style={[styles.reviewLabel, { color: theme.textSecondary, marginTop: 12 }]}>ORGANIZATION</Text>
+                <Text style={[styles.reviewLabel, { marginTop: 12 }]}>ORGANIZATION</Text>
                 <Text style={[styles.reviewValue, { color: theme.text }]}>{selectedOrg?.org_name}</Text>
 
-                <Text style={[styles.reviewLabel, { color: theme.textSecondary, marginTop: 12 }]}>ATTACHMENT PERIOD</Text>
+                <Text style={[styles.reviewLabel, { marginTop: 12 }]}>ATTACHMENT PERIOD</Text>
                 <Text style={[styles.reviewValue, { color: theme.text }]}>
                   {formatDateDisplay(startDate)} — {formatDateDisplay(endDate)} ({duration} months)
                 </Text>
 
-                <Text style={[styles.reviewLabel, { color: theme.textSecondary, marginTop: 12 }]}>SKILLS</Text>
+                <Text style={[styles.reviewLabel, { marginTop: 12 }]}>SKILLS</Text>
                 <Text style={[styles.reviewValue, { color: theme.text }]}>{skills}</Text>
 
                 {!!supportingInfo && (
                   <>
-                    <Text style={[styles.reviewLabel, { color: theme.textSecondary, marginTop: 12 }]}>SUPPORTING INFORMATION</Text>
+                    <Text style={[styles.reviewLabel, { marginTop: 12 }]}>SUPPORTING INFORMATION</Text>
                     <Text style={[styles.reviewValue, { color: theme.text }]}>{supportingInfo}</Text>
                   </>
                 )}
 
-                <Text style={[styles.reviewLabel, { color: theme.textSecondary, marginTop: 12 }]}>DOCUMENTS</Text>
+                <Text style={[styles.reviewLabel, { marginTop: 12 }]}>DOCUMENTS</Text>
                 {documents.length === 0 ? (
                   <Text style={[styles.reviewValue, { color: theme.textSecondary }]}>No documents attached</Text>
                 ) : (
@@ -774,17 +778,11 @@ export default function ApplyScreen({ navigation }) {
             </View>
 
             <View style={styles.submitContainer}>
-              <TouchableOpacity
-                style={[styles.submitButton, { backgroundColor: theme.primary }]}
-                onPress={handleApply}
-                disabled={applying}
-              >
+              <TouchableOpacity style={styles.submitButton} onPress={handleApply} disabled={applying}>
                 {applying ? (
-                  <Spinner color={theme.white} size="small" />
+                  <Spinner color="#FFFFFF" size="small" />
                 ) : (
-                  <Text style={[styles.submitButtonText, { color: theme.white }]}>
-                    Submit Application 📋
-                  </Text>
+                  <Text style={styles.submitButtonText}>Submit Application 📋</Text>
                 )}
               </TouchableOpacity>
               <Text style={[styles.submitHelper, { color: theme.textSecondary }]}>
@@ -806,46 +804,48 @@ const styles = StyleSheet.create({
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loadingText: { marginTop: 10, color: COLORS.gray },
 
+  // Top bar
   topBar: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingTop: 48,
-    paddingBottom: 12,
+    paddingBottom: 16,
+    gap: 8,
   },
-  topBarLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  backButton: { padding: 4 },
-  screenTitle: { fontSize: 18, fontWeight: '700' },
-  topBarDots: { flexDirection: 'row', gap: 4 },
-  dot: { width: 8, height: 8, borderRadius: 4 },
+  backButton: { padding: 4, marginTop: 2 },
+  topBarTextBlock: { flex: 1 },
+  screenTitle: { fontSize: 20, fontWeight: '800' },
+  stepSubtitle: { fontSize: 11, fontWeight: '600', letterSpacing: 0.3, marginTop: 4 },
+  progressBlock: { alignItems: 'flex-end', width: 100 },
+  progressPercent: { fontSize: 11, fontWeight: '700', marginBottom: 6 },
+  progressTrack: { width: '100%', height: 4, borderRadius: 2, overflow: 'hidden' },
+  progressTrackFill: { height: 4, borderRadius: 2 },
 
-  stepContainer: { paddingHorizontal: 16, marginTop: 8, marginBottom: 16 },
-  stepHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
-  stepLabel: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase' },
-  stepDescription: { fontSize: 13, fontWeight: '400' },
-  progressBar: { flexDirection: 'row', height: 6, borderRadius: 3, overflow: 'hidden', gap: 4 },
-  progressFill: { flex: 1, borderRadius: 3 },
-  progressEmpty: { flex: 1, borderRadius: 3, opacity: 0.5 },
-
+  // Application status card
   statusCard: {
-    backgroundColor: '#fff',
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: MINT_BG,
     marginHorizontal: 16,
-    marginBottom: 16,
+    marginBottom: 20,
     padding: 16,
     borderRadius: 16,
-    borderLeftWidth: 4,
+    gap: 12,
   },
-  statusTitle: { fontSize: 13, fontWeight: '600', marginBottom: 8 },
-  statusRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  statusLeft: { flex: 1 },
-  orgName: { fontSize: 16, fontWeight: '700' },
-  orgLocation: { fontSize: 13, marginTop: 2 },
-  dates: { fontSize: 13, marginTop: 4 },
-  detailText: { fontSize: 13, marginTop: 4 },
-  responseText: { fontSize: 13, marginTop: 8, fontStyle: 'italic' },
-  statusBadge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10 },
-  statusText: { fontSize: 12, fontWeight: '700', textTransform: 'capitalize' },
+  statusIconBox: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  statusTextBlock: { flex: 1 },
+  statusLabel: { fontSize: 11, fontWeight: '700', color: TEAL, letterSpacing: 0.4, marginBottom: 4 },
+  statusHeadline: { fontSize: 16, fontWeight: '800', color: TEAL_DARK },
+  statusSubtext: { fontSize: 12, color: TEAL_DARK, opacity: 0.75, marginTop: 4 },
+  statusResponse: { fontSize: 12, color: TEAL_DARK, fontStyle: 'italic', marginTop: 6 },
+  statusPill: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
+  statusPillText: { fontSize: 10, fontWeight: '800', color: '#FFFFFF', letterSpacing: 0.4 },
 
   emptyCard: { margin: 16, padding: 30, borderRadius: 16, alignItems: 'center' },
   emptyIcon: { fontSize: 40, marginBottom: 10 },
@@ -853,145 +853,134 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 13, textAlign: 'center', marginTop: 6 },
 
   section: { paddingHorizontal: 16, marginBottom: 24 },
-  sectionTitle: { fontSize: 16, fontWeight: '700', marginBottom: 12 },
-  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  viewDirectory: { fontSize: 13, fontWeight: '600' },
+  sectionTitle: { fontSize: 18, fontWeight: '800', marginBottom: 12 },
+  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  viewDirectory: { fontSize: 13, fontWeight: '700', color: ORANGE },
   helperText: { fontSize: 12, marginBottom: 12, marginTop: -6 },
 
+  // Organization details card
   orgCard: {
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.05)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    borderColor: BORDER,
   },
   orgCardContent: { flexDirection: 'row', alignItems: 'center' },
   orgAvatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: 52, height: 52, borderRadius: 14,
+    backgroundColor: MINT_BG,
+    justifyContent: 'center', alignItems: 'center',
     marginRight: 12,
   },
   orgCardInfo: { flex: 1 },
-  orgCardName: { fontSize: 16, fontWeight: '700' },
-  orgLocationRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
-  orgCardLocation: { fontSize: 13 },
-  changeButtonText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.3 },
+  orgCardName: { fontSize: 16, fontWeight: '800', color: TEAL_DARK },
+  orgCardLocation: { fontSize: 13, color: GRAY, marginTop: 2 },
+  changeButtonText: { fontSize: 12, fontWeight: '800', letterSpacing: 0.3, color: ORANGE },
   selectOrgPlaceholder: {
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.1)',
-    borderStyle: 'dashed',
+    padding: 16, borderRadius: 12,
+    borderWidth: 1, borderColor: BORDER, borderStyle: 'dashed',
     alignItems: 'center',
   },
   selectOrgText: { fontSize: 14 },
 
-  stackedFields: { gap: 14 },
+  // Form fields
+  stackedFields: { gap: 16 },
   formFieldFull: { width: '100%' },
-  fieldLabel: { fontSize: 12, fontWeight: '600', marginBottom: 4, letterSpacing: 0.5 },
-  input: {
-    borderWidth: 1,
+  fieldLabel: { fontSize: 11, fontWeight: '700', color: GRAY, marginBottom: 6, letterSpacing: 0.4 },
+  readOnlyField: {
+    backgroundColor: DISABLED_BG,
     borderRadius: 12,
     paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    height: 48,
+    paddingVertical: 14,
+  },
+  readOnlyFieldText: { fontSize: 15, color: GRAY, fontWeight: '600' },
+  input: {
+    borderWidth: 1, borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 12,
+    fontSize: 15, height: 48,
   },
   textArea: {
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    minHeight: 100,
+    borderWidth: 1, borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 12,
+    fontSize: 15, minHeight: 100,
   },
-  dateInputWrap: {
+  selectField: {
+    flexDirection: 'row', alignItems: 'center',
+    borderWidth: 1, borderRadius: 12,
+    paddingHorizontal: 14, height: 50,
+  },
+  selectFieldInput: { flex: 1, fontSize: 15 },
+
+  durationToggle: {
     flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
     borderRadius: 12,
-    paddingHorizontal: 14,
-    height: 48,
+    overflow: 'hidden',
+    gap: 8,
+  },
+  durationOption: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  durationOptionText: { fontSize: 14, fontWeight: '700' },
+
+  dateInputWrap: {
+    flexDirection: 'row', alignItems: 'center',
+    borderWidth: 1, borderRadius: 12,
+    paddingHorizontal: 14, height: 50,
   },
   dateInput: { flex: 1, fontSize: 15 },
-  selectField: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    height: 48,
-  },
-  selectFieldText: { fontSize: 15 },
 
+  // Documents
   docRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 10,
+    flexDirection: 'row', alignItems: 'center',
+    borderWidth: 1, borderRadius: 12,
+    padding: 12, marginBottom: 10,
   },
   docName: { fontSize: 13, fontWeight: '600' },
   docSize: { fontSize: 11, marginTop: 2 },
   uploadBox: {
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    borderRadius: 12,
-    paddingVertical: 24,
-    alignItems: 'center',
-    gap: 6,
+    borderWidth: 1, borderStyle: 'dashed', borderRadius: 12,
+    paddingVertical: 24, alignItems: 'center', gap: 6,
   },
-  uploadBoxText: { fontSize: 13, fontWeight: '600' },
+  uploadBoxText: { fontSize: 13, fontWeight: '700', color: TEAL },
 
+  // Review
   reviewCard: { borderRadius: 16, padding: 16 },
-  reviewLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
+  reviewLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 0.5, color: GRAY },
   reviewValue: { fontSize: 14, marginTop: 4 },
 
+  // Submit button
   submitContainer: { paddingHorizontal: 16, marginTop: 8, marginBottom: 24 },
   submitButton: {
-    height: 52,
+    height: 54,
     borderRadius: 30,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    backgroundColor: TEAL_DARK,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15, shadowRadius: 8, elevation: 3,
   },
-  submitButtonText: { fontSize: 16, fontWeight: '700' },
+  submitButtonText: { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
   submitHelper: { fontSize: 13, textAlign: 'center', marginTop: 12 },
 
+  // Other organizations list
   orgListItem: {
-    marginBottom: 10,
-    padding: 12,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'transparent',
+    marginBottom: 10, padding: 12, borderRadius: 14,
+    borderWidth: 1, borderColor: 'transparent',
   },
   orgListItemContent: { flexDirection: 'row', alignItems: 'center' },
   orgAvatarSmall: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: 40, height: 40, borderRadius: 10,
+    backgroundColor: DISABLED_BG,
+    justifyContent: 'center', alignItems: 'center',
     marginRight: 12,
   },
   orgListItemInfo: { flex: 1 },
-  orgListItemName: { fontSize: 14, fontWeight: '600' },
+  orgListItemName: { fontSize: 14, fontWeight: '700' },
   orgListItemLocation: { fontSize: 12, marginTop: 2 },
   slotBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
-  slotBadgeText: { fontSize: 12, fontWeight: '600' },
-  slotAction: { fontSize: 11, fontWeight: '700' },
+  slotBadgeText: { fontSize: 11, fontWeight: '700' },
+  slotAction: { fontSize: 11, fontWeight: '800' },
 });
