@@ -45,7 +45,7 @@ export default function ReviewLogbooksScreen({ navigation, route }) {
       const res = await api.get('/supervisors/logbooks');
       const filtered = attachmentId
         ? res.data.filter(e => e.attachment_id === attachmentId)
-        : res.data;
+        : res.data.filter(e => e.status === 'pending' || !e.status);
       setEntries(filtered);
     } catch (err) {
       Alert.alert('Error', err.response?.data?.message || 'Failed to load logbooks');
@@ -136,7 +136,7 @@ export default function ReviewLogbooksScreen({ navigation, route }) {
         </Text>
         <View style={styles.countBadge}>
           <Text style={styles.countBadgeText}>
-            {entries.length} REQUESTS ACTIVE
+            {entries.length} {studentName ? 'ENTRIES' : 'PENDING'}
           </Text>
         </View>
       </View>

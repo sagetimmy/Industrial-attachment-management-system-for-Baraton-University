@@ -12,9 +12,10 @@ import api from '../../api/axios';
 import AnnouncementBanner from '../shared/AnnouncementBanner';
 
 function ProgressRing({ percent = 0, size = 52, color = '#0F6E56' }) {
+  const safePercent = isNaN(percent) ? 0 : Math.min(100, Math.max(0, percent));
   const radius = 21;
   const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (percent / 100) * circumference;
+  const offset = circumference - (safePercent / 100) * circumference;
   return (
     <Svg width={size} height={size} viewBox="0 0 52 52">
       <Circle cx="26" cy="26" r={radius} fill="none" stroke="#E1F5EE" strokeWidth="4" />
@@ -24,10 +25,10 @@ function ProgressRing({ percent = 0, size = 52, color = '#0F6E56' }) {
         strokeLinecap="round"
         strokeDasharray={`${circumference}`}
         strokeDashoffset={offset}
-        rotation="-90" originX="26" originY="26"
+        transform="rotate(-90 26 26)"
       />
       <SvgText x="26" y="30" textAnchor="middle" fontSize="11" fontWeight="500" fill={color}>
-        {percent}%
+        {safePercent}%
       </SvgText>
     </Svg>
   );
@@ -55,7 +56,10 @@ export default function SupervisorDashboard({ navigation }) {
     }
   };
 
-  useEffect(() => { fetchDashboard(); }, []);
+  useEffect(() => {
+  const unsubscribe = navigation.addListener('focus', fetchDashboard);
+  return unsubscribe;
+}, [navigation]);
 
   const onRefresh = () => { setRefreshing(true); fetchDashboard(); };
 
@@ -81,6 +85,9 @@ export default function SupervisorDashboard({ navigation }) {
       const now = new Date();
       const total = end - start;
       const elapsed = now - start;
+      if (!total || isNaN(total) || isNaN(elapsed)) {
+        return student.progress || 50;
+      }
       return Math.min(100, Math.max(0, Math.round((elapsed / total) * 100)));
     }
     return student.progress || 50;

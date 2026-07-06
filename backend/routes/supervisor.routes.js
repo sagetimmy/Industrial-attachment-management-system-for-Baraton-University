@@ -88,6 +88,15 @@ router.get('/dashboard', protect, async (req, res) => {
     // .eq('attachments.supervisor_id', ...) filter does NOT restrict which
     // logbook_entries rows come back — it was returning entries for every
     // student regardless of supervisor assignment.
+    //
+    // FIX 2: this query previously had no status filter at all, so it
+    // returned the 5 most recently submitted entries regardless of whether
+    // they'd already been reviewed. That's why stats.pendingLogs kept
+    // showing a stale count even after everything was approved/rejected —
+    // it was counting "recent submissions," not "entries awaiting review."
+    // We now filter to unreviewed entries (status = 'pending' or null),
+    // and use a separate uncapped count query for the stat since the list
+    // below is intentionally limited to 5 for display.
     const { data: pendingLogs, error: lErr } = await supabase
       .from('logbook_entries')
       .select(`
@@ -98,10 +107,22 @@ router.get('/dashboard', protect, async (req, res) => {
         )
       `)
       .eq('attachments.supervisor_id', supervisorAssignmentId)
+      .or('status.eq.pending,status.is.null')
       .order('submitted_at', { ascending: false })
       .limit(5);
 
     if (lErr) throw lErr;
+
+    const { count: pendingLogsCount, error: cErr } = await supabase
+      .from('logbook_entries')
+      .select(`
+        entry_id,
+        attachments!logbook_entries_attachment_id_fkey!inner (supervisor_id)
+      `, { count: 'exact', head: true })
+      .eq('attachments.supervisor_id', supervisorAssignmentId)
+      .or('status.eq.pending,status.is.null');
+
+    if (cErr) throw cErr;
 
     const { data: upcomingVisits, error: vErr } = await supabase
       .from('site_visits')
@@ -139,7 +160,7 @@ router.get('/dashboard', protect, async (req, res) => {
       stats: {
         totalStudents: flatStudents.length,
         activeStudents: flatStudents.filter(s => s.status === 'ongoing').length,
-        pendingLogs: flatPendingLogs.length || 0,
+        pendingLogs: pendingLogsCount || 0,
         upcomingVisits: upcomingVisits?.length || 0,
       },
     });
