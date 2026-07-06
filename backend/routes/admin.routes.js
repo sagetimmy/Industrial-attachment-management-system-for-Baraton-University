@@ -280,7 +280,6 @@ router.get('/students', protect, authorize('admin'), async (req, res) => {
 // ─── GET /api/admin/orgs ──────────────────────────────────────────────────
 router.get('/orgs', protect, authorize('admin'), async (req, res) => {
   try {
-    // ✅ Removed non-existent columns: sector, org_type
     const { data: orgs, error } = await supabase
       .from('host_organizations')
       .select('org_id, user_id, org_name, location, contact_person, phone, available_slots, is_approved, created_at')
@@ -314,8 +313,8 @@ router.get('/orgs', protect, authorize('admin'), async (req, res) => {
       email:        emailMap[o.user_id]                                              || null,
       intern_count: internCountMap[o.org_id]                                         || 0,
       vacancy_count: Math.max((o.available_slots || 0) - (internCountMap[o.org_id] || 0), 0),
-      sector:       null,   // column does not exist; frontend falls back to '—'
-      org_type:     null,   // column does not exist; frontend falls back to 'ORG' badge
+      sector:       null,  
+      org_type:     null,   
     }));
 
     res.json(result);
@@ -1093,13 +1092,13 @@ router.patch('/users/:id/super-admin', protect, authorize('admin'), async (req, 
   }
 });
 
-// ─── GET /api/admin/users ─────────────────────────────────────────────────
+//  GET /api/admin/users 
 router.get('/users', protect, authorize('admin'), async (req, res) => {
   try {
     let query = supabase
-      .from('users')
-      .select('user_id, email, role, is_verified, is_active, is_super_admin, created_at')
-      .order('created_at', { ascending: false });
+  .from('users')
+  .select('user_id, email, role, is_verified, is_active, is_super_admin, avatar_url, created_at')
+  .order('created_at', { ascending: false });
 
     if (req.query.role) {
       query = query.eq('role', req.query.role);

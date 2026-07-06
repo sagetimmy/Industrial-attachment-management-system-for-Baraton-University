@@ -96,7 +96,7 @@ function UserCard({ user, onToggle, onDelete, onNavigate }) {
           onPress={() => onNavigate(user)}
           accessibilityLabel={`Edit role for ${user.name}`}
         >
-          <Text style={styles.actionBtnText}>Edit Role</Text>
+          <Text style={styles.actionBtnText}>Deatails</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -130,7 +130,7 @@ function UserCard({ user, onToggle, onDelete, onNavigate }) {
 
 // ── Main Screen ───────────────────────────────────────────────────────────────
 export default function ManageUsersScreen({ navigation, route }) {
-  const initialRole = route?.params?.role || 'student';
+  const initialRole = route?.params?.role || 'all';
 
   const [users, setUsers]           = useState([]);
   const [filtered, setFiltered]     = useState([]);
@@ -143,8 +143,10 @@ export default function ManageUsersScreen({ navigation, route }) {
   const fetchUsers = async () => {
     try {
       const res = await api.get('/admin/users');
-      setUsers(res.data);
-      setFiltered(res.data);
+      // Super admins are managed in ManageAdminsScreen, not here.
+      const nonSuperAdmins = res.data.filter(u => !u.is_super_admin);
+      setUsers(nonSuperAdmins);
+      setFiltered(nonSuperAdmins);
     } catch {
       Alert.alert('Error', 'Failed to load users');
     } finally {
@@ -218,10 +220,10 @@ export default function ManageUsersScreen({ navigation, route }) {
   const onRefresh = () => { setRefreshing(true); fetchUsers(); };
 
   const filters = [
+    { key: 'all',        label: 'All' },
     { key: 'student',    label: 'Students' },
     { key: 'supervisor', label: 'Supervisors' },
     { key: 'admin',      label: 'Admins' },
-    { key: 'all',        label: 'All' },
   ];
 
   // ── Loading ───────────────────────────────────────────────────────────────
