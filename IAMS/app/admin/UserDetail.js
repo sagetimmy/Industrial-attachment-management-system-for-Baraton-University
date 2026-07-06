@@ -64,6 +64,7 @@ export default function UserDetailScreen({ navigation, route }) {
           <Text style={styles.backText}>Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>User Details</Text>
+        <View style={styles.headerSpacer} />
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
@@ -114,9 +115,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
   },
-  headerTitle: { fontSize: 22, fontWeight: '800', color: DARK },
-  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  headerTitle: { fontSize: 22, fontWeight: '800', color: DARK, flex: 1, textAlign: 'center' },
+  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, width: 70 },
   backText: { fontSize: 15, color: TEAL, fontWeight: '600' },
+  headerSpacer: { width: 70 },
 
   content: { paddingHorizontal: 20 },
 
