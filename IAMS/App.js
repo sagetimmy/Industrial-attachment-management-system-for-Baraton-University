@@ -37,6 +37,7 @@ import ReportsScreen from './app/supervisor/ReportsScreen';
 import SupervisorSettings from './app/supervisor/SupervisorSettings';
 import SupervisorAnnouncementsScreen from './app/supervisor/AnnouncementsScreen';
 import SupervisorEditProfileScreen from './app/supervisor/SupervisorEditProfile';
+import SupervisorStudentDetail from './app/supervisor/SupervisorStudentDetail';
 
 // Admin screens
 import AdminDashboard from './app/admin/AdminDashboard';
@@ -208,7 +209,7 @@ function RootNavigator() {
         <Stack.Screen name="SiteVisits"          component={SiteVisitsScreen}             />
         <Stack.Screen name="Evaluations"         component={EvaluationsScreen}            />
         <Stack.Screen name="Reports"             component={ReportsScreen}                />
-        <Stack.Screen name="StudentDetail"       component={PlaceholderScreen}            />
+        <Stack.Screen name="StudentDetail"       component={SupervisorStudentDetail}          />
         <Stack.Screen name="Notifications"       component={NotificationsScreen}          />
         <Stack.Screen name="SupervisorSettings"  component={SupervisorSettings}           />
         <Stack.Screen name="PrivacyPolicy"       component={PrivacyPolicyScreen}          />
