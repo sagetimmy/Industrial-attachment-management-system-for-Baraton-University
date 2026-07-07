@@ -6,7 +6,7 @@ const { generalLimiter } = require('./middleware/rateLimiter');
 
 const app = express();
 
-app.set('trust proxy', 1); // Railway sits behind a proxy — required for express-rate-limit to work correctly
+app.set('trust proxy', 1); 
 
 // ── CORS fix for web browser ──
 app.use(cors({
@@ -15,7 +15,7 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
-app.options('*', cors()); // handle preflight requests
+app.options('*', cors()); 
 
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));

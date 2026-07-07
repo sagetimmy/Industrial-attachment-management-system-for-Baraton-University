@@ -3,7 +3,7 @@ const router = express.Router();
 
 
 const supabase = require('../config/db');
-const { authenticateToken } = require('../middleware/auth.middleware');
+const { protect } = require('../middleware/auth.middleware');
 
 const {
   generateStudentPerformancePDF,
@@ -12,7 +12,7 @@ const {
 } = require('../utils/pdfReportGenerator');
 
 // All report routes require a logged-in supervisor
-router.use(authenticateToken);
+router.use(protect);
 
 function streamPdf(res, doc, filename) {
   res.setHeader('Content-Type', 'application/pdf');
