@@ -144,6 +144,7 @@ export default function StudentDetailScreen({ navigation, route }) {
   const handleReviewLogbooks = () => navigation.navigate('ReviewLogbooks', { attachmentId, studentName: name });
   const handleEvaluations = () => navigation.navigate('Evaluations', { attachmentId, studentName: name });
   const handleScheduleVisit = () => navigation.navigate('SiteVisits', { attachmentId, studentName: name });
+  const handleRecords = () => navigation.navigate('LogbookRecords', { attachmentId, studentName: name });
 
   if (loading) {
     return (
@@ -302,6 +303,10 @@ export default function StudentDetailScreen({ navigation, route }) {
               <TouchableOpacity style={styles.actionBtn} onPress={handleEvaluations}>
                 <MaterialCommunityIcons name="star-check-outline" size={20} color={TEAL} />
                 <Text style={styles.actionText}>Evaluations</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.actionBtn} onPress={handleRecords}>
+                <MaterialCommunityIcons name="file-document-outline" size={20} color={TEAL} />
+                <Text style={styles.actionText}>Records</Text>
               </TouchableOpacity>
             </View>
 
@@ -466,9 +471,9 @@ const styles = StyleSheet.create({
   ratingValueRow: { flexDirection: 'row', alignItems: 'baseline' },
   ratingValue: { fontSize: 17, fontWeight: '700', color: NAVY },
   ratingLabel: { fontSize: 12, color: GRAY_TEXT, marginTop: 2 },
-  actionsRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
+  actionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
   actionBtn: {
-    flex: 1, backgroundColor: WHITE, borderRadius: 14, paddingVertical: 14,
+    flexGrow: 1, flexBasis: '45%', backgroundColor: WHITE, borderRadius: 14, paddingVertical: 14,
     alignItems: 'center', gap: 6, ...cardShadow(),
   },
   actionText: { fontSize: 11, fontWeight: '700', color: NAVY },

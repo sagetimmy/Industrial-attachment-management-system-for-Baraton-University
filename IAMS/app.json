@@ -25,6 +25,9 @@
     },
     "experiments": {
       "baseUrl": "/Industrial-attachment-management-system-for-Baraton-University"
-    }
+    },
+    "plugins": [
+      "expo-sharing"
+    ]
   }
 }

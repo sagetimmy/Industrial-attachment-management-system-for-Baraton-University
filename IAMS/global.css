@@ -1,3 +1,21 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Logbook Records screen — print support */
+@media print {
+  #logbook-records-no-print {
+    display: none !important;
+  }
+  #logbook-records-print-only {
+    display: flex !important;
+  }
+  #logbook-records-scroll {
+    height: auto !important;
+    overflow: visible !important;
+  }
+  #logbook-records-scroll > div {
+    height: auto !important;
+    overflow: visible !important;
+  }
+}

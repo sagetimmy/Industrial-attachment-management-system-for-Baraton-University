@@ -32,6 +32,7 @@ app.use('/api/host-orgs',     require('./routes/hostOrg.routes'));
 app.use('/api/notifications', require('./routes/notifications.routes'));
 app.use('/api/announcements', require('./routes/announcements'));
 app.use('/api/avatar', require('./routes/avatar.routes'));
+app.use('/api/supervisors/reports', require('./routes/reports'));
 
 app.get('/', (req, res) => res.json({ message: 'IAMS backend is running' }));
 app.get('/api/health', (req, res) => res.json({ status: 'IAMS API running ✅' }));

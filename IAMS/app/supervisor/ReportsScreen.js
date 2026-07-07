@@ -10,6 +10,9 @@ import {
   Alert,
   useWindowDimensions,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../api/axios';
 import { COLORS } from '../../constants/colors';
@@ -27,7 +30,6 @@ function WeeklyActivityChart({ data }) {
         {weeks.map((week, index) => {
           const submitted = data[index]?.submitted || 0;
           const pending = data[index]?.pending || 0;
-          const total = submitted + pending;
           const submittedHeight = (submitted / maxValue) * chartHeight;
           const pendingHeight = (pending / maxValue) * chartHeight;
 
@@ -71,7 +73,7 @@ function WeeklyActivityChart({ data }) {
 }
 
 // Report card component
-function ReportCard({ icon, title, description, onDownload }) {
+function ReportCard({ icon, title, description, onDownload, downloading }) {
   return (
     <View style={styles.reportCard}>
       <View style={styles.reportCardIcon}>
@@ -81,34 +83,42 @@ function ReportCard({ icon, title, description, onDownload }) {
         <Text style={styles.reportCardTitle}>{title}</Text>
         <Text style={styles.reportCardDesc}>{description}</Text>
       </View>
-      <TouchableOpacity style={styles.downloadButton} onPress={onDownload}>
-        <Text style={styles.downloadIcon}>⬇</Text>
-        <Text style={styles.downloadText}>Download</Text>
+      <TouchableOpacity
+        style={[styles.downloadButton, downloading && styles.downloadButtonDisabled]}
+        onPress={onDownload}
+        disabled={downloading}
+      >
+        {downloading ? (
+          <ActivityIndicator size="small" color="#0F6E56" />
+        ) : (
+          <>
+            <Text style={styles.downloadIcon}>⬇</Text>
+            <Text style={styles.downloadText}>Download</Text>
+          </>
+        )}
       </TouchableOpacity>
     </View>
   );
 }
 
-// AI Insight section
-function AIInsightCard() {
-  return (
-    <View style={styles.aiCard}>
-      <View style={styles.aiHeader}>
-        <Text style={styles.aiLabel}>🤖 AI INSIGHT</Text>
-      </View>
-      <Text style={styles.aiTitle}>Annual Trend Analysis</Text>
-      <Text style={styles.aiDescription}>
-        Our automated analysis indicates a 12% improvement in industrial compliance compared to last quarter. Explore the comprehensive year-end comparison data.
-      </Text>
-      <TouchableOpacity style={styles.customViewButton}>
-        <Text style={styles.customViewText}>GENERATE CUSTOM VIEW</Text>
-      </TouchableOpacity>
-      <View style={styles.chartPreview}>
-        <Text style={styles.chartPlaceholder}>📊</Text>
-      </View>
-    </View>
-  );
-}
+// Maps card keys to backend endpoint + a friendly filename
+const REPORT_CONFIG = {
+  'student-performance': {
+    title: 'Student Performance Summary',
+    endpoint: '/supervisors/reports/student-performance',
+    filename: 'student-performance-summary.pdf',
+  },
+  'logbook-completion': {
+    title: 'Logbook Completion Rate',
+    endpoint: '/supervisors/reports/logbook-completion',
+    filename: 'logbook-completion-rate.pdf',
+  },
+  'host-org-feedback': {
+    title: 'Host Org Feedback',
+    endpoint: '/supervisors/reports/host-org-feedback',
+    filename: 'host-org-feedback.pdf',
+  },
+};
 
 const ReportsScreen = ({ navigation }) => {
   const { width } = useWindowDimensions();
@@ -117,6 +127,7 @@ const ReportsScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [reportsData, setReportsData] = useState(null);
+  const [downloadingKey, setDownloadingKey] = useState(null);
   const [weeklyData, setWeeklyData] = useState([
     { submitted: 0, pending: 0 },
     { submitted: 0, pending: 0 },
@@ -129,10 +140,9 @@ const ReportsScreen = ({ navigation }) => {
   }, []);
 
   const calculateWeeklyData = (logbooks) => {
-    // Get current date and calculate weeks
     const now = new Date();
     const currentWeek = Math.ceil((now.getDate() - now.getDay()) / 7);
-    
+
     const weeks = [
       { submitted: 0, pending: 0 },
       { submitted: 0, pending: 0 },
@@ -150,7 +160,6 @@ const ReportsScreen = ({ navigation }) => {
       }
     });
 
-    // Estimate pending as roughly 20-30% of submitted on average
     weeks.forEach(week => {
       week.pending = Math.ceil(week.submitted * 0.25);
     });
@@ -167,8 +176,7 @@ const ReportsScreen = ({ navigation }) => {
 
     try {
       setLoading(true);
-      
-      // Fetch logbooks and students data
+
       const [logbooksRes, studentsRes] = await Promise.all([
         api.get('/supervisors/logbooks'),
         api.get('/supervisors/students'),
@@ -177,15 +185,13 @@ const ReportsScreen = ({ navigation }) => {
       const logbooks = logbooksRes.data || [];
       const students = studentsRes.data || [];
 
-      // Calculate weekly data from logbooks
       const weekly = calculateWeeklyData(logbooks);
       setWeeklyData(weekly);
 
-      // Calculate completion rate
       const totalLogbooks = logbooks.length;
       const totalStudents = students.length;
-      const completionRate = totalStudents > 0 
-        ? Math.round((totalLogbooks / (totalStudents * 4)) * 100) // Assuming 4 weeks
+      const completionRate = totalStudents > 0
+        ? Math.round((totalLogbooks / (totalStudents * 4)) * 100)
         : 0;
 
       setReportsData({
@@ -198,7 +204,6 @@ const ReportsScreen = ({ navigation }) => {
       });
     } catch (err) {
       console.log('Error fetching reports:', err.message);
-      // Fallback to initial state
       setReportsData({
         monthlyCompletion: 0,
         totalStudents: 0,
@@ -217,46 +222,87 @@ const ReportsScreen = ({ navigation }) => {
     fetchReports().then(() => setRefreshing(false));
   };
 
-  const handleDownload = async (reportName) => {
+  const handleDownload = async (reportKey) => {
     if (!canExportData) {
       Alert.alert('Permission Disabled', 'Report export is currently disabled for supervisors.');
       return;
     }
 
+    const config = REPORT_CONFIG[reportKey];
+    if (!config) return;
+
+    setDownloadingKey(reportKey);
+
     try {
-      Alert.alert('Download', `Generating ${reportName}...`);
-      // In a real scenario, you would call an API endpoint to generate the report
-      // const res = await api.get(`/supervisors/reports/${reportName.toLowerCase()}`);
-      Alert.alert('Success', `${reportName} downloaded successfully`);
+      // Fetch the PDF as base64 so it can be written straight to disk with
+      // expo-file-system — avoids needing to manually attach auth headers,
+      // since the shared `api` axios instance already handles that.
+      const response = await api.get(config.endpoint, {
+        responseType: 'arraybuffer',
+      });
+
+      const base64 = arrayBufferToBase64(response.data);
+      const fileUri = `${FileSystem.cacheDirectory}${config.filename}`;
+
+      await FileSystem.writeAsStringAsync(fileUri, base64, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(fileUri, {
+          mimeType: 'application/pdf',
+          dialogTitle: config.title,
+          UTI: 'com.adobe.pdf',
+        });
+      } else {
+        Alert.alert('Downloaded', `Saved to ${fileUri}`);
+      }
     } catch (err) {
-      Alert.alert('Error', 'Failed to download report');
+      console.log('Error downloading report:', err.message);
+      Alert.alert('Error', 'Failed to generate report. Please try again.');
+    } finally {
+      setDownloadingKey(null);
     }
   };
 
-  const handleCustomView = () => {
-    Alert.alert('Custom Report', 'Generate a custom report view', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Proceed', onPress: () => console.log('Generate custom view') },
-    ]);
-  };
+  const renderHeader = () => (
+    <View style={styles.header}>
+      <TouchableOpacity
+        style={styles.backButton}
+        onPress={() => navigation.goBack()}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      >
+        <Ionicons name="arrow-back" size={24} color="#0F2419" />
+      </TouchableOpacity>
+      <Text style={styles.headerTitle}>Reports</Text>
+      <View style={styles.headerSpacer} />
+    </View>
+  );
 
   if (loading && !reportsData) {
     return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>Loading reports...</Text>
+      <View style={styles.container}>
+        {renderHeader()}
+        <View style={styles.centerContainer}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={styles.loadingText}>Loading reports...</Text>
+        </View>
       </View>
     );
   }
 
   if (!canExportData) {
     return (
-      <View style={styles.centerContainer}>
-        <Text style={styles.permissionIcon}>🔒</Text>
-        <Text style={styles.permissionTitle}>Reports Disabled</Text>
-        <Text style={styles.permissionText}>
-          Supervisor report export is currently disabled by the administrator.
-        </Text>
+      <View style={styles.container}>
+        {renderHeader()}
+        <View style={styles.centerContainer}>
+          <Text style={styles.permissionIcon}>🔒</Text>
+          <Text style={styles.permissionTitle}>Reports Disabled</Text>
+          <Text style={styles.permissionText}>
+            Supervisor report export is currently disabled by the administrator.
+          </Text>
+        </View>
       </View>
     );
   }
@@ -265,6 +311,7 @@ const ReportsScreen = ({ navigation }) => {
 
   return (
     <View style={styles.container}>
+      {renderHeader()}
       <ScrollView
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         showsVerticalScrollIndicator={false}
@@ -289,32 +336,30 @@ const ReportsScreen = ({ navigation }) => {
         {/* System Reports Section */}
         <View style={styles.systemReportsContainer}>
           <Text style={styles.systemReportsTitle}>● SYSTEM REPORTS</Text>
-          
+
           <ReportCard
             icon="📋"
             title="Student Performance Summary"
             description="A detailed aggregate of student grades, attendance records, and project milestones for the current semester."
-            onDownload={() => handleDownload('Student Performance Summary')}
+            onDownload={() => handleDownload('student-performance')}
+            downloading={downloadingKey === 'student-performance'}
           />
 
           <ReportCard
             icon="📋"
             title="Logbook Completion Rate"
             description="Analytics on how consistently students are documenting their industrial placement tasks and learning objectives."
-            onDownload={() => handleDownload('Logbook Completion Rate')}
+            onDownload={() => handleDownload('logbook-completion')}
+            downloading={downloadingKey === 'logbook-completion'}
           />
 
           <ReportCard
             icon="📋"
             title="Host Org Feedback"
             description="Consolidated qualitative and quantitative feedback from industry partners regarding student conduct and skills."
-            onDownload={() => handleDownload('Host Org Feedback')}
+            onDownload={() => handleDownload('host-org-feedback')}
+            downloading={downloadingKey === 'host-org-feedback'}
           />
-        </View>
-
-        {/* AI Insight Section */}
-        <View style={styles.aiInsightContainer}>
-          <AIInsightCard />
         </View>
 
         <View style={{ height: 40 }} />
@@ -323,10 +368,49 @@ const ReportsScreen = ({ navigation }) => {
   );
 };
 
+// Converts an ArrayBuffer (from axios responseType: 'arraybuffer') into a
+// base64 string, chunked to avoid call-stack limits on large PDFs.
+function arrayBufferToBase64(buffer) {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode.apply(null, chunk);
+  }
+
+  return global.btoa ? global.btoa(binary) : Buffer.from(binary, 'binary').toString('base64');
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F4F4F4',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  backButton: {
+    width: 32,
+    height: 32,
+    justifyContent: 'center',
+    alignItems: 'flex-start',
+  },
+  headerTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0F2419',
+  },
+  headerSpacer: {
+    width: 32,
   },
   centerContainer: {
     flex: 1,
@@ -343,7 +427,6 @@ const styles = StyleSheet.create({
   permissionTitle: { fontSize: 18, fontWeight: '700', color: '#000000', marginBottom: 8 },
   permissionText: { fontSize: 14, color: '#666666', textAlign: 'center', lineHeight: 20, paddingHorizontal: 28 },
 
-  // Section
   section: {
     backgroundColor: '#FFFFFF',
     marginHorizontal: 16,
@@ -352,7 +435,6 @@ const styles = StyleSheet.create({
     padding: 16,
   },
 
-  // Monthly Activity
   monthlyHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -388,7 +470,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  // Chart
   chart: {
     marginTop: 12,
   },
@@ -439,7 +520,6 @@ const styles = StyleSheet.create({
     color: '#666666',
   },
 
-  // System Reports
   systemReportsContainer: {
     marginHorizontal: 16,
     marginVertical: 12,
@@ -489,11 +569,16 @@ const styles = StyleSheet.create({
   downloadButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 8,
     paddingHorizontal: 12,
     backgroundColor: '#F4F4F4',
     borderRadius: 6,
     gap: 6,
+    minHeight: 34,
+  },
+  downloadButtonDisabled: {
+    opacity: 0.7,
   },
   downloadIcon: {
     fontSize: 14,
@@ -502,65 +587,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: '#0F6E56',
-  },
-
-  // AI Insight
-  aiInsightContainer: {
-    marginHorizontal: 16,
-    marginVertical: 12,
-    marginBottom: 24,
-  },
-  aiCard: {
-    backgroundColor: '#0F6E56',
-    borderRadius: 12,
-    padding: 20,
-    overflow: 'hidden',
-  },
-  aiHeader: {
-    marginBottom: 12,
-  },
-  aiLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    letterSpacing: 0.5,
-  },
-  aiTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    marginBottom: 8,
-    lineHeight: 32,
-  },
-  aiDescription: {
-    fontSize: 13,
-    color: '#E0F2F1',
-    lineHeight: 18,
-    marginBottom: 16,
-  },
-  customViewButton: {
-    backgroundColor: '#E67E22',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 6,
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  customViewText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 13,
-    letterSpacing: 0.5,
-  },
-  chartPreview: {
-    height: 120,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  chartPlaceholder: {
-    fontSize: 40,
   },
 });
 
