@@ -179,6 +179,81 @@ router.get('/available-slots', protect, async (req, res) => {
   }
 });
 
+// GET /api/host-orgs/intern/:attachmentId
+// Full detail for a single (ongoing/completed) attachment: student info,
+// assigned supervisor info, and any existing evaluation. Used by the
+// InternDetail screen.
+router.get('/intern/:attachmentId', protect, async (req, res) => {
+  const { attachmentId } = req.params;
+
+  try {
+    const { data: org, error: orgError } = await supabase
+      .from('host_organizations')
+      .select('org_id')
+      .eq('user_id', req.user.user_id)
+      .single();
+
+    if (orgError || !org) return res.status(404).json({ message: 'Organization not found' });
+
+    const { data: attachment, error: attachError } = await supabase
+      .from('attachments')
+      .select('attachment_id, status, start_date, end_date, student_id, supervisor_id, org_id')
+      .eq('attachment_id', attachmentId)
+      .single();
+
+    if (attachError || !attachment)
+      return res.status(404).json({ message: 'Attachment not found' });
+
+    if (attachment.org_id !== org.org_id)
+      return res.status(403).json({ message: 'Not authorized to view this attachment' });
+
+    // Student details (same select shape already used elsewhere in this file)
+    const { data: student, error: studentError } = await supabase
+      .from('students')
+      .select('student_id, full_name, reg_number, department, year_of_study, phone')
+      .eq('student_id', attachment.student_id)
+      .single();
+
+    if (studentError) throw studentError;
+
+    // Assigned supervisor (may be null if not yet assigned)
+    let supervisor = null;
+    if (attachment.supervisor_id) {
+      const { data: sup, error: supError } = await supabase
+        .from('supervisors')
+        .select('supervisor_id, full_name, phone, department, user_id')
+        .eq('supervisor_id', attachment.supervisor_id)
+        .maybeSingle();
+      if (supError) throw supError;
+      supervisor = sup || null;
+    }
+
+    // Existing evaluation, if any
+    const { data: evaluation, error: evalError } = await supabase
+      .from('evaluations')
+      .select('rating, comments, created_at')
+      .eq('attachment_id', attachment.attachment_id)
+      .maybeSingle();
+
+    if (evalError) throw evalError;
+
+    res.json({
+      attachment: {
+        attachment_id: attachment.attachment_id,
+        status: attachment.status,
+        start_date: attachment.start_date,
+        end_date: attachment.end_date,
+      },
+      student,
+      supervisor,
+      evaluation: evaluation || null,
+    });
+  } catch (err) {
+    console.error('GET /host-orgs/intern/:attachmentId error:', err);
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // POST /api/host-orgs/evaluate/:attachmentId
 router.post('/evaluate/:attachmentId', protect, async (req, res) => {
   const { rating, comments } = req.body;
@@ -202,7 +277,7 @@ router.post('/evaluate/:attachmentId', protect, async (req, res) => {
 
     const { data: attachment, error: attachError } = await supabase
       .from('attachments')
-      .select('attachment_id, status')
+      .select('attachment_id, status, student_id, supervisor_id')
       .eq('attachment_id', attachmentId)
       .eq('org_id', org.org_id)
       .single();
@@ -226,14 +301,52 @@ router.post('/evaluate/:attachmentId', protect, async (req, res) => {
         .update({ rating, comments, created_at: new Date().toISOString() })
         .eq('attachment_id', attachmentId);
       if (error) throw error;
-      return res.json({ message: 'Evaluation updated successfully!' });
     } else {
       const { error } = await supabase
         .from('evaluations')
-        .insert({ attachment_id: attachmentId, supervisor_id: null, rating, comments });
+        .insert({
+          attachment_id: attachmentId,
+          supervisor_id: attachment.supervisor_id || null,
+          rating,
+          comments,
+        });
       if (error) throw error;
-      return res.json({ message: 'Evaluation submitted successfully!' });
     }
+
+    // Notify the assigned supervisor, if there is one. This is best-effort:
+    // if it fails, the evaluation itself has already succeeded, so we log
+    // and move on rather than failing the whole request.
+    if (attachment.supervisor_id) {
+      try {
+        const { data: supervisor } = await supabase
+          .from('supervisors')
+          .select('user_id')
+          .eq('supervisor_id', attachment.supervisor_id)
+          .maybeSingle();
+
+        if (supervisor?.user_id) {
+          const { data: student } = await supabase
+            .from('students')
+            .select('full_name')
+            .eq('student_id', attachment.student_id)
+            .maybeSingle();
+
+          const studentName = student?.full_name || 'your student';
+
+          await supabase.from('notifications').insert({
+            user_id: supervisor.user_id,
+            message: `📊 New performance evaluation submitted for ${studentName} — Rating: ${rating}/5`,
+            is_read: false,
+          });
+        }
+      } catch (notifyErr) {
+        console.error('Failed to notify supervisor of evaluation:', notifyErr.message);
+      }
+    }
+
+    return existing
+      ? res.json({ message: 'Evaluation updated successfully!' })
+      : res.json({ message: 'Evaluation submitted successfully!' });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

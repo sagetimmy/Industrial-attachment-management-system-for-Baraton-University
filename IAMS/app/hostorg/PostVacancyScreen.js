@@ -5,11 +5,23 @@ import {
   Modal, FlatList, Platform
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
-import { useTheme } from '../../context/ThemeContext';
 import api from '../../api/axios';
-import { COLORS } from '../../constants/colors';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { hasRolePermission } from '../../utils/permissions';
+
+// Palette matches HostDashboard exactly
+const TEAL = '#0F6E56';
+const TEAL_LIGHT = '#DCEFEA';
+const CORAL = '#D85A30';
+const CORAL_LIGHT = '#FBEAE3';
+const AMBER = '#BA7517';
+const AMBER_LIGHT = '#FAEEDA';
+const BG = '#F0F4F3';
+const WHITE = '#FFFFFF';
+const TEXT = '#111111';
+const TEXT_SUB = '#888888';
+const BORDER = 'rgba(0,0,0,0.07)';
+const ERROR = '#C62828';
 
 const DEPARTMENTS = [
   'Engineering', 'Finance', 'HR', 'Marketing',
@@ -18,7 +30,6 @@ const DEPARTMENTS = [
 
 export default function PostVacancyScreen({ navigation }) {
   const { user } = useAuth();
-  const { theme } = useTheme();
   const canPostPlacements = hasRolePermission(user, 'postPlacements');
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -144,18 +155,18 @@ export default function PostVacancyScreen({ navigation }) {
 
   if (!canPostPlacements) {
     return (
-      <View style={[s.container, { backgroundColor: theme.background }]}>
-        <View style={[s.header, { backgroundColor: theme.secondary }]}>
+      <View style={s.container}>
+        <View style={s.header}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={s.backBtn}>
-            <Ionicons name="chevron-back" size={28} color={theme.white} />
+            <Ionicons name="chevron-back" size={28} color={WHITE} />
           </TouchableOpacity>
-          <Text style={[s.headerTitle, { color: theme.white }]}>Post New Vacancy</Text>
+          <Text style={s.headerTitle}>Post New Vacancy</Text>
           <View style={{ width: 28 }} />
         </View>
         <View style={s.permissionBox}>
-          <MaterialCommunityIcons name="lock-outline" size={42} color={theme.secondary} />
-          <Text style={[s.permissionTitle, { color: theme.text }]}>Vacancy Posting Disabled</Text>
-          <Text style={[s.permissionText, { color: theme.textSecondary }]}>
+          <MaterialCommunityIcons name="lock-outline" size={42} color={TEAL} />
+          <Text style={s.permissionTitle}>Vacancy Posting Disabled</Text>
+          <Text style={s.permissionText}>
             Your organization can view existing placement activity, but posting new vacancies is currently disabled.
           </Text>
         </View>
@@ -164,20 +175,20 @@ export default function PostVacancyScreen({ navigation }) {
   }
 
   return (
-    <View style={[s.container, { backgroundColor: theme.background }]}>
+    <View style={s.container}>
       {/* Header */}
-      <View style={[s.header, { backgroundColor: theme.secondary }]}>
+      <View style={s.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={s.backBtn}>
-          <Ionicons name="chevron-back" size={28} color={theme.white} />
+          <Ionicons name="chevron-back" size={28} color={WHITE} />
         </TouchableOpacity>
-        <Text style={[s.headerTitle, { color: theme.white }]}>Post New Vacancy</Text>
+        <Text style={s.headerTitle}>Post New Vacancy</Text>
         <View style={{ width: 28 }} />
       </View>
 
       {/* Progress indicator */}
       <View style={s.progressContainer}>
         <View style={s.progressBar}>
-          <View style={[s.progressFill, { width: `${progressWidth}%`, backgroundColor: theme.secondary }]} />
+          <View style={[s.progressFillBar, { width: `${progressWidth}%` }]} />
         </View>
         <View style={s.stepIndicators}>
           {[1, 2, 3].map((num) => (
@@ -185,8 +196,7 @@ export default function PostVacancyScreen({ navigation }) {
               key={num}
               style={[
                 s.stepDot,
-                step >= num && { backgroundColor: theme.secondary },
-                step < num && { backgroundColor: '#E0E0E0' },
+                step >= num ? { backgroundColor: TEAL } : { backgroundColor: '#E0E0E0' },
               ]}
             />
           ))}
@@ -201,34 +211,34 @@ export default function PostVacancyScreen({ navigation }) {
       >
         {step === 1 && (
           <>
-            <Text style={[s.stepTitle, { color: theme.text }]}>Basic Information</Text>
-            <Text style={[s.stepSubtitle, { color: theme.textSecondary }]}>
+            <Text style={s.stepTitle}>Basic Information</Text>
+            <Text style={s.stepSubtitle}>
               Tell us about the core details of the role.
             </Text>
 
             {/* Role Title */}
-            <Text style={[s.label, { color: theme.text }]}>Role Title</Text>
+            <Text style={s.label}>Role Title</Text>
             <TextInput
-              style={[s.input, { backgroundColor: theme.surface, color: theme.text, borderColor: theme.gray }]}
+              style={s.input}
               placeholder="e.g. Senior Software Engineer"
-              placeholderTextColor={theme.textSecondary}
+              placeholderTextColor={TEXT_SUB}
               value={roleTitle}
               onChangeText={setRoleTitle}
             />
 
             {/* Department Dropdown */}
-            <Text style={[s.label, { color: theme.text }]}>Department</Text>
+            <Text style={s.label}>Department</Text>
             <TouchableOpacity
-              style={[s.dropdown, { backgroundColor: theme.surface, borderColor: theme.gray }]}
+              style={s.dropdown}
               onPress={() => setShowDeptDropdown(!showDeptDropdown)}
             >
-              <Text style={[{ color: department ? theme.text : theme.textSecondary }, s.dropdownText]}>
+              <Text style={[s.dropdownText, { color: department ? TEXT : TEXT_SUB }]}>
                 {department || 'Select department'}
               </Text>
               <Ionicons
                 name={showDeptDropdown ? 'chevron-up' : 'chevron-down'}
                 size={20}
-                color={theme.secondary}
+                color={TEAL}
               />
             </TouchableOpacity>
 
@@ -239,7 +249,7 @@ export default function PostVacancyScreen({ navigation }) {
                   activeOpacity={1}
                   onPress={() => setShowDeptDropdown(false)}
                 >
-                  <TouchableOpacity activeOpacity={1} style={[s.deptModalContent, { backgroundColor: theme.surface }]}>
+                  <TouchableOpacity activeOpacity={1} style={s.deptModalContent}>
                     <FlatList
                       data={DEPARTMENTS}
                       keyExtractor={(item) => item}
@@ -251,11 +261,11 @@ export default function PostVacancyScreen({ navigation }) {
                             setShowDeptDropdown(false);
                           }}
                         >
-                          <Text style={[s.deptOptionText, { color: theme.text }, item === department && { color: theme.secondary, fontWeight: '700' }]}>
+                          <Text style={[s.deptOptionText, item === department && { color: TEAL, fontWeight: '700' }]}>
                             {item}
                           </Text>
                           {item === department && (
-                            <MaterialCommunityIcons name="check" size={20} color={theme.secondary} />
+                            <MaterialCommunityIcons name="check" size={20} color={TEAL} />
                           )}
                         </TouchableOpacity>
                       )}
@@ -268,19 +278,19 @@ export default function PostVacancyScreen({ navigation }) {
             )}
 
             {/* Number of Slots */}
-            <Text style={[s.label, { color: theme.text }]}>Number of Slots</Text>
-            <View style={[s.slotsBox, { backgroundColor: theme.surface, borderColor: theme.gray }]}>
+            <Text style={s.label}>Number of Slots</Text>
+            <View style={s.slotsBox}>
               <TouchableOpacity
-                style={[s.slotsBtn, { borderColor: theme.gray }]}
+                style={s.slotsBtn}
                 onPress={() => {
                   const val = parseInt(availableSlots) || 0;
                   setAvailableSlots(Math.max(1, val - 1).toString());
                 }}
               >
-                <Text style={[s.slotsBtnText, { color: theme.text }]}>−</Text>
+                <Text style={s.slotsBtnText}>−</Text>
               </TouchableOpacity>
               <TextInput
-                style={[s.slotsInput, { color: theme.text }]}
+                style={s.slotsInput}
                 value={availableSlots}
                 onChangeText={(val) => {
                   const num = parseInt(val) || 1;
@@ -289,32 +299,32 @@ export default function PostVacancyScreen({ navigation }) {
                 keyboardType="number-pad"
               />
               <TouchableOpacity
-                style={[s.slotsBtn, { borderColor: theme.gray }]}
+                style={s.slotsBtn}
                 onPress={() => {
                   const val = parseInt(availableSlots) || 0;
                   setAvailableSlots((val + 1).toString());
                 }}
               >
-                <Text style={[s.slotsBtnText, { color: theme.text }]}>+</Text>
+                <Text style={s.slotsBtnText}>+</Text>
               </TouchableOpacity>
             </View>
 
             {/* Application Deadline */}
-            <Text style={[s.label, { color: theme.text }]}>Application Deadline</Text>
+            <Text style={s.label}>Application Deadline</Text>
             <TextInput
-              style={[s.input, { backgroundColor: theme.surface, color: theme.text, borderColor: theme.gray }]}
+              style={s.input}
               placeholder="mm/dd/yyyy"
-              placeholderTextColor={theme.textSecondary}
+              placeholderTextColor={TEXT_SUB}
               value={deadline}
               onChangeText={setDeadline}
             />
 
             {/* Description */}
-            <Text style={[s.label, { color: theme.text }]}>Description</Text>
+            <Text style={s.label}>Description</Text>
             <TextInput
-              style={[s.textarea, { backgroundColor: theme.surface, color: theme.text, borderColor: theme.gray }]}
+              style={s.textarea}
               placeholder="Describe the responsibilities and day-to-day tasks..."
-              placeholderTextColor={theme.textSecondary}
+              placeholderTextColor={TEXT_SUB}
               value={description}
               onChangeText={setDescription}
               multiline
@@ -325,8 +335,8 @@ export default function PostVacancyScreen({ navigation }) {
 
         {step === 2 && (
           <>
-            <Text style={[s.stepTitle, { color: theme.text }]}>Key Requirements</Text>
-            <Text style={[s.stepSubtitle, { color: theme.textSecondary }]}>
+            <Text style={s.stepTitle}>Key Requirements</Text>
+            <Text style={s.stepSubtitle}>
               Add the skills and experience needed for this role.
             </Text>
 
@@ -337,13 +347,13 @@ export default function PostVacancyScreen({ navigation }) {
                   disabled
                 >
                   {req.trim() && (
-                    <MaterialCommunityIcons name="check" size={16} color={theme.secondary} />
+                    <MaterialCommunityIcons name="check" size={16} color={TEAL} />
                   )}
                 </TouchableOpacity>
                 <TextInput
-                  style={[s.requirementInput, { backgroundColor: theme.surface, color: theme.text, borderColor: theme.gray, flex: 1 }]}
+                  style={[s.requirementInput, { flex: 1 }]}
                   placeholder="Type a requirement..."
-                  placeholderTextColor={theme.textSecondary}
+                  placeholderTextColor={TEXT_SUB}
                   value={req}
                   onChangeText={(val) => handleUpdateRequirement(index, val)}
                 />
@@ -352,60 +362,60 @@ export default function PostVacancyScreen({ navigation }) {
                     style={s.requirementRemove}
                     onPress={() => handleRemoveRequirement(index)}
                   >
-                    <MaterialCommunityIcons name="close" size={20} color={theme.primary} />
+                    <MaterialCommunityIcons name="close" size={20} color={CORAL} />
                   </TouchableOpacity>
                 )}
               </View>
             ))}
 
             <TouchableOpacity
-              style={[s.addReqBtn, { backgroundColor: theme.surface, borderColor: theme.secondary }]}
+              style={s.addReqBtn}
               onPress={handleAddRequirement}
             >
-              <Text style={[s.addReqBtnText, { color: theme.secondary }]}>+ Add Requirement</Text>
+              <Text style={s.addReqBtnText}>+ Add Requirement</Text>
             </TouchableOpacity>
           </>
         )}
 
         {step === 3 && (
           <>
-            <Text style={[s.stepTitle, { color: theme.text }]}>Review & Post</Text>
-            <Text style={[s.stepSubtitle, { color: theme.textSecondary }]}>
+            <Text style={s.stepTitle}>Review & Post</Text>
+            <Text style={s.stepSubtitle}>
               Review your vacancy details before posting.
             </Text>
 
-            <View style={[s.reviewCard, { backgroundColor: theme.surface }]}>
+            <View style={s.reviewCard}>
               <View style={s.reviewRow}>
-                <Text style={[s.reviewLabel, { color: theme.textSecondary }]}>Role Title:</Text>
-                <Text style={[s.reviewValue, { color: theme.text }]}>{roleTitle}</Text>
+                <Text style={s.reviewLabel}>Role Title:</Text>
+                <Text style={s.reviewValue}>{roleTitle}</Text>
               </View>
               <View style={s.reviewRow}>
-                <Text style={[s.reviewLabel, { color: theme.textSecondary }]}>Department:</Text>
-                <Text style={[s.reviewValue, { color: theme.text }]}>{department}</Text>
+                <Text style={s.reviewLabel}>Department:</Text>
+                <Text style={s.reviewValue}>{department}</Text>
               </View>
               <View style={s.reviewRow}>
-                <Text style={[s.reviewLabel, { color: theme.textSecondary }]}>Slots:</Text>
-                <Text style={[s.reviewValue, { color: theme.text }]}>{availableSlots}</Text>
+                <Text style={s.reviewLabel}>Slots:</Text>
+                <Text style={s.reviewValue}>{availableSlots}</Text>
               </View>
               <View style={s.reviewRow}>
-                <Text style={[s.reviewLabel, { color: theme.textSecondary }]}>Deadline:</Text>
-                <Text style={[s.reviewValue, { color: theme.text }]}>{deadline}</Text>
+                <Text style={s.reviewLabel}>Deadline:</Text>
+                <Text style={s.reviewValue}>{deadline}</Text>
               </View>
             </View>
 
-            <View style={[s.reviewCard, { backgroundColor: theme.surface }]}>
-              <Text style={[s.reviewSubtitle, { color: theme.text }]}>Description</Text>
-              <Text style={[s.reviewDesc, { color: theme.textSecondary }]}>{description}</Text>
+            <View style={s.reviewCard}>
+              <Text style={s.reviewSubtitle}>Description</Text>
+              <Text style={s.reviewDesc}>{description}</Text>
             </View>
 
-            <View style={[s.reviewCard, { backgroundColor: theme.surface }]}>
-              <Text style={[s.reviewSubtitle, { color: theme.text }]}>Requirements</Text>
+            <View style={s.reviewCard}>
+              <Text style={s.reviewSubtitle}>Requirements</Text>
               {requirements
                 .filter((r) => r.trim())
                 .map((req, idx) => (
                   <View key={idx} style={s.reviewReqItem}>
-                    <Text style={[s.reviewReqBullet, { color: theme.secondary }]}>✓</Text>
-                    <Text style={[s.reviewReqText, { color: theme.text }]}>{req}</Text>
+                    <Text style={s.reviewReqBullet}>✓</Text>
+                    <Text style={s.reviewReqText}>{req}</Text>
                   </View>
                 ))}
             </View>
@@ -414,40 +424,40 @@ export default function PostVacancyScreen({ navigation }) {
       </ScrollView>
 
       {/* Buttons */}
-      <View style={[s.buttonContainer, { backgroundColor: theme.background }]}>
+      <View style={s.buttonContainer}>
         {step > 1 && (
           <TouchableOpacity
-            style={[s.backNavBtn, { borderColor: theme.gray }]}
+            style={s.backNavBtn}
             onPress={handleBack}
           >
-            <Text style={[s.backNavBtnText, { color: theme.text }]}>← Back</Text>
+            <Text style={s.backNavBtnText}>← Back</Text>
           </TouchableOpacity>
         )}
 
         {step < 3 ? (
           <TouchableOpacity
-            style={[s.nextBtn, { backgroundColor: theme.secondary, marginLeft: step > 1 ? 12 : 0 }, step === 1 && { flex: 1 }]}
+            style={[s.nextBtn, { marginLeft: step > 1 ? 12 : 0 }, step === 1 && { flex: 1 }]}
             onPress={handleNext}
           >
-            <Text style={[s.nextBtnText, { color: theme.white }]}>Next</Text>
+            <Text style={s.nextBtnText}>Next</Text>
           </TouchableOpacity>
         ) : (
           <>
             <TouchableOpacity
-              style={[s.draftBtn, { borderColor: theme.secondary }]}
+              style={s.draftBtn}
               onPress={handleSaveDraft}
             >
-              <Text style={[s.draftBtnText, { color: theme.secondary }]}>Save Draft</Text>
+              <Text style={s.draftBtnText}>Save Draft</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[s.postBtn, { backgroundColor: theme.secondary, marginLeft: 12 }]}
+              style={[s.postBtn, { marginLeft: 12 }]}
               disabled={loading}
               onPress={handlePostVacancy}
             >
               {loading ? (
-                <ActivityIndicator color={theme.white} />
+                <ActivityIndicator color={WHITE} />
               ) : (
-                <Text style={[s.postBtnText, { color: theme.white }]}>Post Vacancy →</Text>
+                <Text style={s.postBtnText}>Post Vacancy →</Text>
               )}
             </TouchableOpacity>
           </>
@@ -458,66 +468,70 @@ export default function PostVacancyScreen({ navigation }) {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1 },
-  header: { paddingTop: 16, paddingBottom: 16, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  container: { flex: 1, backgroundColor: BG },
+  header: {
+    backgroundColor: TEAL,
+    paddingTop: 16, paddingBottom: 16, paddingHorizontal: 16,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+  },
   backBtn: { padding: 8 },
-  headerTitle: { fontSize: 20, fontWeight: '700', flex: 1, textAlign: 'center' },
+  headerTitle: { fontSize: 20, fontWeight: '700', flex: 1, textAlign: 'center', color: WHITE },
 
   progressContainer: { paddingHorizontal: 16, paddingVertical: 16 },
   progressBar: { height: 4, backgroundColor: '#E0E0E0', borderRadius: 2, overflow: 'hidden', marginBottom: 12 },
-  progressFill: { height: '100%', borderRadius: 2 },
+  progressFillBar: { height: '100%', borderRadius: 2, backgroundColor: TEAL },
   stepIndicators: { flexDirection: 'row', gap: 8, justifyContent: 'center' },
   stepDot: { width: 8, height: 8, borderRadius: 4 },
 
   content: { flex: 1, paddingHorizontal: 16 },
-  stepTitle: { fontSize: 18, fontWeight: '700', marginTop: 20, marginBottom: 4 },
-  stepSubtitle: { fontSize: 14, marginBottom: 20 },
+  stepTitle: { fontSize: 18, fontWeight: '700', marginTop: 20, marginBottom: 4, color: TEXT },
+  stepSubtitle: { fontSize: 14, marginBottom: 20, color: TEXT_SUB },
 
-  label: { fontSize: 14, fontWeight: '600', marginTop: 16, marginBottom: 8 },
-  input: { borderWidth: 1, borderRadius: 10, padding: 12, fontSize: 14 },
-  textarea: { borderWidth: 1, borderRadius: 10, padding: 12, fontSize: 14, textAlignVertical: 'top', minHeight: 100 },
+  label: { fontSize: 14, fontWeight: '600', marginTop: 16, marginBottom: 8, color: TEXT },
+  input: { borderWidth: 1, borderRadius: 10, padding: 12, fontSize: 14, backgroundColor: WHITE, color: TEXT, borderColor: BORDER },
+  textarea: { borderWidth: 1, borderRadius: 10, padding: 12, fontSize: 14, textAlignVertical: 'top', minHeight: 100, backgroundColor: WHITE, color: TEXT, borderColor: BORDER },
 
-  dropdown: { borderWidth: 1, borderRadius: 10, padding: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  dropdown: { borderWidth: 1, borderRadius: 10, padding: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: WHITE, borderColor: BORDER },
   dropdownText: { fontSize: 14, flex: 1 },
   deptModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'flex-end' },
-  deptModalContent: { borderTopLeftRadius: 16, borderTopRightRadius: 16, maxHeight: '70%', paddingBottom: 16 },
+  deptModalContent: { borderTopLeftRadius: 16, borderTopRightRadius: 16, maxHeight: '70%', paddingBottom: 16, backgroundColor: WHITE },
   deptOption: { flexDirection: 'row', padding: 12, alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
-  deptOptionActive: { backgroundColor: 'rgba(0,0,0,0.05)' },
-  deptOptionText: { fontSize: 14, flex: 1 },
+  deptOptionActive: { backgroundColor: TEAL_LIGHT },
+  deptOptionText: { fontSize: 14, flex: 1, color: TEXT },
 
-  slotsBox: { flexDirection: 'row', borderWidth: 1, borderRadius: 10, alignItems: 'center', paddingHorizontal: 8 },
-  slotsBtn: { borderWidth: 1, borderRadius: 6, width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
-  slotsBtnText: { fontSize: 18, fontWeight: '600' },
-  slotsInput: { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '700' },
+  slotsBox: { flexDirection: 'row', borderWidth: 1, borderRadius: 10, alignItems: 'center', paddingHorizontal: 8, backgroundColor: WHITE, borderColor: BORDER },
+  slotsBtn: { borderWidth: 1, borderRadius: 6, width: 40, height: 40, justifyContent: 'center', alignItems: 'center', borderColor: BORDER },
+  slotsBtnText: { fontSize: 18, fontWeight: '600', color: TEXT },
+  slotsInput: { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '700', color: TEXT },
 
   requirementItem: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12 },
   requirementCheck: { width: 24, height: 24, borderRadius: 6, borderWidth: 2, borderColor: '#E0E0E0', justifyContent: 'center', alignItems: 'center' },
-  requirementCheckActive: { backgroundColor: 'rgba(15, 110, 86, 0.1)', borderColor: '#0F6E56' },
-  requirementInput: { borderWidth: 1, borderRadius: 8, padding: 10, fontSize: 13 },
+  requirementCheckActive: { backgroundColor: TEAL_LIGHT, borderColor: TEAL },
+  requirementInput: { borderWidth: 1, borderRadius: 8, padding: 10, fontSize: 13, backgroundColor: WHITE, color: TEXT, borderColor: BORDER },
   requirementRemove: { padding: 6 },
-  addReqBtn: { borderWidth: 1.5, borderStyle: 'dashed', borderRadius: 10, paddingVertical: 12, marginTop: 16, justifyContent: 'center', alignItems: 'center' },
-  addReqBtnText: { fontSize: 14, fontWeight: '600' },
+  addReqBtn: { borderWidth: 1.5, borderStyle: 'dashed', borderRadius: 10, paddingVertical: 12, marginTop: 16, justifyContent: 'center', alignItems: 'center', backgroundColor: WHITE, borderColor: TEAL },
+  addReqBtnText: { fontSize: 14, fontWeight: '600', color: TEAL },
 
-  reviewCard: { borderRadius: 10, padding: 14, marginTop: 12 },
+  reviewCard: { borderRadius: 10, padding: 14, marginTop: 12, backgroundColor: WHITE, borderWidth: 0.5, borderColor: BORDER },
   reviewRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
-  reviewLabel: { fontSize: 12, fontWeight: '600' },
-  reviewValue: { fontSize: 13, fontWeight: '700', textAlign: 'right' },
-  reviewSubtitle: { fontSize: 13, fontWeight: '700', marginBottom: 8 },
-  reviewDesc: { fontSize: 13, lineHeight: 20 },
+  reviewLabel: { fontSize: 12, fontWeight: '600', color: TEXT_SUB },
+  reviewValue: { fontSize: 13, fontWeight: '700', textAlign: 'right', color: TEXT },
+  reviewSubtitle: { fontSize: 13, fontWeight: '700', marginBottom: 8, color: TEXT },
+  reviewDesc: { fontSize: 13, lineHeight: 20, color: TEXT_SUB },
   reviewReqItem: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 6 },
-  reviewReqBullet: { fontSize: 14, fontWeight: '700', marginTop: 2 },
-  reviewReqText: { fontSize: 13, flex: 1 },
+  reviewReqBullet: { fontSize: 14, fontWeight: '700', marginTop: 2, color: TEAL },
+  reviewReqText: { fontSize: 13, flex: 1, color: TEXT },
 
-  buttonContainer: { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 14, gap: 12 },
-  backNavBtn: { borderWidth: 1.5, borderRadius: 10, paddingVertical: 12, paddingHorizontal: 16, justifyContent: 'center', alignItems: 'center', minWidth: 60 },
-  backNavBtnText: { fontSize: 13, fontWeight: '600' },
-  nextBtn: { flex: 1, borderRadius: 10, paddingVertical: 12, justifyContent: 'center', alignItems: 'center' },
-  nextBtnText: { fontSize: 14, fontWeight: '700' },
-  draftBtn: { borderWidth: 1.5, borderRadius: 10, paddingVertical: 12, paddingHorizontal: 20, justifyContent: 'center', alignItems: 'center' },
-  draftBtnText: { fontSize: 13, fontWeight: '700' },
-  postBtn: { flex: 1, borderRadius: 10, paddingVertical: 12, justifyContent: 'center', alignItems: 'center' },
-  postBtnText: { fontSize: 14, fontWeight: '700' },
+  buttonContainer: { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 14, gap: 12, backgroundColor: BG },
+  backNavBtn: { borderWidth: 1.5, borderRadius: 10, paddingVertical: 12, paddingHorizontal: 16, justifyContent: 'center', alignItems: 'center', minWidth: 60, borderColor: BORDER },
+  backNavBtnText: { fontSize: 13, fontWeight: '600', color: TEXT },
+  nextBtn: { flex: 1, borderRadius: 10, paddingVertical: 12, justifyContent: 'center', alignItems: 'center', backgroundColor: TEAL },
+  nextBtnText: { fontSize: 14, fontWeight: '700', color: WHITE },
+  draftBtn: { borderWidth: 1.5, borderRadius: 10, paddingVertical: 12, paddingHorizontal: 20, justifyContent: 'center', alignItems: 'center', borderColor: TEAL },
+  draftBtnText: { fontSize: 13, fontWeight: '700', color: TEAL },
+  postBtn: { flex: 1, borderRadius: 10, paddingVertical: 12, justifyContent: 'center', alignItems: 'center', backgroundColor: CORAL },
+  postBtnText: { fontSize: 14, fontWeight: '700', color: WHITE },
   permissionBox: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 28 },
-  permissionTitle: { fontSize: 18, fontWeight: '700', marginTop: 14, marginBottom: 8 },
-  permissionText: { fontSize: 14, lineHeight: 21, textAlign: 'center' },
+  permissionTitle: { fontSize: 18, fontWeight: '700', marginTop: 14, marginBottom: 8, color: TEXT },
+  permissionText: { fontSize: 14, lineHeight: 21, textAlign: 'center', color: TEXT_SUB },
 });

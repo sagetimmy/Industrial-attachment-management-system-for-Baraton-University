@@ -2,9 +2,10 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
   ScrollView, Alert, ActivityIndicator, RefreshControl,
-  Platform, Modal, Pressable
+  Platform, Modal, Pressable, Image
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../api/axios';
 import { useNotifications } from '../../hooks/useNotifications';
@@ -12,10 +13,10 @@ import { hasRolePermission } from '../../utils/permissions';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const TEAL = '#0F6E56';
-const TEAL_LIGHT = '#de210c';
-const TEAL_MID = '#dc7d09';
+const HERO_GREEN = '#0E7A6B';
+const TEAL_LIGHT = '#DCEFEA';
 const CORAL = '#D85A30';
-const CORAL_LIGHT = '#b43b0f';
+const CORAL_LIGHT = '#FBEAE3';
 const AMBER = '#BA7517';
 const AMBER_LIGHT = '#FAEEDA';
 
@@ -31,6 +32,20 @@ const Storage = {
     return AsyncStorage.getItem(key);
   },
 };
+
+function getTimeAgo(dateStr) {
+  if (!dateStr) return null;
+  const date = new Date(dateStr);
+  if (Number.isNaN(date.getTime())) return null;
+  const diffMs = Date.now() - date.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return 'Just now';
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDay = Math.floor(diffHr / 24);
+  return `${diffDay}d ago`;
+}
 
 export default function HostDashboard({ navigation }) {
   const { user, logout } = useAuth();
@@ -99,7 +114,7 @@ export default function HostDashboard({ navigation }) {
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: isAccepting ? 'Confirm ✓' : 'Reject ✗',
+          text: isAccepting ? 'Confirm' : 'Reject',
           style: isAccepting ? 'default' : 'destructive',
           onPress: async () => {
             try {
@@ -154,6 +169,7 @@ export default function HostDashboard({ navigation }) {
 
   const activeStudents = data?.applications?.filter(a => ['approved', 'ongoing'].includes(a.status)) ?? [];
   const pendingApps    = data?.applications?.filter(a => a.status === 'pending') ?? [];
+  const recentApps     = pendingApps.slice(0, 3);
   const effectiveUser = { ...user, permissions: data?.permissions || user?.permissions };
   const canPostPlacements = hasRolePermission(effectiveUser, 'postPlacements');
   const canViewAnalytics = hasRolePermission(effectiveUser, 'viewAnalytics');
@@ -162,12 +178,15 @@ export default function HostDashboard({ navigation }) {
   const ongoingCount = data?.stats?.ongoing ?? activeStudents.length;
   const pendingCount = data?.stats?.pending ?? pendingApps.length;
   const openVacancyCount = data?.org?.available_slots ?? 0;
+  const avgRating = data?.org?.avg_rating ?? data?.stats?.avg_rating ?? null;
+  const orgLogoUrl = data?.org?.logo_url ?? null;
+  const orgName = data?.org?.org_name || 'Host Portal';
 
   return (
     <SafeAreaView style={s.safeArea} edges={['top']}>
       <View style={s.root}>
 
-        {/* ── Hamburger Drawer Modal ───────────────────────────────────── */}
+        {/* ── Drawer Modal ───────────────────────────────────── */}
         <Modal
           visible={menuOpen}
           transparent
@@ -176,11 +195,10 @@ export default function HostDashboard({ navigation }) {
         >
           <Pressable style={s.menuOverlay} onPress={() => setMenuOpen(false)}>
             <Pressable style={s.menuDrawer} onPress={() => {}}>
-              {/* Drawer header */}
               <View style={s.drawerHeader}>
                 <View style={s.drawerAvatar}>
                   <Text style={s.drawerAvatarText}>
-                    {data?.org?.org_name?.charAt(0).toUpperCase() || '🏢'}
+                    {data?.org?.org_name?.charAt(0).toUpperCase() || 'O'}
                   </Text>
                 </View>
                 <Text style={s.drawerOrgName}>{data?.org?.org_name || 'Organization'}</Text>
@@ -189,7 +207,6 @@ export default function HostDashboard({ navigation }) {
 
               <View style={s.drawerDivider} />
 
-              {/* Profile / Org Details */}
               <TouchableOpacity
                 style={s.drawerItem}
                 onPress={() => {
@@ -199,15 +216,14 @@ export default function HostDashboard({ navigation }) {
                     : Alert.alert('Permission Disabled', 'Editing organization profile is currently disabled.');
                 }}
               >
-                <Text style={s.drawerItemIcon}>👤</Text>
+                <Ionicons name="person-outline" size={20} color="#333" />
                 <View style={s.drawerItemBody}>
                   <Text style={s.drawerItemLabel}>Profile</Text>
                   <Text style={s.drawerItemSub}>View & edit org details</Text>
                 </View>
-                <Text style={s.drawerItemArrow}>›</Text>
+                <Ionicons name="chevron-forward" size={18} color="#ccc" />
               </TouchableOpacity>
 
-              {/* Settings */}
               <TouchableOpacity
                 style={s.drawerItem}
                 onPress={() => {
@@ -215,19 +231,18 @@ export default function HostDashboard({ navigation }) {
                   navigation.navigate('HostSettings');
                 }}
               >
-                <Text style={s.drawerItemIcon}>⚙️</Text>
+                <Ionicons name="settings-outline" size={20} color="#333" />
                 <View style={s.drawerItemBody}>
                   <Text style={s.drawerItemLabel}>Settings</Text>
                   <Text style={s.drawerItemSub}>Preferences & configuration</Text>
                 </View>
-                <Text style={s.drawerItemArrow}>›</Text>
+                <Ionicons name="chevron-forward" size={18} color="#ccc" />
               </TouchableOpacity>
 
               <View style={s.drawerDivider} />
 
-              {/* Logout */}
               <TouchableOpacity style={s.drawerLogout} onPress={handleLogout}>
-                <Text style={s.drawerLogoutIcon}>🚪</Text>
+                <Ionicons name="log-out-outline" size={20} color="#C62828" />
                 <Text style={s.drawerLogoutText}>Logout</Text>
               </TouchableOpacity>
             </Pressable>
@@ -242,43 +257,45 @@ export default function HostDashboard({ navigation }) {
 
           {/* ── Top bar ─────────────────────────────────────────────────── */}
           <View style={s.topBar}>
-            {/* Hamburger */}
-            <TouchableOpacity style={s.hamburgerBtn} onPress={() => setMenuOpen(true)}>
-              <View style={s.hamburgerLine} />
-              <View style={s.hamburgerLine} />
-              <View style={s.hamburgerLine} />
-            </TouchableOpacity>
-
-            <View style={s.topBarCenter}>
+            <View style={s.topBarLeft}>
               <View style={s.logoBox}>
-                <Text style={s.logoIcon}>🎓</Text>
+                {orgLogoUrl ? (
+                  <Image source={{ uri: orgLogoUrl }} style={s.logoImg} />
+                ) : (
+                  <MaterialCommunityIcons name="school" size={18} color="#fff" />
+                )}
               </View>
-              <Text style={s.topBarTitle}>Industrial Attachment Management System</Text>
+              <Text style={s.topBarTitle} numberOfLines={1}>{orgName}</Text>
             </View>
 
-            <TouchableOpacity style={s.notifBtn} onPress={() => navigation.navigate('Notifications')}>
-              <Text style={s.notifIcon}>🔔</Text>
-              {unreadCount > 0 && (
-                <View style={s.notifBadge}>
-                  <Text style={s.notifBadgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
-                </View>
-              )}
-            </TouchableOpacity>
+            <View style={s.topBarRight}>
+              <TouchableOpacity style={s.iconBtn} onPress={() => setMenuOpen(true)}>
+                <Ionicons name="ellipsis-vertical" size={20} color="#333" />
+              </TouchableOpacity>
+              <TouchableOpacity style={s.iconBtn} onPress={() => navigation.navigate('Notifications')}>
+                <Ionicons name="notifications-outline" size={22} color="#333" />
+                {unreadCount > 0 && (
+                  <View style={s.notifBadge}>
+                    <Text style={s.notifBadgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
 
-          {/* ── Hero banner ─────────────────────────────────────────────── */}
+          {/* ── Welcome heading ─────────────────────────────────────────── */}
+          <View style={s.welcomeBlock}>
+            <Text style={s.welcomeText}>
+              Welcome back,{' '}
+              <Text style={s.welcomeOrg}>{data?.org?.org_name || 'Organization'}</Text>
+            </Text>
+            <Text style={s.welcomeSub}>Here's what's happening with your placements today.</Text>
+          </View>
+
+          {/* ── Hero card ─────────────────────────────────────────── */}
           <View style={s.hero}>
-            <View style={s.premiumBadge}>
-              <Text style={s.premiumText}>PREMIUM PARTNER</Text>
-            </View>
-            <Text style={s.heroWelcome}>
-              Welcome,{' '}
-              <Text style={s.heroOrg}>{data?.org?.org_name || 'Organization'}</Text>
-            </Text>
-            <Text style={s.heroSub}>
-              Oversee your internship ecosystem and nurture the next generation of talent
-              through our streamlined management suite.
-            </Text>
+            <Text style={s.heroLabel}>OVERVIEW</Text>
+            <Text style={s.heroValue}>Active Placements: {ongoingCount}</Text>
             <TouchableOpacity
               style={[s.postBtn, !canPostPlacements && { opacity: 0.55 }]}
               onPress={() => (
@@ -287,12 +304,12 @@ export default function HostDashboard({ navigation }) {
                   : Alert.alert('Permission Disabled', 'Posting new vacancies is currently disabled.')
               )}
             >
-              <Text style={s.postBtnIcon}>⊕</Text>
+              <Ionicons name="add" size={18} color="#fff" />
               <Text style={s.postBtnText}>Post New Vacancy</Text>
             </TouchableOpacity>
           </View>
 
-          {/* ── Stat cards ──────────────────────────────────────────────── */}
+          {/* ── Stat cards row ──────────────────────────────────────────── */}
           {!canViewAnalytics && (
             <View style={s.permissionCard}>
               <Text style={s.permissionTitle}>Analytics Disabled</Text>
@@ -311,56 +328,136 @@ export default function HostDashboard({ navigation }) {
             </View>
           )}
 
-          {analyticsVisible && <View style={s.statCard}>
-            <View style={s.statCardTop}>
-              <Text style={s.statCardLabel}>CURRENT INTERNS</Text>
-              <Text style={s.statCardIcon}>👥</Text>
+          {analyticsVisible && (
+            <View style={s.statRow}>
+              <View style={s.statCardSm}>
+                <Text style={s.statCardSmVal}>{String(openVacancyCount).padStart(2, '0')}</Text>
+                <Text style={s.statCardSmLabel}>OPEN{'\n'}VACANCIES</Text>
+              </View>
+              <View style={s.statCardSm}>
+                <Text style={s.statCardSmVal}>{String(pendingCount).padStart(2, '0')}</Text>
+                <Text style={s.statCardSmLabel}>PENDING{'\n'}APPS</Text>
+              </View>
+              <View style={s.statCardSm}>
+                <View style={s.ratingRow}>
+                  <Text style={s.statCardSmVal}>{avgRating != null ? Number(avgRating).toFixed(1) : '—'}</Text>
+                  {avgRating != null && <Ionicons name="star" size={14} color={AMBER} style={{ marginLeft: 2 }} />}
+                </View>
+                <Text style={s.statCardSmLabel}>AVG{'\n'}RATING</Text>
+              </View>
             </View>
-            <Text style={s.statCardVal}>{ongoingCount}</Text>
-            <Text style={s.statCardHint} numberOfLines={1}>
-              <Text style={{ color: TEAL }}>{ongoingCount > 0 ? `${ongoingCount} active placement${ongoingCount === 1 ? '' : 's'}` : 'No active placements'}</Text>
-            </Text>
-          </View>}
+          )}
 
-          {analyticsVisible && <View style={s.statCard}>
-            <View style={s.statCardTop}>
-              <Text style={s.statCardLabel}>OPEN VACANCIES</Text>
-              <Text style={s.statCardIcon}>💼</Text>
-            </View>
-            <Text style={s.statCardVal}>{String(openVacancyCount).padStart(2, '0')}</Text>
-            <Text style={[s.statCardHint, { color: '#888' }]}>
-              {openVacancyCount > 0
-                ? `${openVacancyCount} slot${openVacancyCount === 1 ? '' : 's'} open`
-                : 'No open vacancies'}
-            </Text>
-          </View>}
-
-          {analyticsVisible && <View style={s.statCard}>
-            <View style={s.statCardTop}>
-              <Text style={s.statCardLabel}>PENDING APPS</Text>
-              <Text style={s.statCardIcon}>📋</Text>
-            </View>
-            <Text style={s.statCardVal}>{String(pendingCount).padStart(2, '0')}</Text>
-            <Text style={[s.statCardHint, { color: CORAL }]}>
-              {pendingCount > 0 ? `${pendingCount} awaiting review` : 'All reviewed'}
-            </Text>
-          </View>}
-
-          {/* ── Active Interns Performance ───────────────────────────────── */}
+          {/* ── Recent Applications ──────────────────────────────────────── */}
           <View style={s.sectionHead}>
-            <Text style={s.sectionTitle}>Active Interns{'\n'}Performance</Text>
-            <TouchableOpacity
-              style={s.viewAllBtn}
-              onPress={() => navigation.navigate('HostApplicants')}
-            >
-              <Text style={s.viewAllText}>View{'\n'}All</Text>
-              <Text style={s.viewAllArrow}>→</Text>
+            <Text style={s.sectionTitle}>Recent Applications</Text>
+            <TouchableOpacity onPress={() => navigation.navigate('HostApplicants')}>
+              <Text style={s.viewAllText}>View All</Text>
             </TouchableOpacity>
+          </View>
+
+          {recentApps.length === 0 ? (
+            <View style={s.emptyCard}>
+              <Ionicons name="mail-open-outline" size={32} color="#ccc" />
+              <Text style={s.emptyTitle}>No Recent Applications</Text>
+              <Text style={s.emptyText}>New applications will appear here.</Text>
+            </View>
+          ) : (
+            recentApps.map((app, index) => {
+              const timeAgo = getTimeAgo(app.created_at || app.applied_at);
+              const hasMatch = Number.isFinite(app.match_percent);
+              return (
+                <TouchableOpacity
+                  key={app.attachment_id ?? index}
+                  style={s.recentRow}
+                  onPress={() => navigation.navigate('StudentDetail', { studentId: app.student_id })}
+                >
+                  {app.photo_url ? (
+                    <Image source={{ uri: app.photo_url }} style={s.recentAvatarImg} />
+                  ) : (
+                    <View style={s.recentAvatar}>
+                      <Text style={s.recentAvatarText}>{app.full_name?.charAt(0).toUpperCase()}</Text>
+                    </View>
+                  )}
+                  <View style={s.recentInfo}>
+                    <Text style={s.recentName}>{app.full_name}</Text>
+                    <Text style={s.recentRole}>{app.department || 'Applicant'}</Text>
+                  </View>
+                  <View style={s.recentRight}>
+                    <View style={[s.matchPill, !hasMatch && { backgroundColor: AMBER_LIGHT }]}>
+                      <Text style={[s.matchPillText, !hasMatch && { color: AMBER }]}>
+                        {hasMatch ? `${Math.round(app.match_percent)}% MATCH` : 'PENDING'}
+                      </Text>
+                    </View>
+                    {timeAgo && <Text style={s.recentTime}>{timeAgo}</Text>}
+                  </View>
+                </TouchableOpacity>
+              );
+            })
+          )}
+
+          {/* ── Pending Applications (actionable) ─────────────────────────── */}
+          {pendingApps.length > 0 && (
+            <>
+              <View style={[s.sectionHead, { marginTop: 8 }]}>
+                <Text style={s.sectionTitle}>Pending Applications</Text>
+              </View>
+              {pendingApps.map((app, index) => (
+                <View key={app.attachment_id ?? index} style={s.appCard}>
+                  <View style={s.internTop}>
+                    {app.photo_url ? (
+                      <Image source={{ uri: app.photo_url }} style={s.internAvatarImg} />
+                    ) : (
+                      <View style={[s.internAvatar, { backgroundColor: AMBER }]}>
+                        <Text style={s.internAvatarText}>{app.full_name?.charAt(0).toUpperCase()}</Text>
+                      </View>
+                    )}
+                    <View style={s.internInfo}>
+                      <Text style={s.internName}>{app.full_name}</Text>
+                      <Text style={s.internRole}>{app.reg_number}</Text>
+                      <Text style={[s.internRole, { color: TEAL }]}>
+                        {app.department} · Year {app.year_of_study}
+                      </Text>
+                    </View>
+                    <View style={[s.statusBadge, { backgroundColor: AMBER_LIGHT }]}>
+                      <Text style={[s.statusBadgeText, { color: AMBER }]}>PENDING</Text>
+                    </View>
+                  </View>
+                  <View style={s.appActions}>
+                    <TouchableOpacity
+                      style={s.rejectBtn}
+                      onPress={() => handleUpdateStatus(app.attachment_id, app.full_name, 'rejected')}
+                    >
+                      <Ionicons name="close" size={16} color="#C62828" />
+                      <Text style={s.rejectBtnText}>Reject</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={s.confirmBtn}
+                      onPress={() => handleUpdateStatus(app.attachment_id, app.full_name, 'approved')}
+                    >
+                      <Ionicons name="checkmark" size={16} color="#fff" />
+                      <Text style={s.confirmBtnText}>Confirm Placement</Text>
+                    </TouchableOpacity>
+                  </View>
+                  {app.phone && (
+                    <View style={s.appPhoneRow}>
+                      <Ionicons name="call-outline" size={13} color="#888" />
+                      <Text style={s.appPhone}>{app.phone}</Text>
+                    </View>
+                  )}
+                </View>
+              ))}
+            </>
+          )}
+
+          {/* ── Ongoing Internships ───────────────────────────────────────── */}
+          <View style={[s.sectionHead, { marginTop: 8 }]}>
+            <Text style={s.sectionTitle}>Ongoing Internships</Text>
           </View>
 
           {activeStudents.length === 0 ? (
             <View style={s.emptyCard}>
-              <Text style={s.emptyIcon}>📭</Text>
+              <Ionicons name="briefcase-outline" size={32} color="#ccc" />
               <Text style={s.emptyTitle}>No Active Interns</Text>
               <Text style={s.emptyText}>Accepted students will appear here.</Text>
             </View>
@@ -369,80 +466,33 @@ export default function HostDashboard({ navigation }) {
               const progress = calculateProgress(app);
               const weekSummary = getWeekSummary(app);
               return (
-                <View key={app.attachment_id ?? index} style={s.internCard}>
-                  <View style={s.internTop}>
-                    <View style={s.internAvatar}>
-                      <Text style={s.internAvatarText}>
-                        {app.full_name?.charAt(0).toUpperCase()}
-                      </Text>
-                    </View>
-                    <View style={s.internInfo}>
+                <TouchableOpacity
+                  key={app.attachment_id ?? index}
+                  style={s.internCard}
+                  onPress={() => navigation.navigate('InternDetail', { attachmentId: app.attachment_id })}
+                >
+                  <View style={s.ongoingTop}>
+                    <View style={s.ongoingInfo}>
                       <Text style={s.internName}>{app.full_name}</Text>
                       <Text style={s.internRole}>
-                        {app.department || 'Intern'} Intern{weekSummary ? ` · ${weekSummary}` : ''}
+                        {app.institution || app.department || 'Intern'}
+                        {weekSummary ? ` · ${weekSummary}` : ''}
                       </Text>
                     </View>
-                    <View style={s.activeBadge}>
-                      <Text style={s.activeBadgeText}>ACTIVE</Text>
-                    </View>
+                    <TouchableOpacity hitSlop={8}>
+                      <Ionicons name="ellipsis-vertical" size={18} color="#999" />
+                    </TouchableOpacity>
                   </View>
                   <View style={s.progressRow}>
-                    <Text style={s.progressLabel}>Program Progress</Text>
+                    <Text style={s.progressLabel}>PROGRESS</Text>
                     <Text style={s.progressPct}>{progress === null ? '—' : `${progress}%`}</Text>
                   </View>
                   <View style={s.progressTrack}>
                     <View style={[s.progressFill, { width: `${progress ?? 0}%` }]} />
                   </View>
-                </View>
+                </TouchableOpacity>
               );
             })
-          )}
-
-          {/* ── Pending Applications ─────────────────────────────────────── */}
-          {pendingApps.length > 0 && (
-            <>
-              <View style={[s.sectionHead, { marginTop: 8 }]}>
-                <Text style={s.sectionTitle}>Pending Applications</Text>
-              </View>
-              {pendingApps.map((app, index) => (
-                <View key={index} style={s.appCard}>
-                  <View style={s.internTop}>
-                    <View style={[s.internAvatar, { backgroundColor: AMBER }]}>
-                      <Text style={s.internAvatarText}>
-                        {app.full_name?.charAt(0).toUpperCase()}
-                      </Text>
-                    </View>
-                    <View style={s.internInfo}>
-                      <Text style={s.internName}>{app.full_name}</Text>
-                      <Text style={s.internRole}>{app.reg_number}</Text>
-                      <Text style={[s.internRole, { color: TEAL }]}>
-                        {app.department} · Year {app.year_of_study}
-                      </Text>
-                    </View>
-                    <View style={[s.activeBadge, { backgroundColor: AMBER_LIGHT }]}>
-                      <Text style={[s.activeBadgeText, { color: AMBER }]}>PENDING</Text>
-                    </View>
-                  </View>
-                  <View style={s.appActions}>
-                    <TouchableOpacity
-                      style={s.rejectBtn}
-                      onPress={() => handleUpdateStatus(app.attachment_id, app.full_name, 'rejected')}
-                    >
-                      <Text style={s.rejectBtnText}>✗ Reject</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={s.confirmBtn}
-                      onPress={() => handleUpdateStatus(app.attachment_id, app.full_name, 'approved')}
-                    >
-                      <Text style={s.confirmBtnText}>✓ Confirm Placement</Text>
-                    </TouchableOpacity>
-                  </View>
-                  {app.phone && (
-                    <Text style={s.appPhone}>📞 {app.phone}</Text>
-                  )}
-                </View>
-              ))}
-            </>
           )}
 
           <View style={{ height: 100 }} />
@@ -451,16 +501,21 @@ export default function HostDashboard({ navigation }) {
         {/* ── Bottom nav ──────────────────────────────────────────────────── */}
         <View style={s.bottomNav}>
           {[
-            { label: 'Home',       icon: '🏠', screen: null },
-            { label: 'Vacancies',  icon: '💼', screen: 'HostSlots' },
-            { label: 'Applicants', icon: '📋', screen: 'HostApplicants' },
+            { label: 'Dashboard', icon: 'grid-outline', iconActive: 'grid', screen: null },
+            { label: 'Vacancies', icon: 'briefcase-outline', iconActive: 'briefcase', screen: 'HostSlots' },
+            { label: 'Interns', icon: 'people-outline', iconActive: 'people', screen: 'HostInterns' },
+            { label: 'Profile', icon: 'person-circle-outline', iconActive: 'person-circle', screen: 'HostProfile' },
           ].map((tab) => (
             <TouchableOpacity
               key={tab.label}
               style={s.navTab}
               onPress={() => tab.screen && navigation.navigate(tab.screen)}
             >
-              <Text style={s.navIcon}>{tab.icon}</Text>
+              <Ionicons
+                name={tab.screen ? tab.icon : tab.iconActive}
+                size={22}
+                color={tab.screen ? '#999' : TEAL}
+              />
               <Text style={[s.navLabel, !tab.screen && { color: TEAL, fontWeight: '600' }]}>
                 {tab.label}
               </Text>
@@ -480,17 +535,10 @@ const s = StyleSheet.create({
   loadingText: { marginTop: 10, color: '#888' },
   scrollContent: { paddingBottom: 20 },
 
-  // hamburger
-  hamburgerBtn: { padding: 6, gap: 5, justifyContent: 'center' },
-  hamburgerLine: {
-    width: 22, height: 2.5, borderRadius: 2,
-    backgroundColor: '#333',
-  },
-
   // drawer modal
   menuOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'flex-start', alignItems: 'flex-start',
+    justifyContent: 'flex-start', alignItems: 'flex-end',
   },
   menuDrawer: {
     width: 280,
@@ -500,13 +548,11 @@ const s = StyleSheet.create({
     paddingBottom: 40,
     elevation: 10,
     shadowColor: '#000',
-    shadowOffset: { width: 2, height: 0 },
+    shadowOffset: { width: -2, height: 0 },
     shadowOpacity: 0.2,
     shadowRadius: 10,
   },
-  drawerHeader: {
-    paddingHorizontal: 24, paddingBottom: 20, alignItems: 'flex-start',
-  },
+  drawerHeader: { paddingHorizontal: 24, paddingBottom: 20, alignItems: 'flex-start' },
   drawerAvatar: {
     width: 56, height: 56, borderRadius: 28,
     backgroundColor: TEAL,
@@ -521,17 +567,14 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 24, paddingVertical: 16, gap: 14,
   },
-  drawerItemIcon: { fontSize: 20 },
   drawerItemBody: { flex: 1 },
   drawerItemLabel: { fontSize: 15, fontWeight: '700', color: '#111' },
   drawerItemSub: { fontSize: 12, color: '#888', marginTop: 2 },
-  drawerItemArrow: { fontSize: 20, color: '#ccc', fontWeight: '300' },
   drawerLogout: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 24, paddingVertical: 16, gap: 14,
     marginTop: 8,
   },
-  drawerLogoutIcon: { fontSize: 20 },
   drawerLogoutText: { fontSize: 15, fontWeight: '700', color: '#C62828' },
 
   // top bar
@@ -539,112 +582,122 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16, paddingTop: 14, paddingBottom: 14,
-    backgroundColor: '#fff',
-    borderBottomWidth: 0.5, borderBottomColor: 'rgba(0,0,0,0.08)',
   },
-  topBarCenter: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, marginHorizontal: 12 },
+  topBarLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, marginRight: 8 },
+  topBarRight: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   logoBox: {
-    width: 32, height: 32, borderRadius: 8,
-    backgroundColor: '#0F6E56',
+    width: 34, height: 34, borderRadius: 17,
+    backgroundColor: TEAL,
     alignItems: 'center', justifyContent: 'center',
+    overflow: 'hidden',
   },
-  logoIcon: { fontSize: 16 },
-  topBarTitle: { fontSize: 13, fontWeight: '700', color: '#111', flexShrink: 1 },
-  notifBtn: { position: 'relative', paddingHorizontal: 2, paddingVertical: 2 },
-  notifIcon: { fontSize: 22 },
+  logoImg: { width: 34, height: 34, borderRadius: 17 },
+  topBarTitle: { fontSize: 16, fontWeight: '800', color: '#111', flexShrink: 1 },
+  iconBtn: { padding: 6, position: 'relative' },
   notifBadge: {
-    position: 'absolute', right: -6, top: -6,
-    backgroundColor: '#D85A30',
-    borderRadius: 10, minWidth: 20, height: 20,
-    paddingHorizontal: 5,
+    position: 'absolute', right: 2, top: 2,
+    backgroundColor: CORAL,
+    borderRadius: 10, minWidth: 16, height: 16,
+    paddingHorizontal: 3,
     alignItems: 'center', justifyContent: 'center',
   },
-  notifBadgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
+  notifBadgeText: { color: '#fff', fontSize: 9, fontWeight: '700' },
+
+  // welcome
+  welcomeBlock: { paddingHorizontal: 16, marginBottom: 16 },
+  welcomeText: { fontSize: 28, fontWeight: '800', color: '#111', lineHeight: 34 },
+  welcomeOrg: { color: TEAL },
+  welcomeSub: { color: '#888', fontSize: 14, marginTop: 6 },
 
   // hero
   hero: {
-    backgroundColor: '#0F6E56',
-    marginHorizontal: 16, marginBottom: 16, marginTop: 16,
-    borderRadius: 18, padding: 22, overflow: 'hidden',
+    backgroundColor: TEAL,
+    marginHorizontal: 16, marginBottom: 16,
+    borderRadius: 20, padding: 22, overflow: 'hidden',
   },
-  premiumBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: CORAL,
-    paddingHorizontal: 12, paddingVertical: 5,
-    borderRadius: 20, marginBottom: 6,
-  },
-  premiumText: { color: '#fff', fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
-  heroWelcome: { color: '#fff', fontSize: 26, fontWeight: '700', lineHeight: 34 },
-  heroOrg: { color: TEAL_MID },
-  heroSub: { color: 'rgba(255,255,255,0.75)', fontSize: 13, lineHeight: 20, marginTop: 10 },
+  heroLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 11, fontWeight: '700', letterSpacing: 1 },
+  heroValue: { color: '#fff', fontSize: 24, fontWeight: '800', marginTop: 8, marginBottom: 18 },
   postBtn: {
     flexDirection: 'row', alignItems: 'center',
-    alignSelf: 'flex-start', gap: 8,
+    alignSelf: 'flex-start', gap: 6,
     backgroundColor: CORAL,
-    paddingHorizontal: 20, paddingVertical: 12,
-    borderRadius: 30, marginTop: 20,
+    paddingHorizontal: 18, paddingVertical: 12,
+    borderRadius: 30,
   },
-  postBtnIcon: { color: '#fff', fontSize: 18 },
   postBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
 
-  // stat cards
-  statCard: {
-    backgroundColor: '#fff',
-    marginHorizontal: 16, marginBottom: 12,
-    borderRadius: 16, padding: 18,
+  // stat row
+  statRow: { flexDirection: 'row', gap: 10, paddingHorizontal: 16, marginBottom: 20 },
+  statCardSm: {
+    flex: 1, backgroundColor: '#fff',
+    borderRadius: 14, padding: 14,
     borderWidth: 0.5, borderColor: 'rgba(0,0,0,0.07)',
   },
-  statCardTop: {
-    flexDirection: 'row', justifyContent: 'space-between',
-    alignItems: 'center', marginBottom: 8,
-  },
-  statCardLabel: { fontSize: 11, fontWeight: '600', color: '#888', letterSpacing: 0.5 },
-  statCardIcon: { fontSize: 20 },
-  statCardVal: { fontSize: 36, fontWeight: '700', color: '#111' },
-  statCardHint: { fontSize: 13, marginTop: 4 },
+  statCardSmVal: { fontSize: 22, fontWeight: '800', color: '#111' },
+  statCardSmLabel: { fontSize: 9, fontWeight: '600', color: '#888', marginTop: 6, letterSpacing: 0.3 },
+  ratingRow: { flexDirection: 'row', alignItems: 'center' },
 
   // section head
   sectionHead: {
     flexDirection: 'row', justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    paddingHorizontal: 16, marginBottom: 12, marginTop: 4,
+    alignItems: 'center',
+    paddingHorizontal: 16, marginBottom: 12,
   },
-  sectionTitle: { fontSize: 18, fontWeight: '700', color: '#111', lineHeight: 26 },
-  viewAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  viewAllText: { fontSize: 13, color: '#0F6E56', fontWeight: '600', textAlign: 'right' },
-  viewAllArrow: { fontSize: 16, color: '#0F6E56', fontWeight: '600' },
+  sectionTitle: { fontSize: 18, fontWeight: '800', color: '#111' },
+  viewAllText: { fontSize: 13, color: TEAL, fontWeight: '700' },
 
-  // intern card
+  // recent applications row
+  recentRow: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#fff',
+    marginHorizontal: 16, marginBottom: 10,
+    borderRadius: 14, padding: 12,
+    borderWidth: 0.5, borderColor: 'rgba(0,0,0,0.07)',
+  },
+  recentAvatar: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: TEAL,
+    alignItems: 'center', justifyContent: 'center',
+    marginRight: 12,
+  },
+  recentAvatarImg: { width: 44, height: 44, borderRadius: 22, marginRight: 12 },
+  recentAvatarText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  recentInfo: { flex: 1 },
+  recentName: { fontSize: 14, fontWeight: '700', color: '#111' },
+  recentRole: { fontSize: 12, color: '#888', marginTop: 2 },
+  recentRight: { alignItems: 'flex-end', gap: 6 },
+  matchPill: { backgroundColor: TEAL_LIGHT, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
+  matchPillText: { fontSize: 10, fontWeight: '700', color: TEAL },
+  recentTime: { fontSize: 11, color: '#aaa' },
+
+  // intern card (ongoing)
   internCard: {
     backgroundColor: '#fff',
     marginHorizontal: 16, marginBottom: 12,
     borderRadius: 16, padding: 16,
     borderWidth: 0.5, borderColor: 'rgba(0,0,0,0.07)',
   },
+  ongoingTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 },
+  ongoingInfo: { flex: 1 },
   internTop: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
   internAvatar: {
     width: 44, height: 44, borderRadius: 22,
-    backgroundColor: '#0F6E56',
+    backgroundColor: TEAL,
     alignItems: 'center', justifyContent: 'center',
     marginRight: 12,
   },
+  internAvatarImg: { width: 44, height: 44, borderRadius: 22, marginRight: 12 },
   internAvatarText: { color: '#fff', fontSize: 18, fontWeight: '700' },
   internInfo: { flex: 1 },
   internName: { fontSize: 15, fontWeight: '700', color: '#111' },
   internRole: { fontSize: 12, color: '#888', marginTop: 2 },
-  activeBadge: {
-    backgroundColor: TEAL_LIGHT,
-    paddingHorizontal: 10, paddingVertical: 4,
-    borderRadius: 20,
-  },
-  activeBadgeText: { fontSize: 10, fontWeight: '700', color: '#0F6E56', letterSpacing: 0.3 },
-  progressRow: {
-    flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6,
-  },
-  progressLabel: { fontSize: 12, color: '#888' },
-  progressPct: { fontSize: 12, fontWeight: '600', color: '#111' },
+  statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
+  statusBadgeText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.3 },
+  progressRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
+  progressLabel: { fontSize: 11, color: '#888', fontWeight: '600', letterSpacing: 0.3 },
+  progressPct: { fontSize: 12, fontWeight: '700', color: '#111' },
   progressTrack: { height: 6, backgroundColor: 'rgba(0,0,0,0.08)', borderRadius: 3 },
-  progressFill: { height: 6, backgroundColor: '#0F6E56', borderRadius: 3 },
+  progressFill: { height: 6, backgroundColor: TEAL, borderRadius: 3 },
 
   // pending app card
   appCard: {
@@ -655,24 +708,25 @@ const s = StyleSheet.create({
   },
   appActions: { flexDirection: 'row', gap: 10, marginTop: 4 },
   rejectBtn: {
-    flex: 1, padding: 10, borderRadius: 10,
-    alignItems: 'center',
+    flex: 1, flexDirection: 'row', gap: 4, padding: 10, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center',
     borderWidth: 1.5, borderColor: '#C62828',
   },
   rejectBtnText: { color: '#C62828', fontWeight: '700', fontSize: 13 },
   confirmBtn: {
-    flex: 2, padding: 10, borderRadius: 10,
-    alignItems: 'center', backgroundColor: '#0F6E56',
+    flex: 2, flexDirection: 'row', gap: 4, padding: 10, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: TEAL,
   },
   confirmBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
-  appPhone: { fontSize: 12, color: '#888', marginTop: 8 },
+  appPhoneRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 8 },
+  appPhone: { fontSize: 12, color: '#888' },
 
   // permission card
   permissionCard: {
     backgroundColor: '#FFF8E1',
     marginHorizontal: 16, marginBottom: 12,
     borderRadius: 16, padding: 16,
-    borderLeftWidth: 4, borderLeftColor: '#D85A30',
+    borderLeftWidth: 4, borderLeftColor: CORAL,
   },
   permissionTitle: { fontSize: 15, fontWeight: '700', color: '#111', marginBottom: 4 },
   permissionText: { fontSize: 13, color: '#666', lineHeight: 19 },
@@ -685,8 +739,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 0.5, borderColor: 'rgba(0,0,0,0.07)',
   },
-  emptyIcon: { fontSize: 36, marginBottom: 10 },
-  emptyTitle: { fontSize: 15, fontWeight: '700', color: '#333' },
+  emptyTitle: { fontSize: 15, fontWeight: '700', color: '#333', marginTop: 10 },
   emptyText: { fontSize: 13, color: '#888', textAlign: 'center', marginTop: 6 },
 
   // bottom nav
@@ -697,7 +750,6 @@ const s = StyleSheet.create({
     paddingTop: 10, paddingBottom: 24,
   },
   navTab: { flex: 1, alignItems: 'center', gap: 3 },
-  navIcon: { fontSize: 22 },
-  navLabel: { fontSize: 10, color: '#888', letterSpacing: 0.3 },
-  navActiveDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: '#0F6E56' },
+  navLabel: { fontSize: 10, color: '#999', letterSpacing: 0.3 },
+  navActiveDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: TEAL },
 });

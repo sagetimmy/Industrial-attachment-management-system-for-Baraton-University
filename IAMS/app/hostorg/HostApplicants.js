@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, ScrollView,
   RefreshControl, ActivityIndicator, Alert, TextInput, TouchableOpacity,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import api from '../../api/axios';
 
 const TEAL = '#0F6E56';
@@ -27,7 +28,7 @@ const statusMeta = (status) => {
   }
 };
 
-export default function HostApplicants() {
+export default function HostApplicants({ navigation }) {
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -97,10 +98,21 @@ export default function HostApplicants() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Applicants</Text>
-        <Text style={styles.subtitle}>
-          {sortedApplications.length} application{sortedApplications.length === 1 ? '' : 's'}
-        </Text>
+        <View style={styles.headerRow}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => navigation.goBack()}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="arrow-back" size={22} color={DARK} />
+          </TouchableOpacity>
+          <View>
+            <Text style={styles.title}>Applicants</Text>
+            <Text style={styles.subtitle}>
+              {sortedApplications.length} application{sortedApplications.length === 1 ? '' : 's'}
+            </Text>
+          </View>
+        </View>
       </View>
 
       <ScrollView
@@ -200,6 +212,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
+  },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  backBtn: {
+    width: 34, height: 34, borderRadius: 17,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#F3F4F6',
   },
   title: { fontSize: 22, fontWeight: '700', color: DARK },
   subtitle: { marginTop: 4, color: GRAY, fontSize: 13 },

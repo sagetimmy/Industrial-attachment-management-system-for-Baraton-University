@@ -30,6 +30,7 @@ export default function NotificationsScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState('All');
+  const [expandedId, setExpandedId] = useState(null);
 
   const fetchNotifications = async () => {
     try {
@@ -71,6 +72,7 @@ export default function NotificationsScreen({ navigation }) {
     try {
       await api.delete(`/notifications/${id}`);
       setNotifications((prev) => prev.filter((n) => n.notif_id !== id));
+      if (expandedId === id) setExpandedId(null);
     } catch (err) {
       Alert.alert('Error', 'Failed to delete notification');
     }
@@ -89,6 +91,7 @@ export default function NotificationsScreen({ navigation }) {
             try {
               await api.delete('/notifications/clear-all');
               setNotifications([]);
+              setExpandedId(null);
             } catch (err) {
               Alert.alert('Error', 'Failed to clear notifications');
             }
@@ -130,6 +133,17 @@ export default function NotificationsScreen({ navigation }) {
     if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
     if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
     return date.toLocaleDateString();
+  };
+
+  const getFullTimestamp = (dateStr) => {
+    const date = new Date(dateStr);
+    return date.toLocaleString(undefined, {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
   };
 
   const isToday = (dateStr) => {
@@ -198,12 +212,18 @@ export default function NotificationsScreen({ navigation }) {
   const renderNotifCard = (notif) => {
     const iconConfig = getNotifIcon(notif.message);
     const unread = !notif.is_read;
+    const expanded = expandedId === notif.notif_id;
+
+    const handleCardPress = () => {
+      if (unread) handleMarkRead(notif.notif_id);
+      setExpandedId(expanded ? null : notif.notif_id);
+    };
 
     return (
       <View key={notif.notif_id} style={styles.cardWrapper}>
         <TouchableOpacity
           style={styles.notifCard}
-          onPress={() => handleMarkRead(notif.notif_id)}
+          onPress={handleCardPress}
           activeOpacity={0.7}
         >
           {unread && <View style={styles.unreadDot} />}
@@ -218,9 +238,23 @@ export default function NotificationsScreen({ navigation }) {
                 </Text>
                 <Text style={styles.notifTime}>{getTimeAgo(notif.created_at)}</Text>
               </View>
-              <Text style={styles.notifMessage} numberOfLines={3}>
+
+              <Text
+                style={styles.notifMessage}
+                numberOfLines={expanded ? undefined : 3}
+              >
                 {notif.message}
               </Text>
+
+              {expanded && (
+                <View style={styles.expandedMeta}>
+                  <MaterialCommunityIcons name="clock-outline" size={13} color={TEXT_SUB} />
+                  <Text style={styles.expandedMetaText}>
+                    {getFullTimestamp(notif.created_at)}
+                  </Text>
+                </View>
+              )}
+
               {notif.message.toLowerCase().includes('logbook') && (
                 <TouchableOpacity style={styles.actionLink}>
                   <Text style={styles.actionText}>VIEW LOGBOOK</Text>
@@ -228,10 +262,17 @@ export default function NotificationsScreen({ navigation }) {
                 </TouchableOpacity>
               )}
             </View>
+
+            <MaterialCommunityIcons
+              name={expanded ? 'chevron-up' : 'chevron-down'}
+              size={18}
+              color={TEXT_SUB}
+              style={styles.expandChevron}
+            />
           </View>
         </TouchableOpacity>
-        <TouchableOpacity 
-          style={styles.deleteBtn} 
+        <TouchableOpacity
+          style={styles.deleteBtn}
           onPress={() => handleDelete(notif.notif_id)}
         >
           <MaterialCommunityIcons name="close" size={18} color={TEXT_SUB} />
@@ -476,6 +517,21 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: TEXT_SUB,
     lineHeight: 18,
+  },
+  expandedMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 8,
+  },
+  expandedMetaText: {
+    fontSize: 11,
+    color: TEXT_SUB,
+    fontWeight: '500',
+  },
+  expandChevron: {
+    alignSelf: 'center',
+    marginLeft: 4,
   },
   actionLink: {
     flexDirection: 'row',

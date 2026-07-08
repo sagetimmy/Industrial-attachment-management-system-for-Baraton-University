@@ -1,416 +1,245 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  TextInput,
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
   Image,
+  RefreshControl,
 } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
-import * as ImageManipulator from 'expo-image-manipulator';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
-import { COLORS } from '../../constants/colors';
 import api from '../../api/axios';
 import { hasRolePermission } from '../../utils/permissions';
 
-const HostProfile = ({ navigation, route }) => {
+// Exact palette from the design mockup — hardcoded intentionally so this
+// screen always matches the spec regardless of what constants/colors.js defines.
+const PALETTE = {
+  header: '#0E4E3B',
+  headerText: '#FFFFFF',
+  bg: '#EEF2F0',
+  logoBg: '#0E4E3B',
+  orange: '#E8711A',
+  cardWhite: '#FFFFFF',
+  textDark: '#1A1A1A',
+  hintGray: '#8A8A8A',
+  labelGray: '#A0A0A0',
+  permissionBg: '#FCEFD6',
+  permissionTitle: '#7A3B12',
+  permissionText: '#8A6D4C',
+  warning: '#B8590A',
+};
+
+const HostProfile = ({ navigation }) => {
   const { user } = useAuth();
   const canEditOrgProfile = hasRolePermission(user, 'editOrgProfile');
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [uploadingLogo, setUploadingLogo] = useState(false);
-  const [orgLogoUrl, setOrgLogoUrl] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [org, setOrg] = useState(null);
+  const [activeInterns, setActiveInterns] = useState(0);
 
-  const [formData, setFormData] = useState({
-    org_name: '',
-    location: '',
-    contact_person: '',
-    phone: '',
-    available_slots: 0,
-  });
-
-  const [errors, setErrors] = useState({});
-
-  useEffect(() => {
-    // If org data passed via route, use it
-    if (route?.params?.org) {
-      setFormData({
-        org_name: route.params.org.org_name || '',
-        location: route.params.org.location || '',
-        contact_person: route.params.org.contact_person || '',
-        phone: route.params.org.phone || '',
-        available_slots: route.params.org.available_slots || 0,
-      });
-      setOrgLogoUrl(route.params.org.org_logo_url || null);
-    } else {
-      // Otherwise fetch from dashboard
-      fetchOrgData();
-    }
-  }, []);
-
-  const fetchOrgData = async () => {
+  const fetchOrgData = useCallback(async () => {
     try {
-      setLoading(true);
       const response = await api.get('/host-orgs/dashboard');
-      if (response.data.org) {
-        setFormData({
-          org_name: response.data.org.org_name || '',
-          location: response.data.org.location || '',
-          contact_person: response.data.org.contact_person || '',
-          phone: response.data.org.phone || '',
-          available_slots: response.data.org.available_slots || 0,
-        });
-        setOrgLogoUrl(response.data.org.org_logo_url || null);
-      }
+      setOrg(response.data.org || null);
+      setActiveInterns(response.data.active_interns ?? 0);
     } catch (error) {
       Alert.alert('Error', 'Failed to load profile data');
       console.error(error);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  }, []);
+
+  useEffect(() => {
+    fetchOrgData();
+  }, [fetchOrgData]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchOrgData();
   };
-
-  const validateForm = () => {
-    const newErrors = {};
-
-    if (!formData.org_name.trim()) newErrors.org_name = 'Organization name is required';
-    if (!formData.location.trim()) newErrors.location = 'Location is required';
-    if (!formData.contact_person.trim()) newErrors.contact_person = 'Contact person is required';
-    if (!formData.phone.trim()) newErrors.phone = 'Phone number is required';
-    if (formData.available_slots < 0) newErrors.available_slots = 'Available slots cannot be negative';
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  const handleSave = async () => {
-    if (!canEditOrgProfile) {
-      Alert.alert('Permission Disabled', 'Editing the organization profile is currently disabled.');
-      return;
-    }
-
-    if (!validateForm()) return;
-
-    try {
-      setSaving(true);
-      await api.put('/host-orgs/profile', {
-        org_name: formData.org_name,
-        location: formData.location,
-        contact_person: formData.contact_person,
-        phone: formData.phone,
-        available_slots: parseInt(formData.available_slots),
-      });
-
-      Alert.alert('Success', 'Profile updated successfully!', [
-        {
-          text: 'OK',
-          onPress: () => navigation.goBack(),
-        },
-      ]);
-    } catch (error) {
-      Alert.alert(
-        'Error',
-        error.response?.data?.message || 'Failed to update profile'
-      );
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleChangeLogo = async () => {
-    if (!canEditOrgProfile) {
-      Alert.alert('Permission Disabled', 'Editing the organization profile is currently disabled.');
-      return;
-    }
-
-    try {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) {
-        Alert.alert('Permission needed', 'Please allow photo library access to upload a logo.');
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-      });
-
-      if (result.canceled) return;
-
-      setUploadingLogo(true);
-
-      const manipulated = await ImageManipulator.manipulateAsync(
-        result.assets[0].uri,
-        [{ resize: { width: 512, height: 512 } }],
-        { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
-      );
-
-      const logoFormData = new FormData();
-      logoFormData.append('logo', {
-        uri: manipulated.uri,
-        name: 'logo.jpg',
-        type: 'image/jpeg',
-      });
-
-      const response = await api.post('/host-orgs/logo', logoFormData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-
-      setOrgLogoUrl(response.data.org_logo_url);
-    } catch (error) {
-      const message = error.response?.data?.message || 'Could not upload logo. Please try again.';
-      Alert.alert('Upload Failed', message);
-    } finally {
-      setUploadingLogo(false);
-    }
-  };
-
-  const handleInputChange = (field, value) => {
-    setFormData(prev => ({
-      ...prev,
-      [field]: value,
-    }));
-    // Clear error for this field
-    if (errors[field]) {
-      setErrors(prev => ({
-        ...prev,
-        [field]: undefined,
-      }));
-    }
-  };
-
-  const InputField = ({ label, field, placeholder, keyboardType = 'default', maxLength }) => (
-    <View style={styles.formGroup}>
-      <Text style={styles.label}>{label}</Text>
-      <TextInput
-        style={[styles.input, errors[field] && styles.inputError]}
-        placeholder={placeholder}
-        value={formData[field].toString()}
-        onChangeText={value => handleInputChange(field, value)}
-        keyboardType={keyboardType}
-        maxLength={maxLength}
-        editable={!saving && canEditOrgProfile}
-      />
-      {errors[field] && <Text style={styles.errorText}>{errors[field]}</Text>}
-    </View>
-  );
 
   if (loading) {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Text style={styles.backButton}>← Back</Text>
+          <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Ionicons name="arrow-back" size={24} color={PALETTE.headerText} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Update Profile</Text>
-          <View style={{ width: 60 }} />
+          <Text style={styles.headerTitle}>Organization Profile</Text>
+          <View style={{ width: 24 }} />
         </View>
         <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
+          <ActivityIndicator size="large" color={PALETTE.orange} />
         </View>
       </View>
     );
   }
 
-  const orgInitial = formData.org_name?.trim().charAt(0).toUpperCase() || '?';
+  const orgInitial = org?.org_name?.trim().charAt(0).toUpperCase() || '?';
+  const availableSlots = org?.available_slots ?? 0;
+
+  const InfoRow = ({ icon, label, value }) => (
+    <View style={styles.infoRow}>
+      <View style={styles.infoIconWrap}>
+        <Ionicons name={icon} size={18} color={PALETTE.header} />
+      </View>
+      <View style={styles.infoTextWrap}>
+        <Text style={styles.infoLabel}>{label.toUpperCase()}</Text>
+        <Text style={styles.infoValue}>{value || '—'}</Text>
+      </View>
+    </View>
+  );
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior="padding">
+    <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.backButton}>← Back</Text>
+        <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <Ionicons name="arrow-back" size={24} color={PALETTE.headerText} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Update Profile</Text>
-        <View style={{ width: 60 }} />
+        <Text style={styles.headerTitle}>Organization Profile</Text>
+        {canEditOrgProfile ? (
+          <TouchableOpacity
+            onPress={() => navigation.navigate('HostEditProfile', { org })}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="create-outline" size={22} color={PALETTE.headerText} />
+          </TouchableOpacity>
+        ) : (
+          <View style={{ width: 24 }} />
+        )}
       </View>
 
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[PALETTE.orange]} tintColor={PALETTE.orange} />
+        }
       >
-        {/* Logo */}
-        <View style={styles.logoWrapper}>
-          <TouchableOpacity
-            style={styles.logoCircle}
-            onPress={handleChangeLogo}
-            disabled={uploadingLogo || !canEditOrgProfile}
-            activeOpacity={0.8}
-          >
-            {orgLogoUrl ? (
-              <Image source={{ uri: orgLogoUrl }} style={styles.logoImage} />
+        {/* Profile Card */}
+        <View style={styles.profileCard}>
+          <View style={styles.logoCircle}>
+            {org?.org_logo_url ? (
+              <Image source={{ uri: org.org_logo_url }} style={styles.logoImage} />
             ) : (
               <Text style={styles.logoInitial}>{orgInitial}</Text>
             )}
+          </View>
+          <Text style={styles.orgName}>{org?.org_name || 'Organization'}</Text>
+          {!!org?.location && (
+            <View style={styles.locationRow}>
+              <Ionicons name="location-outline" size={14} color={PALETTE.hintGray} />
+              <Text style={styles.orgLocation}>{org.location}</Text>
+            </View>
+          )}
+        </View>
 
-            {uploadingLogo && (
-              <View style={styles.logoLoadingOverlay}>
-                <ActivityIndicator size="small" color="white" />
-              </View>
-            )}
-
-            {canEditOrgProfile && (
-              <View style={styles.cameraBadge}>
-                <Text style={styles.cameraBadgeText}>📷</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-          <Text style={styles.logoHint}>
-            {canEditOrgProfile ? 'Tap to change logo' : 'Organization Logo'}
-          </Text>
+        {/* Stat Cards */}
+        <View style={styles.statsRow}>
+          <View style={styles.statCard}>
+            <Text style={styles.statValue}>{availableSlots}</Text>
+            <Text style={styles.statLabel}>Available Slots</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statValue}>{activeInterns}</Text>
+            <Text style={styles.statLabel}>Active Interns</Text>
+          </View>
         </View>
 
         {/* Info Card */}
         <View style={styles.infoCard}>
-          <Text style={styles.infoTitle}>📋 Organization Information</Text>
-          <Text style={styles.infoText}>
-            Update your organization's details that students will see when browsing for placements.
-          </Text>
-        </View>
-
-        {/* Form */}
-        <View style={styles.form}>
-          <InputField
-            label="Organization Name"
-            field="org_name"
-            placeholder="e.g., Tech Solutions Ltd"
-          />
-
-          <InputField
-            label="Location"
-            field="location"
-            placeholder="e.g., Nairobi, Kenya"
-          />
-
-          <InputField
-            label="Contact Person"
-            field="contact_person"
-            placeholder="e.g., John Doe"
-          />
-
-          <InputField
-            label="Phone Number"
-            field="phone"
-            placeholder="e.g., +254 712 345 678"
-            keyboardType="phone-pad"
-            maxLength={20}
-          />
-
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Available Placement Slots</Text>
-            <View style={styles.slotsInfo}>
-              <Text style={styles.slotsLabel}>
-                How many students can you accept for placement?
-              </Text>
-            </View>
-            <TextInput
-              style={[styles.input, errors.available_slots && styles.inputError]}
-              placeholder="e.g., 5"
-              value={formData.available_slots.toString()}
-              onChangeText={value =>
-                handleInputChange('available_slots', value.replace(/[^0-9]/g, ''))
-              }
-              keyboardType="number-pad"
-              editable={!saving && canEditOrgProfile}
-            />
-            {errors.available_slots && (
-              <Text style={styles.errorText}>{errors.available_slots}</Text>
-            )}
-            <Text style={styles.slotHint}>
-              💡 Each accepted student will decrease this count. You can increase it anytime.
-            </Text>
+          <View style={styles.infoTitleRow}>
+            <Ionicons name="clipboard-outline" size={20} color={PALETTE.header} />
+            <Text style={styles.infoCardTitle}>Organization Details</Text>
           </View>
+          <InfoRow icon="business-outline" label="Organization Name" value={org?.org_name} />
+          <InfoRow icon="location-outline" label="Location" value={org?.location} />
+          <InfoRow icon="person-outline" label="Contact Person" value={org?.contact_person} />
+          <InfoRow icon="call-outline" label="Phone Number" value={org?.phone} />
         </View>
 
-        {/* Save Button */}
         {!canEditOrgProfile && (
           <View style={styles.permissionCard}>
-            <Text style={styles.permissionTitle}>Profile Editing Disabled</Text>
+            <View style={styles.permissionTitleRow}>
+              <Ionicons name="warning-outline" size={18} color={PALETTE.warning} />
+              <Text style={styles.permissionTitle}>Profile Editing Disabled</Text>
+            </View>
             <Text style={styles.permissionText}>
-              You can view this profile, but editing is currently disabled by the administrator.
+              Permissions restricted by your primary administrator.
             </Text>
           </View>
         )}
 
-        <TouchableOpacity
-          style={[styles.saveButton, (saving || !canEditOrgProfile) && styles.saveButtonDisabled]}
-          onPress={handleSave}
-          disabled={saving || !canEditOrgProfile}
-        >
-          {saving ? (
-            <ActivityIndicator color="white" size="small" />
-          ) : (
-            <Text style={styles.saveButtonText}>Save Changes ✓</Text>
-          )}
-        </TouchableOpacity>
+        {canEditOrgProfile && (
+          <TouchableOpacity
+            style={styles.editProfileButton}
+            onPress={() => navigation.navigate('HostEditProfile', { org })}
+          >
+            <Text style={styles.editProfileButtonText}>Edit Profile</Text>
+            <Ionicons name="create-outline" size={18} color="white" style={{ marginLeft: 8 }} />
+          </TouchableOpacity>
+        )}
 
         <View style={{ height: 40 }} />
       </ScrollView>
-    </KeyboardAvoidingView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: PALETTE.bg,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: COLORS.secondary,
+    backgroundColor: PALETTE.header,
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 16,
     paddingTop: 16,
   },
   headerTitle: {
-    color: 'white',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  backButton: {
-    color: 'white',
-    fontSize: 16,
+    color: PALETTE.headerText,
+    fontSize: 20,
+    fontWeight: '700',
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    padding: 16,
+    padding: 20,
   },
   centerContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  logoWrapper: {
+  profileCard: {
     alignItems: 'center',
+    backgroundColor: PALETTE.cardWhite,
+    borderRadius: 16,
+    paddingVertical: 28,
     marginBottom: 20,
   },
   logoCircle: {
-    width: 96,
-    height: 96,
-    borderRadius: 20,
-    backgroundColor: COLORS.secondary,
-    borderWidth: 3,
-    borderColor: 'white',
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    backgroundColor: PALETTE.logoBg,
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
+    marginBottom: 14,
   },
   logoImage: {
     width: '100%',
@@ -418,138 +247,123 @@ const styles = StyleSheet.create({
   },
   logoInitial: {
     color: 'white',
-    fontSize: 34,
-    fontWeight: '800',
-  },
-  logoLoadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  cameraBadge: {
-    position: 'absolute',
-    bottom: -2,
-    right: -2,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: COLORS.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'white',
-  },
-  cameraBadgeText: {
-    fontSize: 12,
-  },
-  logoHint: {
-    fontSize: 12,
-    color: '#888',
-    marginTop: 8,
-  },
-  infoCard: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 20,
-    borderLeftWidth: 4,
-    borderLeftColor: COLORS.primary,
-  },
-  infoTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: COLORS.secondary,
-    marginBottom: 8,
-  },
-  infoText: {
-    fontSize: 13,
-    color: '#666',
-    lineHeight: 20,
-  },
-  form: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 20,
-  },
-  formGroup: {
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.secondary,
-    marginBottom: 8,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#DDD',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-    color: COLORS.darkGray,
-  },
-  inputError: {
-    borderColor: '#C62828',
-    backgroundColor: '#FFEBEE',
-  },
-  errorText: {
-    color: '#C62828',
-    fontSize: 12,
-    marginTop: 4,
-  },
-  slotsInfo: {
-    backgroundColor: '#FFF8E1',
-    borderLeftWidth: 3,
-    borderLeftColor: COLORS.primary,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 4,
-    marginBottom: 8,
-  },
-  slotsLabel: {
-    fontSize: 12,
-    color: '#666',
-  },
-  slotHint: {
-    fontSize: 12,
-    color: COLORS.primary,
-    marginTop: 8,
-    fontStyle: 'italic',
-  },
-  saveButton: {
-    backgroundColor: COLORS.primary,
-    paddingVertical: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  saveButtonDisabled: {
-    opacity: 0.6,
-  },
-  saveButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  permissionCard: {
-    backgroundColor: '#FFF8E1',
-    borderLeftWidth: 4,
-    borderLeftColor: COLORS.primary,
-    borderRadius: 8,
-    padding: 14,
-    marginBottom: 16,
-  },
-  permissionTitle: {
-    color: COLORS.secondary,
-    fontSize: 14,
+    fontSize: 36,
     fontWeight: '700',
+  },
+  orgName: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: PALETTE.textDark,
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  orgLocation: {
+    fontSize: 14,
+    color: PALETTE.hintGray,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 20,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: PALETTE.cardWhite,
+    borderRadius: 16,
+    paddingVertical: 18,
+    alignItems: 'center',
+  },
+  statValue: {
+    fontSize: 26,
+    fontWeight: '700',
+    color: PALETTE.orange,
     marginBottom: 4,
   },
+  statLabel: {
+    fontSize: 12,
+    color: PALETTE.hintGray,
+  },
+  infoCard: {
+    backgroundColor: PALETTE.cardWhite,
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 20,
+    borderLeftWidth: 4,
+    borderLeftColor: PALETTE.header,
+  },
+  infoTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+    gap: 8,
+  },
+  infoCardTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: PALETTE.textDark,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  infoIconWrap: {
+    width: 30,
+  },
+  infoTextWrap: {
+    flex: 1,
+  },
+  infoLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: PALETTE.labelGray,
+    letterSpacing: 0.4,
+    marginBottom: 3,
+  },
+  infoValue: {
+    fontSize: 15,
+    color: PALETTE.textDark,
+    fontWeight: '500',
+  },
+  editProfileButton: {
+    flexDirection: 'row',
+    backgroundColor: PALETTE.orange,
+    paddingVertical: 16,
+    borderRadius: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editProfileButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  permissionCard: {
+    backgroundColor: PALETTE.permissionBg,
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 20,
+  },
+  permissionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  permissionTitle: {
+    color: PALETTE.permissionTitle,
+    fontSize: 14.5,
+    fontWeight: '700',
+  },
   permissionText: {
-    color: '#666',
+    color: PALETTE.permissionText,
     fontSize: 13,
     lineHeight: 19,
   },

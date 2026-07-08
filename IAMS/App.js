@@ -5,6 +5,7 @@ import { createDrawerNavigator } from '@react-navigation/drawer';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
+import { confirmLogout } from './utils/confirmLogout';
 
 
 // Auth screens
@@ -71,6 +72,9 @@ import HostEvaluation from './app/hostorg/HostEvaluation';
 import HostApplicants from './app/hostorg/HostApplicants';
 import PostVacancyScreen from './app/hostorg/PostVacancyScreen';
 import HostSettings from './app/hostorg/HostSettings';
+import HostInterns from './app/hostorg/HostInterns';
+import HostEditProfile from './app/hostorg/HostEditProfile';
+import InternDetailScreen from './app/hostorg/InternDetailScreen';
 
 // Custom drawer
 import CustomDrawerContent from './components/CustomDrawerContent';
@@ -141,7 +145,11 @@ function HostOrgDrawerNavigator({ route }) {
   return (
     <Drawer.Navigator
       drawerContent={(props) => (
-        <CustomDrawerContent {...props} org={orgData} onLogout={logout} />
+        <CustomDrawerContent
+          {...props}
+          org={orgData}
+          onLogout={() => confirmLogout(logout)}
+        />
       )}
       screenOptions={{
         headerShown: false,
@@ -149,13 +157,20 @@ function HostOrgDrawerNavigator({ route }) {
         overlayColor: 'rgba(0, 0, 0, 0.5)',
       }}
     >
-      <Drawer.Screen name="HostDashboard"  component={HostDashboard}      options={{ title: 'Dashboard'    }} />
-      <Drawer.Screen name="HostSlots"      component={HostSlots}          options={{ title: 'Vacancies'    }} />
-      <Drawer.Screen name="PostVacancy"    component={PostVacancyScreen}  options={{ title: 'Post Vacancy' }} />
-      <Drawer.Screen name="HostProfile"    component={HostProfile}        options={{ title: 'Profile'      }} />
-      <Drawer.Screen name="HostSettings"   component={HostSettings}       options={{ title: 'Settings'     }} />
-      <Drawer.Screen name="HostEvaluation" component={HostEvaluation}     options={{ title: 'Evaluation'   }} />
-      <Drawer.Screen name="HostApplicants" component={HostApplicants}     options={{ title: 'Applicants'   }} />
+      <Drawer.Screen name="HostDashboard"    component={HostDashboard}      options={{ title: 'Dashboard'    }} />
+      <Drawer.Screen name="HostSlots"        component={HostSlots}          options={{ title: 'Vacancies'    }} />
+      <Drawer.Screen name="PostVacancy"      component={PostVacancyScreen}  options={{ title: 'Post Vacancy' }} />
+      <Drawer.Screen name="HostProfile"      component={HostProfile}        options={{ title: 'Profile'      }} />
+      <Drawer.Screen
+        name="HostEditProfile"
+        component={HostEditProfile}
+        options={{ drawerItemStyle: { height: 0 }, title: 'Edit Profile' }}
+      />
+      <Drawer.Screen name="HostSettings"     component={HostSettings}       options={{ title: 'Settings'     }} />
+      <Drawer.Screen name="HostEvaluation"   component={HostEvaluation}     options={{ title: 'Evaluation'   }} />
+      <Drawer.Screen name="HostApplicants"   component={HostApplicants}     options={{ title: 'Applicants'   }} />
+      <Drawer.Screen name="HostInterns"      component={HostInterns}        options={{ title: 'Interns'      }} />
+      <Drawer.Screen name="InternDetail"     component={InternDetailScreen} options={{ title: 'Intern Detail' }} />
     </Drawer.Navigator>
   );
 }

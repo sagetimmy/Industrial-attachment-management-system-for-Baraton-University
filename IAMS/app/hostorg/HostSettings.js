@@ -28,15 +28,12 @@ const OUTLINE_SOFT = 'rgba(189, 201, 197, 0.4)';
 const TEXT = '#181D1B';
 const TEXT_SUB = '#6E7976';
 const ERROR = '#EF4444';
-const ACCENT = '#FEF3E8';
 
 const SETTINGS_KEY = 'iams_host_settings';
 const DEFAULT_SETTINGS = {
   autoRefresh: true,
   showAnalytics: true,
-  autoAcceptTopCandidates: false,
   vacancyExpiryNotifications: true,
-  aiMatchThreshold: 85,
 };
 
 const Storage = {
@@ -114,18 +111,6 @@ export default function HostSettings({ navigation }) {
     }
   };
 
-  const updateThreshold = async (value) => {
-    const nextValue = Math.max(50, Math.min(100, value));
-    const next = { ...settings, aiMatchThreshold: nextValue };
-    setSettings(next);
-    try {
-      await Storage.setItem(SETTINGS_KEY, JSON.stringify(next));
-    } catch (err) {
-      setSettings(settings);
-      Alert.alert('Error', 'Failed to update threshold.');
-    }
-  };
-
   const handleLogout = () => {
     Alert.alert('Logout', 'Are you sure you want to logout?', [
       { text: 'Cancel', style: 'cancel' },
@@ -149,8 +134,6 @@ export default function HostSettings({ navigation }) {
       </View>
     );
   }
-
-  const thresholdPercent = Math.round(((settings.aiMatchThreshold - 50) / 50) * 100);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -225,74 +208,15 @@ export default function HostSettings({ navigation }) {
         <SectionTitle icon="bullhorn" title="Recruitment Settings" />
         <View style={styles.card}>
           <ToggleRow
-            title="Auto-Accept Top Candidates"
-            subtitle="Automatically approve students above 95% AI match score"
-            value={settings.autoAcceptTopCandidates}
-            onValueChange={() => toggleSetting('autoAcceptTopCandidates')}
-          />
-          <Divider />
-          <ToggleRow
             title="Vacancy Expiry Notifications"
             subtitle="Get notified 3 days before a vacancy posting expires"
             value={settings.vacancyExpiryNotifications}
             onValueChange={() => toggleSetting('vacancyExpiryNotifications')}
           />
-          <Divider />
-          <View style={styles.sliderWrap}>
-            <View style={styles.sliderHeader}>
-              <Text style={styles.sliderTitle}>AI Match Threshold</Text>
-              <View style={styles.sliderChip}>
-                <Text style={styles.sliderChipText}>{settings.aiMatchThreshold}%</Text>
-              </View>
-            </View>
-            <View style={styles.sliderTrack}>
-              <View style={[styles.sliderFill, { width: `${thresholdPercent}%` }]} />
-            </View>
-            <View style={styles.sliderControls}>
-              <TouchableOpacity
-                style={styles.stepButton}
-                onPress={() => updateThreshold(settings.aiMatchThreshold - 5)}
-              >
-                <Text style={styles.stepText}>-</Text>
-              </TouchableOpacity>
-              <TextInput
-                style={styles.stepInput}
-                value={String(settings.aiMatchThreshold)}
-                onChangeText={(value) => {
-                  const parsed = Number(value.replace(/[^0-9]/g, ''));
-                  if (!Number.isFinite(parsed)) return;
-                  updateThreshold(parsed);
-                }}
-                keyboardType="number-pad"
-                maxLength={3}
-              />
-              <TouchableOpacity
-                style={styles.stepButton}
-                onPress={() => updateThreshold(settings.aiMatchThreshold + 5)}
-              >
-                <Text style={styles.stepText}>+</Text>
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.sliderHint}>
-              Candidates below this score won't appear in your priority list
-            </Text>
-          </View>
         </View>
 
         <SectionTitle icon="cog" title="App Settings" />
         <View style={styles.card}>
-          <RowButton
-            icon="shield-lock-outline"
-            title="Security & Authentication"
-            onPress={() => Alert.alert('Coming Soon', 'Security settings will be available soon.')}
-          />
-          <Divider />
-          <RowButton
-            icon="help-circle-outline"
-            title="Help Center"
-            onPress={() => Alert.alert('Help Center', 'Please contact your department for support.')}
-          />
-          <Divider />
           <RowButton
             icon="file-document-outline"
             title="Legal & Privacy Policy"
@@ -506,63 +430,6 @@ const styles = StyleSheet.create({
   toggleText: { flex: 1 },
   toggleTitle: { fontSize: 14, fontWeight: '600', color: TEXT },
   toggleSub: { fontSize: 12, color: TEXT_SUB, marginTop: 4 },
-  sliderWrap: {
-    marginTop: 6,
-    paddingTop: 6,
-    backgroundColor: ACCENT,
-    borderRadius: 12,
-    padding: 12,
-  },
-  sliderHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  sliderTitle: { fontSize: 14, fontWeight: '700', color: TEXT },
-  sliderChip: {
-    backgroundColor: PRIMARY_LIGHT,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-  },
-  sliderChipText: { color: PRIMARY, fontWeight: '700', fontSize: 12 },
-  sliderTrack: {
-    height: 8,
-    backgroundColor: PRIMARY_LIGHT,
-    borderRadius: 6,
-    marginTop: 10,
-    overflow: 'hidden',
-  },
-  sliderFill: {
-    height: 8,
-    backgroundColor: PRIMARY,
-    borderRadius: 6,
-  },
-  sliderControls: {
-    marginTop: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-  },
-  stepButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: PRIMARY,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepText: { color: '#fff', fontSize: 18, fontWeight: '700' },
-  stepInput: {
-    width: 60,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: OUTLINE_SOFT,
-    textAlign: 'center',
-    fontSize: 14,
-    fontWeight: '700',
-    color: TEXT,
-    backgroundColor: SURFACE,
-  },
-  sliderHint: { marginTop: 8, fontSize: 11, color: TEXT_SUB },
   logoutBtn: {
     marginTop: 24,
     marginHorizontal: 16,

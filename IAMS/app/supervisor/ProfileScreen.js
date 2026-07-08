@@ -53,6 +53,9 @@ export default function SupervisorProfileScreen({ navigation }) {
         email: user?.email || supervisorData.email || '',
         phone: user?.phone || supervisorData.phone || '',
         department: user?.department || supervisorData.department || '',
+        // TODO: confirm `staff_id` / `office` / `title` columns actually exist
+        // on the `supervisors` table — the dashboard route does `select('*')`
+        // so whatever's there will come through, but these were unverified.
         staff_id: supervisorData.staff_id || '',
         office: supervisorData.office || '',
         title: supervisorData.title || 'Supervisor',
@@ -61,12 +64,41 @@ export default function SupervisorProfileScreen({ navigation }) {
       });
 
       setStats({
-        activeStudents: data.active_students_count ?? data.stats?.active_students ?? 0,
-        reviewsPending: data.reviews_pending_count ?? data.stats?.reviews_pending ?? 0,
-        avgScore: data.average_score ?? data.stats?.average_score ?? 0,
+        activeStudents: data.stats?.activeStudents ?? 0,
+        reviewsPending: data.stats?.pendingLogs ?? 0,
+        // TODO: backend /supervisors/dashboard doesn't compute an average
+        // score yet. There's an `evaluations` table with a `score` column —
+        // this would need a supervisor-scoped aggregate added server-side
+        // (similar to how reports.js averages supervisor_score).
+        avgScore: 0,
       });
 
-      setStudents(data.recent_students || []);
+      // Backend returns ALL of this supervisor's students as `students`,
+      // not a pre-trimmed "recent" list — so we take the first 5 here.
+      const allStudents = data.students || [];
+      const pendingRegNumbers = new Set(
+        (data.pendingLogs || []).map((l) => l.reg_number).filter(Boolean)
+      );
+
+      const recentStudents = allStudents.slice(0, 5).map((s) => ({
+        id: s.attachment_id,
+        full_name: s.full_name,
+        // TODO: no dedicated "program" field comes back from /dashboard —
+        // using department as a stand-in until the backend adds one.
+        program: s.department || '',
+        // Derived from real data: a student has a pending (unreviewed)
+        // logbook entry if their reg_number shows up in pendingLogs.
+        status: pendingRegNumbers.has(s.reg_number) ? 'needs_review' : s.status,
+        // TODO: backend has no per-student progress % — would need something
+        // like (logbook entries submitted / expected weeks), similar to the
+        // logbook-completion report calc in reports.js.
+        progress: 0,
+        // TODO: /dashboard doesn't join avatar_url for students — falls back
+        // to initials until that's added.
+        photo_url: null,
+      }));
+
+      setStudents(recentStudents);
     } catch (err) {
       console.log('Profile fetch error:', err.message);
       setProfile({
@@ -130,7 +162,7 @@ export default function SupervisorProfileScreen({ navigation }) {
   };
 
   const handleLogout = () => confirmLogout(logout);
-  
+
   const profileData = profile || {
     full_name: user?.full_name || 'Supervisor',
     email: user?.email || '',
