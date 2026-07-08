@@ -10,6 +10,7 @@ import { useAuth } from '../../context/AuthContext';
 import api from '../../api/axios';
 import { useNotifications } from '../../hooks/useNotifications';
 import { hasRolePermission } from '../../utils/permissions';
+import { confirmLogout } from '../../utils/confirmLogout';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const TEAL = '#0F6E56';
@@ -98,10 +99,11 @@ export default function HostDashboard({ navigation }) {
 
   const handleLogout = () => {
     setMenuOpen(false);
-    Alert.alert('Logout', 'Are you sure you want to logout?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Logout', style: 'destructive', onPress: logout },
-    ]);
+    // Let the drawer Modal fully close before showing the confirm dialog —
+    // triggering it in the same tick as closing the Modal causes it to get
+    // silently dropped on native and blocked on web (window.confirm firing
+    // during another overlay's teardown).
+    setTimeout(() => confirmLogout(logout), 300);
   };
 
   const handleUpdateStatus = (attachmentId, studentName, newStatus) => {
