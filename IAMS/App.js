@@ -75,6 +75,7 @@ import HostSettings from './app/hostorg/HostSettings';
 import HostInterns from './app/hostorg/HostInterns';
 import HostEditProfile from './app/hostorg/HostEditProfile';
 import InternDetailScreen from './app/hostorg/InternDetailScreen';
+import VacancyPostedScreen from './app/hostorg/VacancyPostedScreen';
 
 // Custom drawer
 import CustomDrawerContent from './components/CustomDrawerContent';
@@ -175,6 +176,21 @@ function HostOrgDrawerNavigator({ route }) {
   );
 }
 
+// Wraps the drawer in a stack so screens like VacancyPosted can be pushed
+// on top without becoming a permanent drawer item.
+function HostOrgNavigator({ route }) {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen
+        name="HostOrgDrawer"
+        component={HostOrgDrawerNavigator}
+        initialParams={route.params}
+      />
+      <Stack.Screen name="VacancyPosted" component={VacancyPostedScreen} />
+    </Stack.Navigator>
+  );
+}
+
 // ── Root Navigator ────────────────────────────────────────────────────────────
 function RootNavigator() {
   const { user, loading } = useAuth();
@@ -240,7 +256,7 @@ function RootNavigator() {
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         <Stack.Screen
           name="HostOrgDrawer"
-          component={HostOrgDrawerNavigator}
+          component={HostOrgNavigator}
           initialParams={{ orgData: user }}
         />
         <Stack.Screen name="Notifications" component={NotificationsScreen} />

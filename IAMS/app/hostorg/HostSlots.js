@@ -15,9 +15,11 @@ const GRAY   = '#8899AA';
 
 const TABS = ['Active', 'Drafts', 'Closed'];
 
-// Maps tab label to vacancy status values from the API
+// Maps tab label to vacancy status values from the API.
+// 'open' is in Active because that's the status the backend inserts on
+// POST /host-orgs/vacancies.
 const TAB_STATUS = {
-  Active:  ['active', 'ongoing'],
+  Active:  ['active', 'ongoing', 'open'],
   Drafts:  ['draft'],
   Closed:  ['closed', 'filled'],
 };
@@ -48,12 +50,36 @@ export default function HostSlots({ navigation }) {
     }
   };
 
+  // A vacancy counts as expired once its deadline has passed, regardless
+  // of what its `status` column currently says (nothing auto-updates it
+  // on the backend yet).
+  const isExpired = (v) => {
+    if (!v.application_deadline) return false;
+    const deadline = new Date(v.application_deadline);
+    const today = new Date(new Date().toDateString()); // strip time
+    return deadline < today;
+  };
+
   // Filter by tab + search
   const filtered = vacancies.filter(v => {
-    const matchesTab = TAB_STATUS[activeTab]?.includes(v.status?.toLowerCase()) ?? true;
+    const status = v.status?.toLowerCase();
+    const expired = isExpired(v);
+
+    let matchesTab;
+    if (activeTab === 'Closed') {
+      // Explicitly closed/filled OR past its deadline
+      matchesTab = TAB_STATUS.Closed.includes(status) || expired;
+    } else if (activeTab === 'Active') {
+      // Active status AND not expired
+      matchesTab = TAB_STATUS.Active.includes(status) && !expired;
+    } else {
+      matchesTab = TAB_STATUS[activeTab]?.includes(status) ?? true;
+    }
+
     const matchesSearch = !search.trim() ||
-      v.title?.toLowerCase().includes(search.toLowerCase()) ||
+      (v.role_title || v.title || '').toLowerCase().includes(search.toLowerCase()) ||
       v.department?.toLowerCase().includes(search.toLowerCase());
+
     return matchesTab && matchesSearch;
   });
 
@@ -166,13 +192,16 @@ export default function HostSlots({ navigation }) {
               const avatars   = getAvatarSeeds(v);
               const extra     = getExtraCount(v);
               const appCount  = v.applicant_count ?? v.application_count ?? 0;
+              const expired   = isExpired(v);
 
               return (
                 <View key={v.vacancy_id ?? v.id ?? i} style={s.card}>
 
                   {/* Top row: title + applicant badge */}
                   <View style={s.cardTopRow}>
-                    <Text style={s.vacancyTitle} numberOfLines={2}>{v.title || 'Untitled'}</Text>
+                    <Text style={s.vacancyTitle} numberOfLines={2}>
+                      {v.role_title || v.title || 'Untitled'}
+                    </Text>
                     <View style={s.applicantBadge}>
                       <Text style={s.applicantBadgeIcon}>≡</Text>
                       <Text style={s.applicantBadgeCount}>{appCount}</Text>
@@ -182,6 +211,11 @@ export default function HostSlots({ navigation }) {
 
                   {/* Department */}
                   <Text style={s.department}>{v.department || v.description || '—'}</Text>
+
+                  {/* Expired flag, shown only in the Closed tab for deadline-expired items */}
+                  {activeTab === 'Closed' && expired && (
+                    <Text style={s.expiredTag}>EXPIRED — deadline passed</Text>
+                  )}
 
                   {/* Slots row */}
                   <View style={s.slotsRow}>
@@ -352,6 +386,12 @@ const s = StyleSheet.create({
   // department
   department: { fontSize: 13, color: GRAY, marginBottom: 14 },
 
+  // expired tag
+  expiredTag: {
+    fontSize: 11, fontWeight: '700', color: CORAL,
+    marginTop: -8, marginBottom: 12, letterSpacing: 0.3,
+  },
+
   // slots
   slotsRow: {
     flexDirection: 'row',
@@ -417,5 +457,3 @@ const s = StyleSheet.create({
   emptyTitle: { fontSize: 16, fontWeight: '800', color: '#333', marginBottom: 4 },
   emptyText: { fontSize: 13, color: GRAY, textAlign: 'center' },
 });
-
-

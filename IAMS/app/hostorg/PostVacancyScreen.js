@@ -124,7 +124,7 @@ export default function PostVacancyScreen({ navigation }) {
         requirements: filteredRequirements,
       });
 
-      await api.post('/host-orgs/vacancies', {
+      const res = await api.post('/host-orgs/vacancies', {
         role_title: roleTitle,
         department,
         available_slots: parseInt(availableSlots),
@@ -133,9 +133,8 @@ export default function PostVacancyScreen({ navigation }) {
         requirements: filteredRequirements,
       });
 
-      Alert.alert('Success! 🎉', 'Your vacancy has been posted successfully!', [
-        { text: 'OK', onPress: () => navigation.goBack() }
-      ]);
+      // Redirect straight into the success screen instead of an Alert
+      navigation.replace('VacancyPosted', { vacancy: res.data.vacancy });
     } catch (err) {
       console.error('Vacancy posting error:', err);
       console.error('Response data:', err.response?.data);

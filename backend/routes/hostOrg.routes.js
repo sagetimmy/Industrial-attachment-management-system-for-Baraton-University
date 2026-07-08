@@ -483,6 +483,41 @@ router.get('/vacancies', protect, async (req, res) => {
       .order('created_at', { ascending: false });
 
     if (error) throw error;
+
+    // ── Auto-close expired vacancies ──────────────────────────────────
+    // Vacancies are inserted with status 'open' and nothing ever flips
+    // them once their deadline passes. Before returning the list, close
+    // out any that are past their application_deadline but still marked
+    // open/active/ongoing, so `status` in the DB reflects reality for
+    // every screen that reads it — not just this one.
+    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    const expiredIds = (vacancies || [])
+      .filter(v =>
+        v.application_deadline &&
+        v.application_deadline < today &&
+        ['open', 'active', 'ongoing'].includes((v.status || '').toLowerCase())
+      )
+      .map(v => v.vacancy_id);
+
+    if (expiredIds.length) {
+      const { error: closeError } = await supabase
+        .from('vacancies')
+        .update({ status: 'closed' })
+        .in('vacancy_id', expiredIds);
+
+      if (closeError) {
+        // Don't fail the whole request over this — log it and still
+        // return the vacancies (frontend's own isExpired() check covers
+        // the display in the meantime).
+        console.error('Failed to auto-close expired vacancies:', closeError.message);
+      } else {
+        // Reflect the update in what we're about to send back
+        vacancies.forEach(v => {
+          if (expiredIds.includes(v.vacancy_id)) v.status = 'closed';
+        });
+      }
+    }
+
     res.json(vacancies || []);
   } catch (err) {
     res.status(500).json({ message: err.message });
