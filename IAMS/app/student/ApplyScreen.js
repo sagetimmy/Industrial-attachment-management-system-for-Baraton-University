@@ -11,6 +11,7 @@ import api, { requestWithRetry } from '../../api/axios';
 import { COLORS } from '../../constants/colors';
 import { hasRolePermission } from '../../utils/permissions';
 import Spinner from '../../components/Spinner';
+import { showAlert } from '../../utils/crossPlatformAlert';
 
 // ── Design accents (match IAMS design system used elsewhere in the app) ─────
 const TEAL       = '#1B7A65';
@@ -80,7 +81,7 @@ export default function ApplyScreen({ navigation }) {
       setLatestApplication(apps[0] || null);
     } catch (err) {
       console.error('Fetch error:', err);
-      Alert.alert('Error', 'Failed to load data');
+      showAlert('Error', 'Failed to load data');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -227,7 +228,7 @@ export default function ApplyScreen({ navigation }) {
       setDocuments((prev) => [...prev, ...picked]);
     } catch (err) {
       console.error('Document pick error:', err);
-      Alert.alert('Error', 'Failed to select document');
+      showAlert('Error', 'Failed to select document');
     }
   };
 
@@ -243,29 +244,29 @@ export default function ApplyScreen({ navigation }) {
 
   const validateStep1 = () => {
     if (!selectedOrg) {
-      Alert.alert('Error', 'Please select an organization');
+      showAlert('Error', 'Please select an organization');
       return false;
     }
     if (!selectedVacancy) {
-      Alert.alert('Error', 'Please select a vacancy to apply for');
+      showAlert('Error', 'Please select a vacancy to apply for');
       return false;
     }
     if ((selectedVacancy.available_slots || 0) === 0) {
-      Alert.alert('Error', 'This vacancy has no available slots');
+      showAlert('Error', 'This vacancy has no available slots');
       return false;
     }
     if (!fullName.trim()) {
-      Alert.alert('Error', 'Please enter your full name');
+      showAlert('Error', 'Please enter your full name');
       return false;
     }
     const normalizedStart = startDate.trim();
     const datePattern = /^\d{4}-\d{2}-\d{2}$/;
     if (!normalizedStart || !datePattern.test(normalizedStart)) {
-      Alert.alert('Error', 'Please enter a valid start date (YYYY-MM-DD)');
+      showAlert('Error', 'Please enter a valid start date (YYYY-MM-DD)');
       return false;
     }
     if (!parseDateFromInput(normalizedStart)) {
-      Alert.alert('Error', 'Please enter a valid calendar date');
+      showAlert('Error', 'Please enter a valid calendar date');
       return false;
     }
     return true;
@@ -273,7 +274,7 @@ export default function ApplyScreen({ navigation }) {
 
   const validateStep2 = () => {
     if (!skills.trim()) {
-      Alert.alert('Error', 'Please add your skills');
+      showAlert('Error', 'Please add your skills');
       return false;
     }
     return true;
@@ -295,11 +296,11 @@ export default function ApplyScreen({ navigation }) {
 
   const handleApply = async () => {
     if (!canSelfPlace) {
-      Alert.alert('Permission Disabled', 'Self-placement applications are currently disabled.');
+      showAlert('Permission Disabled', 'Self-placement applications are currently disabled.');
       return;
     }
     if (latestApplication && ['pending', 'more_info', 'accepted'].includes(latestApplication.status)) {
-      Alert.alert('Application Pending', 'You already have an application under review.');
+      showAlert('Application Pending', 'You already have an application under review.');
       return;
     }
     if (!validateStep1() || !validateStep2()) return;
@@ -310,11 +311,11 @@ export default function ApplyScreen({ navigation }) {
     const parsedStart = parseDateFromInput(normalizedStart);
     const parsedEnd = parseDateFromInput(normalizedEnd);
     if (!parsedEnd || !parsedStart || parsedEnd < parsedStart) {
-      Alert.alert('Error', 'End date must be after start date');
+      showAlert('Error', 'End date must be after start date');
       return;
     }
 
-    Alert.alert(
+    showAlert(
       'Confirm Application',
       `Apply to ${selectedOrg.org_name} — ${selectedVacancy.role_title}?`,
       [
@@ -352,7 +353,7 @@ export default function ApplyScreen({ navigation }) {
                 { retries: 3, baseDelay: 500 }
               );
 
-              Alert.alert(
+              showAlert(
                 'Application Submitted! 🎉',
                 `Your application to ${selectedOrg.org_name} has been submitted.`,
                 [{ text: 'OK', onPress: () => fetchData() }]
@@ -376,7 +377,7 @@ export default function ApplyScreen({ navigation }) {
                 (err.request && !err.response
                   ? 'Network error. Please check your connection.'
                   : 'Failed to submit application');
-              Alert.alert('Error', message);
+              showAlert('Error', message);
             } finally {
               setApplying(false);
             }
