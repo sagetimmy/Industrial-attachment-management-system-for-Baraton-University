@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, Alert, RefreshControl, TextInput,
+  ScrollView, Alert, RefreshControl, TextInput, Modal,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
@@ -66,6 +66,7 @@ export default function ApplyScreen({ navigation }) {
 
   const [currentStep, setCurrentStep] = useState(1);
   const [documents, setDocuments] = useState([]);
+  const [confirmVisible, setConfirmVisible] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -294,7 +295,12 @@ export default function ApplyScreen({ navigation }) {
     }
   };
 
-  const handleApply = async () => {
+  // Runs all validation, then opens the in-app confirm modal (does NOT
+  // touch the network). We deliberately avoid window.confirm()/Alert.alert
+  // here — native confirm dialogs are blocking and can hang the whole tab
+  // in some embedded/sandboxed browser contexts. A real React modal always
+  // renders reliably regardless of environment.
+  const handleApply = () => {
     if (!canSelfPlace) {
       showAlert('Permission Disabled', 'Self-placement applications are currently disabled.');
       return;
@@ -305,86 +311,82 @@ export default function ApplyScreen({ navigation }) {
     }
     if (!validateStep1() || !validateStep2()) return;
 
-    const normalizedStart = startDate.trim();
-    const normalizedEnd = endDate.trim();
-    const normalizedSkills = skills.trim();
-    const parsedStart = parseDateFromInput(normalizedStart);
-    const parsedEnd = parseDateFromInput(normalizedEnd);
+    const parsedStart = parseDateFromInput(startDate.trim());
+    const parsedEnd = parseDateFromInput(endDate.trim());
     if (!parsedEnd || !parsedStart || parsedEnd < parsedStart) {
       showAlert('Error', 'End date must be after start date');
       return;
     }
 
-    showAlert(
-      'Confirm Application',
-      `Apply to ${selectedOrg.org_name} — ${selectedVacancy.role_title}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Apply',
-          onPress: async () => {
-            setApplying(true);
-            try {
-              const formData = new FormData();
-              formData.append('org_id', selectedOrg.org_id);
-              formData.append('vacancy_id', selectedVacancy.vacancy_id);
-              formData.append('full_name', fullName.trim());
-              formData.append('reg_number', regNumber.trim());
-              formData.append('course', course.trim());
-              formData.append('year_of_study', String(yearOfStudy));
-              formData.append('start_date', normalizedStart);
-              formData.append('end_date', normalizedEnd);
-              formData.append('skills', normalizedSkills);
-              if (supportingInfo.trim()) {
-                formData.append('supporting_info', supportingInfo.trim());
-              }
-              documents.forEach((doc) => {
-                formData.append('documents', {
-                  uri: doc.uri,
-                  name: doc.name,
-                  type: doc.mimeType || 'application/octet-stream',
-                });
-              });
+    setConfirmVisible(true);
+  };
 
-              const res = await requestWithRetry(
-                () => api.post('/applications', formData, {
-                  headers: { 'Content-Type': 'multipart/form-data' },
-                }),
-                { retries: 3, baseDelay: 500 }
-              );
+  // Actually submits the application. Triggered by the "Apply" button
+  // inside the in-app confirm modal.
+  const submitApplication = async () => {
+    setConfirmVisible(false);
+    setApplying(true);
+    try {
+      const normalizedStart = startDate.trim();
+      const normalizedEnd = endDate.trim();
+      const normalizedSkills = skills.trim();
 
-              showAlert(
-                'Application Submitted! 🎉',
-                `Your application to ${selectedOrg.org_name} has been submitted.`,
-                [{ text: 'OK', onPress: () => fetchData() }]
-              );
-              setSelectedOrg(null);
-              setSelectedVacancy(null);
-              setStartDate('');
-              setEndDate('');
-              setSkills('');
-              setSupportingInfo('');
-              setDuration('3');
-              setDocuments([]);
-              setCurrentStep(1);
-              if (res?.data?.application) {
-                setLatestApplication(res.data.application);
-                setApplications((prev) => [res.data.application, ...prev]);
-              }
-            } catch (err) {
-              console.error('Apply failed:', err);
-              const message = err.response?.data?.message ||
-                (err.request && !err.response
-                  ? 'Network error. Please check your connection.'
-                  : 'Failed to submit application');
-              showAlert('Error', message);
-            } finally {
-              setApplying(false);
-            }
-          }
-        }
-      ]
-    );
+      const formData = new FormData();
+      formData.append('org_id', selectedOrg.org_id);
+      formData.append('vacancy_id', selectedVacancy.vacancy_id);
+      formData.append('full_name', fullName.trim());
+      formData.append('reg_number', regNumber.trim());
+      formData.append('course', course.trim());
+      formData.append('year_of_study', String(yearOfStudy));
+      formData.append('start_date', normalizedStart);
+      formData.append('end_date', normalizedEnd);
+      formData.append('skills', normalizedSkills);
+      if (supportingInfo.trim()) {
+        formData.append('supporting_info', supportingInfo.trim());
+      }
+      documents.forEach((doc) => {
+        formData.append('documents', {
+          uri: doc.uri,
+          name: doc.name,
+          type: doc.mimeType || 'application/octet-stream',
+        });
+      });
+
+      const res = await requestWithRetry(
+        () => api.post('/applications', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        }),
+        { retries: 3, baseDelay: 500 }
+      );
+
+      showAlert(
+        'Application Submitted! 🎉',
+        `Your application to ${selectedOrg.org_name} has been submitted.`,
+        [{ text: 'OK', onPress: () => fetchData() }]
+      );
+      setSelectedOrg(null);
+      setSelectedVacancy(null);
+      setStartDate('');
+      setEndDate('');
+      setSkills('');
+      setSupportingInfo('');
+      setDuration('3');
+      setDocuments([]);
+      setCurrentStep(1);
+      if (res?.data?.application) {
+        setLatestApplication(res.data.application);
+        setApplications((prev) => [res.data.application, ...prev]);
+      }
+    } catch (err) {
+      console.error('Apply failed:', err);
+      const message = err.response?.data?.message ||
+        (err.request && !err.response
+          ? 'Network error. Please check your connection.'
+          : 'Failed to submit application');
+      showAlert('Error', message);
+    } finally {
+      setApplying(false);
+    }
   };
 
   const onRefresh = () => {
@@ -893,6 +895,37 @@ export default function ApplyScreen({ navigation }) {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* ===== In-app confirm modal (replaces native window.confirm) ===== */}
+      <Modal
+        visible={confirmVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setConfirmVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: theme.surface }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>Confirm Application</Text>
+            <Text style={[styles.modalMessage, { color: theme.textSecondary }]}>
+              Apply to {selectedOrg?.org_name} — {selectedVacancy?.role_title}?
+            </Text>
+            <View style={styles.modalButtonRow}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalCancelButton]}
+                onPress={() => setConfirmVisible(false)}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalConfirmButton]}
+                onPress={submitApplication}
+              >
+                <Text style={styles.modalConfirmText}>Apply</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1082,4 +1115,33 @@ const styles = StyleSheet.create({
   slotBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   slotBadgeText: { fontSize: 11, fontWeight: '700' },
   slotAction: { fontSize: 11, fontWeight: '800' },
+
+  // In-app confirm modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 36, 25, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: 20,
+    padding: 24,
+  },
+  modalTitle: { fontSize: 18, fontWeight: '800', marginBottom: 8 },
+  modalMessage: { fontSize: 14, lineHeight: 20, marginBottom: 24 },
+  modalButtonRow: { flexDirection: 'row', gap: 12 },
+  modalButton: {
+    flex: 1,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalCancelButton: { backgroundColor: DISABLED_BG },
+  modalCancelText: { fontSize: 15, fontWeight: '700', color: GRAY },
+  modalConfirmButton: { backgroundColor: TEAL_DARK },
+  modalConfirmText: { fontSize: 15, fontWeight: '700', color: '#FFFFFF' },
 });
