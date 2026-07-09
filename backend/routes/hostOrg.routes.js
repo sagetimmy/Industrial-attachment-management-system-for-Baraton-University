@@ -4,6 +4,7 @@ const multer = require('multer');
 const { protect } = require('../middleware/auth.middleware');
 const { getRolePermissions, requireRolePermission } = require('../utils/rolePermissions');
 const supabase = require('../config/db');
+const { notify } = require('../config/notify');
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -569,7 +570,7 @@ router.post('/vacancies', protect, requireRolePermission('postPlacements'), asyn
 
     const { data: org, error: orgError } = await supabase
       .from('host_organizations')
-      .select('org_id')
+      .select('org_id, org_name')
       .eq('user_id', req.user.user_id)
       .single();
 
@@ -608,6 +609,53 @@ router.post('/vacancies', protect, requireRolePermission('postPlacements'), asyn
     }
 
     console.log('Vacancy created successfully:', vacancy);
+
+    // Notify unplaced students (no active/pending attachment) about the new
+    // vacancy. Best-effort: the vacancy is already created successfully at
+    // this point, so a notification failure shouldn't fail the request —
+    // log and move on, same pattern used for evaluation notifications.
+    try {
+      const { data: placedAttachments, error: placedError } = await supabase
+        .from('attachments')
+        .select('student_id')
+        .not('status', 'in', '("rejected","completed")');
+
+      if (placedError) throw placedError;
+
+      const placedStudentIds = new Set((placedAttachments || []).map(a => a.student_id));
+
+      const { data: allStudents, error: studentsError } = await supabase
+        .from('students')
+        .select('student_id, user_id');
+
+      if (studentsError) throw studentsError;
+
+      const unplacedUserIds = (allStudents || [])
+        .filter(s => !placedStudentIds.has(s.student_id) && s.user_id)
+        .map(s => s.user_id);
+
+      if (unplacedUserIds.length) {
+        const message = `🆕 New vacancy posted: ${role_title} at ${org.org_name || 'a host organization'} — ${available_slots} slot(s) available.`;
+        const notificationRows = unplacedUserIds.map(user_id => ({
+          user_id,
+          message,
+          is_read: false,
+        }));
+
+        const { error: notifyError } = await supabase
+          .from('notifications')
+          .insert(notificationRows);
+
+        if (notifyError) {
+          console.error('Failed to insert vacancy notifications:', notifyError.message);
+        } else {
+          console.log(`Notified ${unplacedUserIds.length} unplaced student(s) of new vacancy ${vacancy.vacancy_id}`);
+        }
+      }
+    } catch (notifyErr) {
+      console.error('Failed to notify students of new vacancy:', notifyErr.message);
+    }
+
     res.status(201).json({ message: 'Vacancy posted successfully!', vacancy });
   } catch (err) {
     console.error('POST /vacancies error:', err);
