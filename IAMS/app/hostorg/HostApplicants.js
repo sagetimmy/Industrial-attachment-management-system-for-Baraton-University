@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
-  RefreshControl, ActivityIndicator, Alert, TextInput, TouchableOpacity,
+  RefreshControl, ActivityIndicator, TextInput, TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../../api/axios';
+import { showAlert } from '../../utils/crossPlatformAlert';
 
 const TEAL = '#0F6E56';
 const AMBER = '#BA7517';
@@ -40,7 +41,7 @@ export default function HostApplicants({ navigation }) {
       const res = await api.get('/applications');
       setApplications(res.data?.applications || []);
     } catch (err) {
-      Alert.alert('Error', err.response?.data?.message || 'Failed to load applicants');
+      showAlert('Error', err.response?.data?.message || 'Failed to load applicants');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -57,7 +58,7 @@ export default function HostApplicants({ navigation }) {
   const handleRespond = async (app, status) => {
     const message = (responses[app.application_id] || '').trim();
     if (!message) {
-      Alert.alert('Message required', 'Please include a response message for the student.');
+      showAlert('Message required', 'Please include a response message for the student.');
       return;
     }
 
@@ -70,9 +71,9 @@ export default function HostApplicants({ navigation }) {
           : item
       )));
       setResponses(prev => ({ ...prev, [app.application_id]: '' }));
-      Alert.alert('Response sent', 'Your response has been sent to the student.');
+      showAlert('Response sent', 'Your response has been sent to the student.');
     } catch (err) {
-      Alert.alert('Error', err.response?.data?.message || 'Failed to send response');
+      showAlert('Error', err.response?.data?.message || 'Failed to send response');
     } finally {
       setSubmittingId(null);
     }
@@ -117,6 +118,7 @@ export default function HostApplicants({ navigation }) {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         {sortedApplications.length === 0 ? (

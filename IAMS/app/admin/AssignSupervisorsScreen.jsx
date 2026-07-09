@@ -104,26 +104,24 @@ export default function AssignSupervisorsScreen({ navigation, route }) {
   const [assigning, setAssigning] = useState(false);
   const [search, setSearch] = useState('');
 
-  // Params passed in when navigating from the Attachment list (preselect a student)
-  // or from the Supervisor Directory's "Assign Student" action (preselect a supervisor)
   const preselectAttachmentId = route?.params?.attachmentId;
   const preselectSupervisorId = route?.params?.supervisorId;
 
   const fetchData = async () => {
     try {
-      console.log('Fetching unassigned attachments and supervisors');
       const [attRes, supRes] = await Promise.all([
         api.get('/admin/unassigned-attachments'),
         api.get('/admin/supervisors'),
       ]);
 
       const attData = Array.isArray(attRes.data) ? attRes.data : (attRes.data?.data || []);
-      const supData = Array.isArray(supRes.data) ? supRes.data : (supRes.data?.data || []);
+      // GET /admin/supervisors returns { supervisors, totals } — not a bare
+      // array and not { data: [...] } — so both previous fallbacks always
+      // missed it and silently left this list empty.
+      const supData = Array.isArray(supRes.data)
+        ? supRes.data
+        : (supRes.data?.supervisors || supRes.data?.data || []);
 
-      console.log('Unassigned attachments:', attData.length, attData);
-      console.log('Supervisors:', supData.length, supData);
-
-      // Defensive mapping to expected field names
       setAttachments(attData.map(a => ({
         attachment_id: a.attachment_id,
         student_name: a.student_name || a.students?.full_name || 'Unknown',
@@ -152,7 +150,6 @@ export default function AssignSupervisorsScreen({ navigation, route }) {
 
   useEffect(() => { fetchData(); }, []);
 
-  // Preselect a student if an attachmentId was passed in via navigation params
   useEffect(() => {
     if (preselectAttachmentId && attachments.length > 0) {
       const match = attachments.find(a => a.attachment_id === preselectAttachmentId);
@@ -160,7 +157,6 @@ export default function AssignSupervisorsScreen({ navigation, route }) {
     }
   }, [attachments, preselectAttachmentId]);
 
-  // Preselect a supervisor if a supervisorId was passed in (e.g. from Supervisor Directory)
   useEffect(() => {
     if (preselectSupervisorId && supervisors.length > 0) {
       const match = supervisors.find(s => s.supervisor_id === preselectSupervisorId);
@@ -218,7 +214,6 @@ export default function AssignSupervisorsScreen({ navigation, route }) {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerTop}>
           <TouchableOpacity onPress={() => navigation.goBack()}>
@@ -244,7 +239,6 @@ export default function AssignSupervisorsScreen({ navigation, route }) {
         contentContainerStyle={{ paddingBottom: 110 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchData(); }} />}
       >
-        {/* Step 1 */}
         <View style={styles.stepHeader}>
           <View style={styles.stepLeft}>
             <Text style={styles.stepIcon}>🎓</Text>
@@ -253,7 +247,6 @@ export default function AssignSupervisorsScreen({ navigation, route }) {
           <Text style={styles.stepBadge}>Step 1 of 2</Text>
         </View>
 
-        {/* Search */}
         <View style={styles.searchBar}>
           <Text style={styles.searchIcon}>🔍</Text>
           <TextInput
@@ -265,7 +258,6 @@ export default function AssignSupervisorsScreen({ navigation, route }) {
           />
         </View>
 
-        {/* Student List */}
         <View style={styles.listWrap}>
           {filteredAttachments.length === 0 ? (
             <View style={styles.emptyCard}>
@@ -285,7 +277,6 @@ export default function AssignSupervisorsScreen({ navigation, route }) {
           )}
         </View>
 
-        {/* Step 2 */}
         <View style={styles.stepHeader}>
           <View style={styles.stepLeft}>
             <Text style={styles.stepIcon}>📋</Text>
@@ -294,7 +285,6 @@ export default function AssignSupervisorsScreen({ navigation, route }) {
           <Text style={styles.stepBadge}>Step 2 of 2</Text>
         </View>
 
-        {/* Supervisor List */}
         <View style={styles.listWrap}>
           {supervisors.map((sup, i) => (
             <SupervisorCard
@@ -307,7 +297,6 @@ export default function AssignSupervisorsScreen({ navigation, route }) {
         </View>
       </ScrollView>
 
-      {/* Bottom CTA */}
       <View style={styles.bottomBar}>
         <TouchableOpacity
           style={[
@@ -332,8 +321,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F2F6F5' },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F2F6F5' },
   loadingText: { marginTop: 12, color: '#888', fontSize: 14 },
-
-  // Header
   header: {
     backgroundColor: '#fff',
     paddingTop: 52, paddingBottom: 20,
@@ -357,8 +344,6 @@ const styles = StyleSheet.create({
   placementLabel: { fontSize: 10, fontWeight: '700', color: '#1A6B5A', letterSpacing: 1.2, marginBottom: 4 },
   pageTitle: { fontSize: 26, fontWeight: '800', color: '#1A3A33', marginBottom: 4 },
   pageSubtitle: { fontSize: 13, color: '#7A9490', lineHeight: 18 },
-
-  // Steps
   stepHeader: {
     flexDirection: 'row', alignItems: 'center',
     justifyContent: 'space-between',
@@ -372,8 +357,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#E4F2EE', paddingHorizontal: 10,
     paddingVertical: 4, borderRadius: 20,
   },
-
-  // Search
   searchBar: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: '#fff', marginHorizontal: 16,
@@ -383,10 +366,7 @@ const styles = StyleSheet.create({
   },
   searchIcon: { fontSize: 16, marginRight: 8 },
   searchInput: { flex: 1, fontSize: 14, color: '#333' },
-
   listWrap: { paddingHorizontal: 16, gap: 10 },
-
-  // Student Card
   studentCard: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: '#fff', borderRadius: 16,
@@ -422,8 +402,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   statusPillText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
-
-  // Supervisor Card
   supCard: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: '#fff', borderRadius: 16,
@@ -451,8 +429,6 @@ const styles = StyleSheet.create({
   supCount: { alignItems: 'flex-end', marginLeft: 10 },
   supCountNum: { fontSize: 22, fontWeight: '800' },
   supCountLabel: { fontSize: 9, color: '#999', fontWeight: '600', textAlign: 'right', lineHeight: 13 },
-
-  // Bottom
   bottomBar: {
     position: 'absolute', bottom: 0,
     left: 0, right: 0,
@@ -468,7 +444,6 @@ const styles = StyleSheet.create({
   assignBtnDisabled: { backgroundColor: '#B0CECA' },
   assignBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
   assignNote: { textAlign: 'center', fontSize: 12, color: '#999', marginTop: 8 },
-
   emptyCard: {
     backgroundColor: '#fff', padding: 30,
     borderRadius: 16, alignItems: 'center', elevation: 1,
