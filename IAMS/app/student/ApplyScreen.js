@@ -53,6 +53,11 @@ export default function ApplyScreen({ navigation }) {
   const [applications, setApplications] = useState([]);
   const [latestApplication, setLatestApplication] = useState(null);
 
+  // ── Vacancy selection (within the chosen org) ──────────────────────────
+  const [orgVacancies, setOrgVacancies] = useState([]);
+  const [vacanciesLoading, setVacanciesLoading] = useState(false);
+  const [selectedVacancy, setSelectedVacancy] = useState(null);
+
   const [fullName, setFullName] = useState(user?.full_name || user?.name || '');
   const [regNumber, setRegNumber] = useState(user?.registration_number || user?.reg_no || '');
   const [course, setCourse] = useState(user?.course || user?.program || '');
@@ -83,6 +88,29 @@ export default function ApplyScreen({ navigation }) {
   };
 
   useEffect(() => { fetchData(); }, []);
+
+  // Fetch open vacancies whenever an org is selected, so the student can
+  // pick a specific role instead of applying to the org generically.
+  useEffect(() => {
+    if (!selectedOrg) {
+      setOrgVacancies([]);
+      return;
+    }
+    let cancelled = false;
+    setVacanciesLoading(true);
+    api.get(`/students/organizations/${selectedOrg.org_id}/vacancies`)
+      .then(res => {
+        if (!cancelled) setOrgVacancies(res.data || []);
+      })
+      .catch(err => {
+        console.error('Fetch vacancies error:', err);
+        if (!cancelled) setOrgVacancies([]);
+      })
+      .finally(() => {
+        if (!cancelled) setVacanciesLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [selectedOrg]);
 
   const dateInputPattern = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/;
   const normalizeDateInput = (value) => {
@@ -174,6 +202,7 @@ export default function ApplyScreen({ navigation }) {
     setDuration('3');
     setDocuments([]);
     setCurrentStep(1);
+    setSelectedVacancy(null);
   }, [selectedOrg]);
 
   const handlePickDocument = async () => {
@@ -217,8 +246,12 @@ export default function ApplyScreen({ navigation }) {
       Alert.alert('Error', 'Please select an organization');
       return false;
     }
-    if (selectedOrg.available_slots === 0) {
-      Alert.alert('Error', 'This organization has no available slots');
+    if (!selectedVacancy) {
+      Alert.alert('Error', 'Please select a vacancy to apply for');
+      return false;
+    }
+    if ((selectedVacancy.available_slots || 0) === 0) {
+      Alert.alert('Error', 'This vacancy has no available slots');
       return false;
     }
     if (!fullName.trim()) {
@@ -283,7 +316,7 @@ export default function ApplyScreen({ navigation }) {
 
     Alert.alert(
       'Confirm Application',
-      `Apply to ${selectedOrg.org_name}?`,
+      `Apply to ${selectedOrg.org_name} — ${selectedVacancy.role_title}?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -293,6 +326,7 @@ export default function ApplyScreen({ navigation }) {
             try {
               const formData = new FormData();
               formData.append('org_id', selectedOrg.org_id);
+              formData.append('vacancy_id', selectedVacancy.vacancy_id);
               formData.append('full_name', fullName.trim());
               formData.append('reg_number', regNumber.trim());
               formData.append('course', course.trim());
@@ -324,6 +358,7 @@ export default function ApplyScreen({ navigation }) {
                 [{ text: 'OK', onPress: () => fetchData() }]
               );
               setSelectedOrg(null);
+              setSelectedVacancy(null);
               setStartDate('');
               setEndDate('');
               setSkills('');
@@ -511,6 +546,63 @@ export default function ApplyScreen({ navigation }) {
                 </View>
               )}
             </View>
+
+            {/* ── Vacancy picker — only shown once an org is selected ── */}
+            {selectedOrg && (
+              <View style={styles.section}>
+                <Text style={[styles.sectionTitle, { color: theme.text }]}>Select a Vacancy</Text>
+                {vacanciesLoading ? (
+                  <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+                    <Spinner size="small" color={TEAL} />
+                  </View>
+                ) : orgVacancies.length === 0 ? (
+                  <View style={[styles.emptyCard, { backgroundColor: theme.background }]}>
+                    <Text style={styles.emptyIcon}>📭</Text>
+                    <Text style={[styles.emptyTitle, { color: theme.text }]}>No Open Vacancies</Text>
+                    <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+                      This organization has no open roles right now.
+                    </Text>
+                  </View>
+                ) : (
+                  orgVacancies.map((vacancy) => {
+                    const isSelected = selectedVacancy?.vacancy_id === vacancy.vacancy_id;
+                    return (
+                      <TouchableOpacity
+                        key={vacancy.vacancy_id}
+                        style={[
+                          styles.orgListItem,
+                          { backgroundColor: theme.surface },
+                          isSelected && { borderColor: TEAL, borderWidth: 2 }
+                        ]}
+                        onPress={() => setSelectedVacancy(vacancy)}
+                      >
+                        <View style={styles.orgListItemContent}>
+                          <View style={styles.orgAvatarSmall}>
+                            <MaterialCommunityIcons name="briefcase-outline" size={18} color={GRAY} />
+                          </View>
+                          <View style={styles.orgListItemInfo}>
+                            <Text style={[styles.orgListItemName, { color: theme.text }]}>{vacancy.role_title}</Text>
+                            <Text style={[styles.orgListItemLocation, { color: theme.textSecondary }]}>
+                              {vacancy.department}
+                            </Text>
+                          </View>
+                          <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                            <View style={[styles.slotBadge, { backgroundColor: '#E8F5E9' }]}>
+                              <Text style={[styles.slotBadgeText, { color: '#2E7D32' }]}>
+                                {vacancy.available_slots} SLOTS
+                              </Text>
+                            </View>
+                            <Text style={[styles.slotAction, { color: isSelected ? TEAL : ORANGE }]}>
+                              {isSelected ? 'SELECTED' : 'SELECT'}
+                            </Text>
+                          </View>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })
+                )}
+              </View>
+            )}
 
             <View style={styles.section}>
               <Text style={[styles.sectionTitle, { color: theme.text }]}>Application Form</Text>
@@ -750,6 +842,11 @@ export default function ApplyScreen({ navigation }) {
 
                 <Text style={[styles.reviewLabel, { marginTop: 12 }]}>ORGANIZATION</Text>
                 <Text style={[styles.reviewValue, { color: theme.text }]}>{selectedOrg?.org_name}</Text>
+
+                <Text style={[styles.reviewLabel, { marginTop: 12 }]}>VACANCY</Text>
+                <Text style={[styles.reviewValue, { color: theme.text }]}>
+                  {selectedVacancy?.role_title} · {selectedVacancy?.department}
+                </Text>
 
                 <Text style={[styles.reviewLabel, { marginTop: 12 }]}>ATTACHMENT PERIOD</Text>
                 <Text style={[styles.reviewValue, { color: theme.text }]}>

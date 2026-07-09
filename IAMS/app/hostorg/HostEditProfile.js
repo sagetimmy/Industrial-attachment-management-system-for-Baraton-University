@@ -32,9 +32,6 @@ const PALETTE = {
   labelGray: '#7A7A7A',
   textDark: '#1A1A1A',
   hintGray: '#8A8A8A',
-  slotsBg: '#FBEEDB',      // tan "how many students" card
-  slotsMaroon: '#7A3B12',
-  slotsHint: '#B8590A',
   permissionBg: '#FCEFD6',
   permissionTitle: '#7A3B12',
   permissionText: '#8A6D4C',
@@ -81,7 +78,6 @@ const HostEditProfile = ({ navigation, route }) => {
     location: '',
     contact_person: '',
     phone: '',
-    available_slots: 0,
   });
 
   const [errors, setErrors] = useState({});
@@ -93,7 +89,6 @@ const HostEditProfile = ({ navigation, route }) => {
         location: route.params.org.location || '',
         contact_person: route.params.org.contact_person || '',
         phone: route.params.org.phone || '',
-        available_slots: route.params.org.available_slots || 0,
       });
       setOrgLogoUrl(route.params.org.org_logo_url || null);
       // route.params only ever carries `org`, never `permissions`, so we
@@ -125,7 +120,6 @@ const HostEditProfile = ({ navigation, route }) => {
           location: response.data.org.location || '',
           contact_person: response.data.org.contact_person || '',
           phone: response.data.org.phone || '',
-          available_slots: response.data.org.available_slots || 0,
         });
         setOrgLogoUrl(response.data.org.org_logo_url || null);
       }
@@ -151,7 +145,6 @@ const HostEditProfile = ({ navigation, route }) => {
     if (!formData.location.trim()) newErrors.location = 'Location is required';
     if (!formData.contact_person.trim()) newErrors.contact_person = 'Contact person is required';
     if (!formData.phone.trim()) newErrors.phone = 'Phone number is required';
-    if (formData.available_slots < 0) newErrors.available_slots = 'Available slots cannot be negative';
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -172,7 +165,6 @@ const HostEditProfile = ({ navigation, route }) => {
         location: formData.location,
         contact_person: formData.contact_person,
         phone: formData.phone,
-        available_slots: parseInt(formData.available_slots),
       });
 
       Alert.alert('Success', 'Profile updated successfully!', [
@@ -381,34 +373,11 @@ const HostEditProfile = ({ navigation, route }) => {
           editable={!saving && canEditOrgProfile}
         />
 
-        {/* Available Slots */}
-        <View style={styles.slotsCard}>
-          <Text style={styles.slotsQuestion}>How many students can you accept for placement?</Text>
-          <View style={styles.slotsRow}>
-            <TextInput
-              style={[styles.slotsInput, errors.available_slots && styles.inputError]}
-              placeholder="0"
-              value={formData.available_slots.toString()}
-              onChangeText={value =>
-                handleInputChange('available_slots', value.replace(/[^0-9]/g, ''))
-              }
-              keyboardType="number-pad"
-              editable={!saving && canEditOrgProfile}
-            />
-            <Text style={styles.slotHint}>
-              💡 Each accepted student will decrease this count. You can increase it anytime.
-            </Text>
-          </View>
-          {errors.available_slots && (
-            <Text style={styles.errorText}>{errors.available_slots}</Text>
-          )}
-        </View>
-
         {/* Permission Disabled */}
         {!canEditOrgProfile && (
           <View style={styles.permissionCard}>
             <View style={styles.permissionTitleRow}>
-              <Ionicons name="warning-outline" size={18} color={PALETTE.slotsHint} />
+              <Ionicons name="warning-outline" size={18} color={PALETTE.permissionTitle} />
               <Text style={styles.permissionTitle}>Profile Editing Disabled</Text>
             </View>
             <Text style={styles.permissionText}>
@@ -584,42 +553,6 @@ const styles = StyleSheet.create({
     color: PALETTE.errorRed,
     fontSize: 12,
     marginTop: 6,
-  },
-  slotsCard: {
-    backgroundColor: PALETTE.slotsBg,
-    borderRadius: 16,
-    padding: 18,
-    marginBottom: 18,
-  },
-  slotsQuestion: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: PALETTE.slotsMaroon,
-    marginBottom: 14,
-  },
-  slotsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  slotsInput: {
-    width: 76,
-    backgroundColor: PALETTE.cardWhite,
-    borderWidth: 1,
-    borderColor: '#E3D2B8',
-    borderRadius: 10,
-    paddingVertical: 12,
-    textAlign: 'center',
-    fontSize: 16,
-    fontWeight: '600',
-    color: PALETTE.textDark,
-    marginRight: 14,
-  },
-  slotHint: {
-    flex: 1,
-    fontSize: 12.5,
-    color: PALETTE.slotsHint,
-    fontStyle: 'italic',
-    lineHeight: 18,
   },
   permissionCard: {
     backgroundColor: PALETTE.permissionBg,

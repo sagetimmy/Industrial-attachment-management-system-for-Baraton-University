@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
+import api from '../api/axios';
 
 const TEAL = '#0F6E56';
 const TEAL_LIGHT = '#de210c';
@@ -13,6 +14,21 @@ const AMBER_LIGHT = '#FAEEDA';
 export default function CustomDrawerContent({ navigation, org, onLogout }) {
   const { user } = useAuth();
   const [expandedSection, setExpandedSection] = useState(null);
+  const [availableSlots, setAvailableSlots] = useState(null);
+
+  // Fetched independently rather than reading org.available_slots — that
+  // field is the manually-typed host_organizations.available_slots value,
+  // which has no real connection to actual open vacancies.
+  // /host-orgs/available-slots sums slots across the org's currently open
+  // vacancy postings instead. Fetched here (not via the org prop) since
+  // this component only receives whatever org object its parent passed in.
+  useEffect(() => {
+    let mounted = true;
+    api.get('/host-orgs/available-slots')
+      .then(res => { if (mounted) setAvailableSlots(res.data?.available_slots ?? 0); })
+      .catch(() => { if (mounted) setAvailableSlots(null); });
+    return () => { mounted = false; };
+  }, []);
 
   const handleNavigation = (screenName, params = {}) => {
     navigation.navigate(screenName, params);
@@ -102,12 +118,12 @@ export default function CustomDrawerContent({ navigation, org, onLogout }) {
               </View>
             )}
 
-            {org?.available_slots !== undefined && (
+            {availableSlots !== null && (
               <View style={s.aboutRow}>
                 <Text style={s.aboutRowIcon}>💼</Text>
                 <View style={s.aboutRowContent}>
                   <Text style={s.aboutRowLabel}>Available Slots</Text>
-                  <Text style={s.aboutRowValue}>{org.available_slots} positions</Text>
+                  <Text style={s.aboutRowValue}>{availableSlots} positions</Text>
                 </View>
               </View>
             )}

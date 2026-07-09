@@ -96,9 +96,9 @@ router.get('/organizations', protect, async (req, res) => {
   try {
     console.log('Fetching approved organizations...');
 
-    const { data, error } = await supabase
+    const { data: orgs, error } = await supabase
       .from('host_organizations')
-      .select('org_id, org_name, location, contact_person, phone, available_slots, is_approved')
+      .select('org_id, org_name, location, contact_person, phone, is_approved')
       .eq('is_approved', true)
       .order('org_name', { ascending: true });
 
@@ -107,30 +107,84 @@ router.get('/organizations', protect, async (req, res) => {
       throw error;
     }
 
-    console.log('Approved organizations found:', data?.length || 0);
-    res.json(data || []);
+    // available_slots here now comes from summing each org's actual open
+    // vacancy postings, not the manually-typed host_organizations.
+    // available_slots field — that number had no real connection to what
+    // vacancies existed, so ApplyScreen could show "5 SLOTS" on an org with
+    // zero real open vacancies. Same approach as GET /host-orgs/available-slots.
+    const orgIds = (orgs || []).map(o => o.org_id).filter(Boolean);
+    let openSlotsMap = {};
+    if (orgIds.length) {
+      const { data: openVacancies, error: vacError } = await supabase
+        .from('vacancies')
+        .select('org_id, available_slots')
+        .in('org_id', orgIds)
+        .in('status', ['open', 'active', 'ongoing']);
+
+      if (vacError) {
+        console.error('Vacancies fetch error:', vacError);
+      } else {
+        (openVacancies || []).forEach(v => {
+          openSlotsMap[v.org_id] = (openSlotsMap[v.org_id] || 0) + (v.available_slots || 0);
+        });
+      }
+    }
+
+    const result = (orgs || []).map(o => ({
+      ...o,
+      available_slots: openSlotsMap[o.org_id] || 0,
+    }));
+
+    console.log('Approved organizations found:', result.length);
+    res.json(result);
   } catch (err) {
     console.error('GET /organizations error:', err.message);
     res.status(500).json({ message: err.message });
   }
 });
 
+// ─── GET /api/students/organizations/:orgId/vacancies ────────────────────────
+// Lists the open vacancies for a single org, so a student can pick a
+// specific role/vacancy to apply to instead of applying to the org
+// generically. Only vacancies with real remaining capacity are returned.
+router.get('/organizations/:orgId/vacancies', protect, async (req, res) => {
+  const { orgId } = req.params;
+
+  try {
+    const { data: vacancies, error } = await supabase
+      .from('vacancies')
+      .select('vacancy_id, role_title, department, available_slots, application_deadline, description, requirements, status')
+      .eq('org_id', orgId)
+      .in('status', ['open', 'active', 'ongoing'])
+      .gt('available_slots', 0)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    res.json(vacancies || []);
+  } catch (err) {
+    console.error('GET /organizations/:orgId/vacancies error:', err.message);
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // ─── POST /api/students/apply ──────────────────────────────────────────────
 router.post('/apply', protect, requireRolePermission('selfPlacement'), async (req, res) => {
-  const { org_id, start_date, end_date } = req.body;
+  const { org_id, vacancy_id, start_date, end_date } = req.body;
   const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const requestStart = Date.now();
 
   try {
     console.log(`[apply:${requestId}] request`, {
       org_id,
+      vacancy_id,
       start_date,
       end_date,
       user_id: req.user.user_id,
     });
 
-    if (!org_id || !start_date || !end_date) {
-      return res.status(400).json({ message: 'Organization ID, start date, and end date are required' });
+    if (!org_id || !vacancy_id || !start_date || !end_date) {
+      return res.status(400).json({ message: 'Organization, vacancy, start date, and end date are required' });
     }
 
     // Check for an active session before allowing application
@@ -146,6 +200,31 @@ router.post('/apply', protect, requireRolePermission('selfPlacement'), async (re
       });
     }
 
+    // Verify the vacancy exists, belongs to this org, is open, and still
+    // has capacity — a student could otherwise apply to a vacancy that
+    // filled up or closed between them viewing the list and submitting.
+    const { data: vacancy, error: vacError } = await supabase
+      .from('vacancies')
+      .select('vacancy_id, org_id, available_slots, status')
+      .eq('vacancy_id', vacancy_id)
+      .single();
+
+    if (vacError || !vacancy) {
+      return res.status(404).json({ message: 'Vacancy not found' });
+    }
+
+    if (String(vacancy.org_id) !== String(org_id)) {
+      return res.status(400).json({ message: 'Vacancy does not belong to the selected organization' });
+    }
+
+    if (!['open', 'active', 'ongoing'].includes((vacancy.status || '').toLowerCase())) {
+      return res.status(400).json({ message: 'This vacancy is no longer open' });
+    }
+
+    if ((vacancy.available_slots || 0) <= 0) {
+      return res.status(400).json({ message: 'This vacancy has no remaining slots' });
+    }
+
     const { data: student, error: sErr } = await supabase
       .from('students')
       .select('student_id, full_name, reg_number')
@@ -159,16 +238,17 @@ router.post('/apply', protect, requireRolePermission('selfPlacement'), async (re
 
     const { data: existing } = await supabase
       .from('attachments')
-      .select('attachment_id, org_id, start_date, end_date, status')
+      .select('attachment_id, org_id, vacancy_id, start_date, end_date, status')
       .eq('student_id', student.student_id)
       .not('status', 'in', '("rejected","completed")')
       .maybeSingle();
 
     if (existing) {
-      const sameOrg   = String(existing.org_id)    === String(org_id);
-      const sameStart = normalizeDate(existing.start_date) === normalizeDate(start_date);
-      const sameEnd   = normalizeDate(existing.end_date)   === normalizeDate(end_date);
-      if (sameOrg && sameStart && sameEnd) {
+      const sameOrg     = String(existing.org_id)     === String(org_id);
+      const sameVacancy = String(existing.vacancy_id) === String(vacancy_id);
+      const sameStart   = normalizeDate(existing.start_date) === normalizeDate(start_date);
+      const sameEnd      = normalizeDate(existing.end_date)   === normalizeDate(end_date);
+      if (sameOrg && sameVacancy && sameStart && sameEnd) {
         return res.status(200).json({
           message: 'Application already submitted.',
           attachment_id: existing.attachment_id,
@@ -183,6 +263,7 @@ router.post('/apply', protect, requireRolePermission('selfPlacement'), async (re
       .insert({
         student_id: student.student_id,
         org_id,
+        vacancy_id,
         start_date,
         end_date,
         status: 'pending'

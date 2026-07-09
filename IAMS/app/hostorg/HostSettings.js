@@ -50,6 +50,7 @@ const Storage = {
 export default function HostSettings({ navigation }) {
   const { user, logout } = useAuth();
   const [org, setOrg] = useState(null);
+  const [availableSlots, setAvailableSlots] = useState(0);
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [permissions, setPermissions] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -79,9 +80,18 @@ export default function HostSettings({ navigation }) {
 
   const fetchOrg = useCallback(async () => {
     try {
-      const res = await api.get('/host-orgs/dashboard');
-      setOrg(res.data?.org || null);
-      setPermissions(res.data?.permissions || null);
+      // available_slots is fetched separately from /host-orgs/available-slots
+      // rather than read off org.available_slots — that field is the
+      // manually-typed host_organizations.available_slots value, which has
+      // no real connection to actual open vacancies. /available-slots sums
+      // slots across the org's currently open vacancy postings instead.
+      const [dashboardRes, slotsRes] = await Promise.all([
+        api.get('/host-orgs/dashboard'),
+        api.get('/host-orgs/available-slots').catch(() => ({ data: { available_slots: 0 } })),
+      ]);
+      setOrg(dashboardRes.data?.org || null);
+      setPermissions(dashboardRes.data?.permissions || null);
+      setAvailableSlots(slotsRes.data?.available_slots ?? 0);
     } catch (err) {
       Alert.alert('Error', err.response?.data?.message || 'Failed to load organization details.');
       setOrg(null);
@@ -176,7 +186,7 @@ export default function HostSettings({ navigation }) {
             <InfoRow label="Location" value={org?.location || 'Not set'} />
             <InfoRow label="Contact Person" value={org?.contact_person || 'Not set'} />
             <InfoRow label="Phone" value={org?.phone || 'Not set'} />
-            <InfoRow label="Available Slots" value={String(org?.available_slots ?? 0)} />
+            <InfoRow label="Available Slots" value={String(availableSlots)} />
           </View>
 
           <View style={styles.fieldGroup}>

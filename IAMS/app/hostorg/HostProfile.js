@@ -40,12 +40,22 @@ const HostProfile = ({ navigation }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [org, setOrg] = useState(null);
   const [activeInterns, setActiveInterns] = useState(0);
+  const [availableSlots, setAvailableSlots] = useState(0);
 
   const fetchOrgData = useCallback(async () => {
     try {
-      const response = await api.get('/host-orgs/dashboard');
-      setOrg(response.data.org || null);
-      setActiveInterns(response.data.active_interns ?? 0);
+      // available_slots is fetched separately from /host-orgs/available-slots
+      // rather than read off org.available_slots — that field is the
+      // manually-typed host_organizations.available_slots value, which has
+      // no real connection to actual open vacancies. /available-slots sums
+      // slots across the org's currently open vacancy postings instead.
+      const [dashboardRes, slotsRes] = await Promise.all([
+        api.get('/host-orgs/dashboard'),
+        api.get('/host-orgs/available-slots').catch(() => ({ data: { available_slots: 0 } })),
+      ]);
+      setOrg(dashboardRes.data.org || null);
+      setActiveInterns(dashboardRes.data.active_interns ?? 0);
+      setAvailableSlots(slotsRes.data?.available_slots ?? 0);
     } catch (error) {
       Alert.alert('Error', 'Failed to load profile data');
       console.error(error);
@@ -82,7 +92,6 @@ const HostProfile = ({ navigation }) => {
   }
 
   const orgInitial = org?.org_name?.trim().charAt(0).toUpperCase() || '?';
-  const availableSlots = org?.available_slots ?? 0;
 
   const InfoRow = ({ icon, label, value }) => (
     <View style={styles.infoRow}>

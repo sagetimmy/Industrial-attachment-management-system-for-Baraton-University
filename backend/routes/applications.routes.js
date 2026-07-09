@@ -12,6 +12,7 @@ const APPLICATION_SCHEMA_COLUMNS = [
   'application_id',
   'student_id',
   'org_id',
+  'vacancy_id',
   'start_date',
   'end_date',
   'skills',
@@ -152,12 +153,13 @@ const getApplicationsForOrg = async (orgId) => {
   return result;
 };
 
-const createAttachmentFallback = async ({ student, org_id, start_date, end_date, skills, supporting_info }) => {
+const createAttachmentFallback = async ({ student, org_id, vacancy_id, start_date, end_date, skills, supporting_info }) => {
   const { data: attachment, error } = await supabase
     .from('attachments')
     .insert({
       student_id: student.student_id,
       org_id,
+      vacancy_id: vacancy_id || null,
       start_date,
       end_date,
       status: 'pending',
@@ -228,17 +230,41 @@ const uploadApplicationDocuments = async (studentId, files) => {
 // POST /api/applications
 router.post('/', protect, requireRolePermission('selfPlacement'), upload.array('documents', 5), async (req, res) => {
   const {
-    org_id, start_date, end_date, skills, supporting_info,
+    org_id, vacancy_id, start_date, end_date, skills, supporting_info,
     full_name, reg_number, course, year_of_study,
   } = req.body || {};
 
-  if (!org_id || !start_date || !end_date || !skills) {
-    return res.status(400).json({ message: 'Organization, start date, end date, and skills are required.' });
+  if (!org_id || !vacancy_id || !start_date || !end_date || !skills) {
+    return res.status(400).json({ message: 'Organization, vacancy, start date, end date, and skills are required.' });
   }
 
   try {
     const { student, error: sErr } = await getStudentByUserId(req.user.user_id);
     if (sErr || !student) return res.status(404).json({ message: 'Student not found' });
+
+    // Verify the vacancy exists, belongs to the org, is open, and still has
+    // capacity — the student's list could be stale by the time they submit.
+    const { data: vacancy, error: vacError } = await supabase
+      .from('vacancies')
+      .select('vacancy_id, org_id, available_slots, status')
+      .eq('vacancy_id', vacancy_id)
+      .single();
+
+    if (vacError || !vacancy) {
+      return res.status(404).json({ message: 'Vacancy not found' });
+    }
+
+    if (String(vacancy.org_id) !== String(org_id)) {
+      return res.status(400).json({ message: 'Vacancy does not belong to the selected organization' });
+    }
+
+    if (!['open', 'active', 'ongoing'].includes((vacancy.status || '').toLowerCase())) {
+      return res.status(400).json({ message: 'This vacancy is no longer open' });
+    }
+
+    if ((vacancy.available_slots || 0) <= 0) {
+      return res.status(400).json({ message: 'This vacancy has no remaining slots' });
+    }
 
     const { data: existingAttachment } = await supabase
       .from('attachments')
@@ -288,6 +314,7 @@ router.post('/', protect, requireRolePermission('selfPlacement'), upload.array('
       .insert({
         student_id: student.student_id,
         org_id,
+        vacancy_id,
         start_date,
         end_date,
         skills,
@@ -299,7 +326,7 @@ router.post('/', protect, requireRolePermission('selfPlacement'), upload.array('
       .single();
 
     if (incompatibleApplicationsSchema(error)) {
-      application = await createAttachmentFallback({ student, org_id, start_date, end_date, skills, supporting_info });
+      application = await createAttachmentFallback({ student, org_id, vacancy_id, start_date, end_date, skills, supporting_info });
       error = null;
     }
 
@@ -427,6 +454,13 @@ router.patch('/:id/respond', protect, async (req, res) => {
       return res.status(403).json({ message: 'Not authorized to respond to this application' });
     }
 
+    // Guard against double-response — without this, calling respond twice
+    // on an already-accepted application would decrement the vacancy's
+    // available_slots a second time for the same student.
+    if (['accepted', 'rejected'].includes(application.status)) {
+      return res.status(400).json({ message: `This application has already been ${application.status}.` });
+    }
+
     const { error: updateErr } = await updateApplicationById(application.application_id ?? application.id, {
       status,
       response_message: trimmedMessage,
@@ -437,6 +471,33 @@ router.patch('/:id/respond', protect, async (req, res) => {
 
     let attachmentCreated = false;
     if (status === 'accepted') {
+      // Decrement the specific vacancy's available_slots, if this
+      // application was tied to one (older applications predating the
+      // vacancy_id column won't have it — skip silently in that case
+      // rather than failing the acceptance).
+      if (application.vacancy_id) {
+        const { data: vacancy, error: vacFetchError } = await supabase
+          .from('vacancies')
+          .select('available_slots')
+          .eq('vacancy_id', application.vacancy_id)
+          .single();
+
+        if (vacFetchError) {
+          console.error('Vacancy lookup error during acceptance:', vacFetchError);
+        } else if (vacancy) {
+          const newSlots = Math.max(0, (vacancy.available_slots || 0) - 1);
+          const { error: vacUpdateError } = await supabase
+            .from('vacancies')
+            .update({ available_slots: newSlots })
+            .eq('vacancy_id', application.vacancy_id);
+
+          if (vacUpdateError) {
+            // Don't fail the whole acceptance over this — log and move on.
+            console.error('Failed to decrement vacancy available_slots:', vacUpdateError);
+          }
+        }
+      }
+
       const { data: existingAttachment } = await supabase
         .from('attachments')
         .select('attachment_id')
@@ -450,6 +511,7 @@ router.patch('/:id/respond', protect, async (req, res) => {
           .insert({
             student_id: application.student_id,
             org_id: application.org_id,
+            vacancy_id: application.vacancy_id || null,
             start_date: application.start_date,
             end_date: application.end_date,
             status: 'approved',

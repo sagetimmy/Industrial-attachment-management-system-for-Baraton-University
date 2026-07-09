@@ -115,8 +115,12 @@ export default function ManageAttachmentsScreen({ navigation }) {
         }));
       }
       fetchAttachments();
-    } catch {
-      Alert.alert('Error', 'Failed to update status');
+    } catch (err) {
+      // Surface the backend's specific message when present (e.g. "This
+      // vacancy has no remaining slots and cannot be approved") instead of
+      // a generic failure — this is a real business-rule rejection, not
+      // just a network/server error, and the admin needs to know why.
+      Alert.alert('Error', err.response?.data?.message || 'Failed to update status');
     }
   };
 

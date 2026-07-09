@@ -74,18 +74,23 @@ router.get('/dashboard', protect, async (req, res) => {
 
 // PUT /api/host-orgs/profile
 router.put('/profile', protect, requireRolePermission('editOrgProfile'), async (req, res) => {
-  const { org_name, location, contact_person, phone, available_slots } = req.body;
+  // NOTE: host_organizations.available_slots is intentionally ignored here,
+  // even if an older client build still sends it in req.body. It's been
+  // superseded by the vacancy-sum calculation in GET /available-slots,
+  // which sums available_slots across the org's currently open vacancies
+  // instead of trusting this manually-typed, easily-stale field. The
+  // column itself still exists in the DB for now — see
+  // migrations/2026xxxx_drop_host_organizations_available_slots.sql for
+  // the planned drop once we've confirmed nothing else reads it.
+  const { org_name, location, contact_person, phone } = req.body;
 
   if (!org_name || !location || !contact_person || !phone)
     return res.status(400).json({ message: 'All fields are required' });
 
-  if (available_slots < 0)
-    return res.status(400).json({ message: 'Available slots cannot be negative' });
-
   try {
     const { error } = await supabase
       .from('host_organizations')
-      .update({ org_name, location, contact_person, phone, available_slots })
+      .update({ org_name, location, contact_person, phone })
       .eq('user_id', req.user.user_id);
 
     if (error) throw error;
@@ -154,11 +159,28 @@ router.get('/available-slots', protect, async (req, res) => {
   try {
     const { data: org, error: orgError } = await supabase
       .from('host_organizations')
-      .select('org_id, available_slots')
+      .select('org_id')
       .eq('user_id', req.user.user_id)
       .single();
 
     if (orgError || !org) return res.status(404).json({ message: 'Organization not found' });
+
+    // "Available slots" now comes from actual open vacancies, not the
+    // manually-entered host_organizations.available_slots field — that
+    // number had no real connection to what vacancies exist, so it could
+    // say "20" while the org only had one open vacancy for 3 slots.
+    const { data: openVacancies, error: vacError } = await supabase
+      .from('vacancies')
+      .select('available_slots')
+      .eq('org_id', org.org_id)
+      .in('status', ['open', 'active', 'ongoing']);
+
+    if (vacError) throw vacError;
+
+    const availableSlots = (openVacancies || []).reduce(
+      (sum, v) => sum + (v.available_slots || 0),
+      0
+    );
 
     const { count, error: countError } = await supabase
       .from('attachments')
@@ -170,9 +192,9 @@ router.get('/available-slots', protect, async (req, res) => {
 
     const usedSlots = count || 0;
     res.json({
-      available_slots:  org.available_slots,
+      available_slots:  availableSlots,
       used_slots:       usedSlots,
-      total_capacity:   (org.available_slots || 0) + usedSlots,
+      total_capacity:   availableSlots + usedSlots,
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -411,6 +433,11 @@ router.get('/ongoing-attachments', protect, async (req, res) => {
 });
 
 // PUT /api/host-orgs/application/:attachmentId
+// NOTE: appears unused by the current app — HostApplicants.js calls
+// PATCH /applications/:id/respond instead (applications.routes.js), which
+// is the real live approve/reject flow. Left as-is rather than deleted in
+// case something else still calls it; worth confirming and removing if
+// truly dead.
 router.put('/application/:attachmentId', protect, async (req, res) => {
   const { attachmentId } = req.params;
   const { status } = req.body;

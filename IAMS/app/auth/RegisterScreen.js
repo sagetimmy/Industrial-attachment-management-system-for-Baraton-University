@@ -30,7 +30,7 @@ export default function RegisterScreen({ navigation }) {
     official_email: '', website: '', description: '',
     contact_person: '', contact_position: '',
     department_offering: '', roles_tasks: '',
-    required_skills: '', available_slots: '',
+    required_skills: '',
     attachment_duration: '', work_mode: 'onsite',
     internal_supervisor: '', supervisor_position: '',
     allowance: '', resources_provided: '',

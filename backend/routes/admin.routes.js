@@ -33,7 +33,42 @@ const countOrZero = (result, label) => {
   return Number.isFinite(result?.count) ? result.count : 0;
 };
 
+// Sums available_slots across each org's currently open vacancy postings.
+// Returns a map of org_id -> total open slots across its open/active/ongoing
+// vacancies. Used everywhere "vacancy_count"/"open_vacancies" is computed,
+// so admin views agree with the real vacancies table instead of the stale,
+// manually-typed host_organizations.available_slots field.
+const getOpenVacancySlotsByOrg = async (orgIds) => {
+  const slotsMap = {};
+  if (!orgIds || !orgIds.length) return slotsMap;
+
+  const { data: openVacancies, error } = await supabase
+    .from('vacancies')
+    .select('org_id, available_slots')
+    .in('org_id', orgIds)
+    .in('status', ['open', 'active', 'ongoing']);
+
+  if (error) {
+    console.error('getOpenVacancySlotsByOrg query failed:', error.message);
+    return slotsMap;
+  }
+
+  (openVacancies || []).forEach(v => {
+    slotsMap[v.org_id] = (slotsMap[v.org_id] || 0) + (v.available_slots || 0);
+  });
+
+  return slotsMap;
+};
+
 // Helper: update attachment status + notify student
+//
+// Also keeps vacancies.available_slots in sync: a slot is considered
+// "taken" the moment an attachment enters the "approved" status (the
+// earliest real commitment point — before a supervisor is even assigned
+// and status moves to "ongoing"), and is given back if an attachment
+// later moves out of "approved" (e.g. rejected). Skipped entirely when
+// attachment.vacancy_id is null, which only applies to a small number of
+// legacy attachments that predate the vacancy_id column.
 const updateAttachmentStatus = async (attachmentId, status, actor, ip) => {
   const normalized = String(status || '').toLowerCase();
   if (!VALID_STATUSES.includes(normalized))
@@ -41,12 +76,59 @@ const updateAttachmentStatus = async (attachmentId, status, actor, ip) => {
 
   const { data: att, error } = await supabase
     .from('attachments')
-    .select('student_id')
+    .select('student_id, status, vacancy_id')
     .eq('attachment_id', attachmentId)
     .single();
 
   if (error || !att)
     throw Object.assign(new Error('Attachment not found'), { statusCode: 404 });
+
+  const previousStatus = String(att.status || '').toLowerCase();
+
+  if (att.vacancy_id) {
+    const enteringApproved = normalized === 'approved' && previousStatus !== 'approved';
+    const leavingApproved  = previousStatus === 'approved' && normalized !== 'approved';
+
+    if (enteringApproved) {
+      const { data: current, error: fetchErr } = await supabase
+        .from('vacancies')
+        .select('available_slots')
+        .eq('vacancy_id', att.vacancy_id)
+        .single();
+
+      if (fetchErr) {
+        console.error('Vacancy lookup failed during approval:', fetchErr.message);
+      } else if ((current?.available_slots || 0) <= 0) {
+        throw Object.assign(
+          new Error('This vacancy has no remaining slots and cannot be approved'),
+          { statusCode: 400 }
+        );
+      } else {
+        const { error: updateError } = await supabase
+          .from('vacancies')
+          .update({ available_slots: current.available_slots - 1 })
+          .eq('vacancy_id', att.vacancy_id)
+          .gt('available_slots', 0);
+        if (updateError) console.error('Vacancy decrement failed:', updateError.message);
+      }
+    } else if (leavingApproved) {
+      const { data: current, error: fetchErr } = await supabase
+        .from('vacancies')
+        .select('available_slots')
+        .eq('vacancy_id', att.vacancy_id)
+        .single();
+
+      if (fetchErr) {
+        console.error('Vacancy lookup failed during un-approval:', fetchErr.message);
+      } else {
+        const { error: updateError } = await supabase
+          .from('vacancies')
+          .update({ available_slots: (current?.available_slots || 0) + 1 })
+          .eq('vacancy_id', att.vacancy_id);
+        if (updateError) console.error('Vacancy increment failed:', updateError.message);
+      }
+    }
+  }
 
   const { data: student } = await supabase
     .from('students')
@@ -307,12 +389,17 @@ router.get('/orgs', protect, authorize('admin'), async (req, res) => {
       });
     }
 
+    // vacancy_count now comes from summing each org's actual open vacancy
+    // postings, not the manually-typed host_organizations.available_slots
+    // field — that number had no real connection to what vacancies exist.
+    const openSlotsMap = await getOpenVacancySlotsByOrg(orgIds);
+
     const result = orgs.map(o => ({
       ...o,
       name:         o.org_name,
       email:        emailMap[o.user_id]                                              || null,
       intern_count: internCountMap[o.org_id]                                         || 0,
-      vacancy_count: Math.max((o.available_slots || 0) - (internCountMap[o.org_id] || 0), 0),
+      vacancy_count: Math.max((openSlotsMap[o.org_id] || 0) - (internCountMap[o.org_id] || 0), 0),
       sector:       null,  
       org_type:     null,   
     }));
@@ -325,18 +412,20 @@ router.get('/orgs', protect, authorize('admin'), async (req, res) => {
 });
 
 // ─── GET /api/admin/vacancies ──────────────────────────────────────────────
-// Derived, not a separate table: available_slots on host_organizations
-// minus how many students currently have an ongoing/approved attachment
-// there. Same math as /orgs, scoped to orgs that actually have an opening.
-// Optional ?orgId= scopes the list to a single org (used by the
-// "Vacancies" button on ManageOrgsScreen); omit it for the global view.
+// vacancy_count is each org's actual open vacancy postings (summed from the
+// vacancies table), minus how many students currently have an
+// ongoing/approved attachment there. Previously this was derived from the
+// manually-typed host_organizations.available_slots field, which had no
+// real connection to what vacancies existed. Optional ?orgId= scopes the
+// list to a single org (used by the "Vacancies" button on
+// ManageOrgsScreen); omit it for the global view.
 router.get('/vacancies', protect, authorize('admin'), async (req, res) => {
   try {
     const { orgId } = req.query;
 
     let query = supabase
       .from('host_organizations')
-      .select('org_id, org_name, location, contact_person, phone, available_slots, is_approved')
+      .select('org_id, org_name, location, contact_person, phone, is_approved')
       .eq('is_approved', true)
       .order('org_name', { ascending: true });
 
@@ -360,17 +449,20 @@ router.get('/vacancies', protect, authorize('admin'), async (req, res) => {
       });
     }
 
+    const openSlotsMap = await getOpenVacancySlotsByOrg(orgIds);
+
     const vacancies = orgs
       .map(o => {
-        const intern_count  = internCountMap[o.org_id] || 0;
-        const vacancy_count = Math.max((o.available_slots || 0) - intern_count, 0);
+        const intern_count   = internCountMap[o.org_id] || 0;
+        const available_slots = openSlotsMap[o.org_id] || 0;
+        const vacancy_count   = Math.max(available_slots - intern_count, 0);
         return {
           org_id:          o.org_id,
           org_name:        o.org_name,
           location:        o.location,
           contact_person:  o.contact_person,
           phone:           o.phone,
-          available_slots: o.available_slots || 0,
+          available_slots,
           intern_count,
           vacancy_count,
         };
@@ -545,7 +637,11 @@ router.get('/org-details/:id', protect, authorize('admin'), async (req, res) => 
       ? Math.round((completedCount / allAttachments.length) * 100)
       : null;
 
-    const open_vacancies = Math.max((org.available_slots || 0) - total_interns, 0);
+    // open_vacancies now comes from this org's actual open vacancy postings
+    // (summed from the vacancies table), minus current interns — not the
+    // manually-typed host_organizations.available_slots field.
+    const openSlotsMap = await getOpenVacancySlotsByOrg([org.org_id]);
+    const open_vacancies = Math.max((openSlotsMap[org.org_id] || 0) - total_interns, 0);
 
     // Attach student name + department for the placements list.
     const studentIds = allAttachments.map(a => a.student_id).filter(Boolean);

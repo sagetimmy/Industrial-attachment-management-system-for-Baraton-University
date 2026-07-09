@@ -52,6 +52,7 @@ export default function HostDashboard({ navigation }) {
   const { user, logout } = useAuth();
   const { unreadCount } = useNotifications();
   const [data, setData] = useState(null);
+  const [openVacancySlots, setOpenVacancySlots] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
@@ -59,8 +60,17 @@ export default function HostDashboard({ navigation }) {
 
   const fetchDashboard = async () => {
     try {
-      const res = await api.get('/host-orgs/dashboard');
-      setData(res.data);
+      // Fetched alongside the dashboard payload rather than reading
+      // org.available_slots off it — that field is the manually-typed
+      // host_organizations.available_slots value, which has no real
+      // connection to actual open vacancies. /available-slots sums slots
+      // across the org's currently open vacancy postings instead.
+      const [dashboardRes, slotsRes] = await Promise.all([
+        api.get('/host-orgs/dashboard'),
+        api.get('/host-orgs/available-slots').catch(() => ({ data: { available_slots: 0 } })),
+      ]);
+      setData(dashboardRes.data);
+      setOpenVacancySlots(slotsRes.data?.available_slots ?? 0);
     } catch (err) {
       Alert.alert('Error', err.response?.data?.message || 'Failed to load dashboard');
     } finally {
@@ -179,7 +189,7 @@ export default function HostDashboard({ navigation }) {
   const analyticsVisible = canViewAnalytics && settings.showAnalytics;
   const ongoingCount = data?.stats?.ongoing ?? activeStudents.length;
   const pendingCount = data?.stats?.pending ?? pendingApps.length;
-  const openVacancyCount = data?.org?.available_slots ?? 0;
+  const openVacancyCount = openVacancySlots;
   const avgRating = data?.org?.avg_rating ?? data?.stats?.avg_rating ?? null;
   const orgLogoUrl = data?.org?.logo_url ?? null;
   const orgName = data?.org?.org_name || 'Host Portal';

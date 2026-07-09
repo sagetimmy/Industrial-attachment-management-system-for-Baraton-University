@@ -120,7 +120,11 @@ export default function AddUserScreen({ navigation }) {
   const [orgName, setOrgName]           = useState('');
   const [location, setLocation]         = useState('');
   const [contactPerson, setContactPerson] = useState('');
-  const [availableSlots, setAvailableSlots] = useState('');
+  // NOTE: no `available_slots` field here — slot counts are derived from
+  // real vacancy postings (see admin.routes.js getOpenVacancySlotsByOrg),
+  // not manually typed at registration. A freshly-created host org has
+  // zero vacancies until one is added, so this screen no longer asks for
+  // or submits a number that would just disagree with the live sum.
 
   // ── Step 1: Create auth user ──────────────────────────────────────────────
   const handleCreateAuth = async () => {
@@ -175,7 +179,6 @@ export default function AddUserScreen({ navigation }) {
         org_name:      orgName.trim()      || undefined,
         location:      location.trim()     || undefined,
         contact_person: contactPerson.trim() || undefined,
-        available_slots: availableSlots ? parseInt(availableSlots, 10) : 0,
       });
 
       setStep(3);
@@ -217,7 +220,7 @@ export default function AddUserScreen({ navigation }) {
               setStep(1); setAuthId(null);
               setEmail(''); setPassword(''); setFullName(''); setRole('student');
               setRegNumber(''); setDepartment(''); setYearOfStudy(''); setPhone('');
-              setOrgName(''); setLocation(''); setContactPerson(''); setAvailableSlots('');
+              setOrgName(''); setLocation(''); setContactPerson('');
             }}
           >
             <Text style={styles.addAnotherText}>+ Add Another User</Text>
@@ -423,15 +426,6 @@ export default function AddUserScreen({ navigation }) {
                     placeholder="e.g. +254712345678"
                     keyboardType="phone-pad"
                     icon="call-outline"
-                    optional
-                  />
-                  <Field
-                    label="Available Intern Slots"
-                    value={availableSlots}
-                    onChangeText={setAvailableSlots}
-                    placeholder="e.g. 5"
-                    keyboardType="numeric"
-                    icon="people-outline"
                     optional
                   />
                 </>
