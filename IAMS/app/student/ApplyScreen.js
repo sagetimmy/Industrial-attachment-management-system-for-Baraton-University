@@ -420,6 +420,7 @@ export default function ApplyScreen({ navigation }) {
     <View style={[styles.container, { backgroundColor: theme.surface }]}>
       <ScrollView
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         contentContainerStyle={styles.scrollContent}
       >
@@ -668,7 +669,7 @@ export default function ApplyScreen({ navigation }) {
                       style={[styles.dateInput, { color: theme.text }]}
                       value={startDate}
                       onChangeText={handleStartDateChange}
-                      placeholder="mm/dd/yyyy"
+                      placeholder="YYYY-MM-DD"
                       placeholderTextColor={theme.textSecondary}
                       autoCapitalize="none"
                     />
@@ -683,7 +684,7 @@ export default function ApplyScreen({ navigation }) {
                       style={[styles.dateInput, { color: theme.text }]}
                       value={endDate}
                       onChangeText={handleEndDateChange}
-                      placeholder="mm/dd/yyyy"
+                      placeholder="YYYY-MM-DD"
                       placeholderTextColor={theme.textSecondary}
                       autoCapitalize="none"
                     />
