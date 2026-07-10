@@ -27,6 +27,9 @@ const DEFAULT_SETTINGS = {
   showAnalytics: true,
 };
 
+// Standard industrial attachment program length used for week display
+const STANDARD_ATTACHMENT_WEEKS = 12;
+
 const Storage = {
   getItem: async (key) => {
     if (Platform.OS === 'web') return localStorage.getItem(key);
@@ -60,11 +63,7 @@ export default function HostDashboard({ navigation }) {
 
   const fetchDashboard = async () => {
     try {
-      // Fetched alongside the dashboard payload rather than reading
-      // org.available_slots off it — that field is the manually-typed
-      // host_organizations.available_slots value, which has no real
-      // connection to actual open vacancies. /available-slots sums slots
-      // across the org's currently open vacancy postings instead.
+
       const [dashboardRes, slotsRes] = await Promise.all([
         api.get('/host-orgs/dashboard'),
         api.get('/host-orgs/available-slots').catch(() => ({ data: { available_slots: 0 } })),
@@ -109,10 +108,7 @@ export default function HostDashboard({ navigation }) {
 
   const handleLogout = () => {
     setMenuOpen(false);
-    // Let the drawer Modal fully close before showing the confirm dialog —
-    // triggering it in the same tick as closing the Modal causes it to get
-    // silently dropped on native and blocked on web (window.confirm firing
-    // during another overlay's teardown).
+
     setTimeout(() => confirmLogout(logout), 300);
   };
 
@@ -157,15 +153,25 @@ export default function HostDashboard({ navigation }) {
     return Math.max(0, Math.min(100, Math.round((elapsedMs / totalMs) * 100)));
   };
 
+  // Week display now always shows against the standard 12-week attachment
+  // program instead of a total derived from start/end dates (which could
+  // produce mismatched totals like "Week x of 14").
   const getWeekSummary = (application) => {
-    if (Number.isFinite(application?.current_week)) return `Week ${application.current_week}`;
+    if (Number.isFinite(application?.current_week)) {
+      const capped = Math.max(1, Math.min(STANDARD_ATTACHMENT_WEEKS, Math.round(application.current_week)));
+      return `Week ${capped} of ${STANDARD_ATTACHMENT_WEEKS}`;
+    }
     const start = application?.start_date ? new Date(application.start_date) : null;
-    const end = application?.end_date ? new Date(application.end_date) : null;
-    if (!start || !end || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) return null;
+    if (!start || Number.isNaN(start.getTime())) return null;
     const now = new Date();
-    const totalWeeks = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 7)));
-    const elapsedWeeks = Math.max(1, Math.min(totalWeeks, Math.ceil((now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 7))));
-    return `Week ${elapsedWeeks} of ${totalWeeks}`;
+    const elapsedWeeks = Math.max(
+      1,
+      Math.min(
+        STANDARD_ATTACHMENT_WEEKS,
+        Math.ceil((now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 7))
+      )
+    );
+    return `Week ${elapsedWeeks} of ${STANDARD_ATTACHMENT_WEEKS}`;
   };
 
   if (loading) {
@@ -198,7 +204,7 @@ export default function HostDashboard({ navigation }) {
     <SafeAreaView style={s.safeArea} edges={['top']}>
       <View style={s.root}>
 
-        {/* ── Drawer Modal ───────────────────────────────────── */}
+        {/* Drawer Modal  */}
         <Modal
           visible={menuOpen}
           transparent
