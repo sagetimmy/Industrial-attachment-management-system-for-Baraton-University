@@ -150,9 +150,31 @@ const sendSupervisorAssignmentEmail = async (email, supervisorName, studentName)
   console.log(`✅ Supervisor-assigned email sent to supervisor ${email}`);
 };
 
+// Sent to a student who hasn't submitted their logbook entry for the current week.
+const sendLogbookReminderEmail = async (email, studentName, weekNumber) => {
+  await sendBrevoEmail({
+    to: email,
+    subject: `IAMS — Week ${weekNumber} Logbook Reminder`,
+    htmlContent: emailShell(`Hello, ${studentName}! 👋`, `
+      <p style="color: #444;">
+        This is a friendly reminder that your <strong>Week ${weekNumber}</strong> logbook entry
+        is due today by <strong>11:59 PM</strong>.
+      </p>
+      <p style="color: #444;">
+        Please log in to IAMS and submit your entry to stay on track with your attachment requirements.
+      </p>
+      <p style="color: #888; font-size: 12px; text-align: center; margin-top: 24px;">
+        If you've already submitted this week's entry, you can disregard this reminder.
+      </p>
+    `),
+  });
+  console.log(`✅ Logbook reminder email sent to ${email}`);
+};
+
 module.exports = {
   sendVerificationEmail,
   sendPasswordResetEmail,
   sendStudentSupervisorAssignedEmail,
   sendSupervisorAssignmentEmail,
+  sendLogbookReminderEmail,
 };

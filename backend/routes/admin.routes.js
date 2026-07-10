@@ -1019,10 +1019,17 @@ router.get('/supervisors/:id', protect, authorize('admin'), async (req, res) => 
       (orgs || []).forEach(o => orgMap[o.org_id] = o.org_name);
     }
 
+    // Includes attachment_id (and attachment_status) so the admin
+    // StudentDetail screen — which needs an attachment_id to fetch full
+    // attachment info — can be navigated to directly from this list.
     const students = activeAttachments.map(a => ({
-      id:   a.student_id,
-      name: studentMap[a.student_id] || 'Unknown',
-      org:  orgMap[a.org_id] || 'Unassigned',
+      id:                a.student_id,
+      student_id:        a.student_id,
+      attachment_id:     a.attachment_id,
+      attachment_status: a.status,
+      name:              studentMap[a.student_id] || 'Unknown',
+      org:               orgMap[a.org_id] || 'Unassigned',
+      org_name:          orgMap[a.org_id] || 'Unassigned',
     }));
 
     // Pending reviews: logbook entries submitted by this supervisor's

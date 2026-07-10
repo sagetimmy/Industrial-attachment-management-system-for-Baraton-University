@@ -45,9 +45,8 @@ function ActionIcon({ name }) {
     'Assign Supervisor':  { name: 'account-arrow-right-outline' },
     'System Reports':     { name: 'chart-bar' },
     'Manage Users':       { name: 'account-group-outline' },
-    'Manage Orgs':        { name: 'office-building-outline' },
     'Settings':           { name: 'cog-outline' },
-    'Announcements':      { name: 'bullhorn-outline' },          // ← NEW
+    'Announcements':      { name: 'bullhorn-outline' },
   };
   const icon = icons[name] || { name: 'dots-horizontal' };
   return <MaterialCommunityIcons name={icon.name} size={28} color={TEAL} />;
@@ -70,7 +69,6 @@ function UserMenuPanel({ visible, user, onClose, onLogout, onAnnouncements }) {
           </View>
           <View style={styles.userMenuDivider} />
 
-          {/* ── NEW: Announcements menu item ── */}
           <TouchableOpacity
             style={styles.userMenuItem}
             onPress={() => { onClose(); onAnnouncements(); }}
@@ -290,13 +288,13 @@ export default function AdminDashboard({ navigation }) {
     },
   ];
 
-  // ── CHANGE: "Review Pending" renamed to "Manage Attachments" ──
+  // 'Manage Orgs' removed — orgs are managed via the 'Orgs' tab in the
+  // bottom tab bar instead, so this was a duplicate entry point.
   const quickActions = [
     { label: 'Manage\nAttachments', screen: 'ManageAttachments'   },
     { label: 'Assign\nSupervisor',  screen: 'AssignSupervisor'    },
     { label: 'System\nReports',     screen: 'Reports'             },
     { label: 'Manage\nUsers',       screen: 'ManageUsers'         },
-    { label: 'Manage\nOrgs',        screen: 'ManageOrgs'          },
     { label: 'Settings',            screen: 'Settings'            },
     { label: 'Announcements',       screen: 'AdminAnnouncements'  },
   ];
@@ -350,7 +348,6 @@ export default function AdminDashboard({ navigation }) {
     })),
   ];
 
-  // ── CHANGE: "Users" tab removed from bottom tab bar ──
   const tabs = [
     { label: 'Home',        icon: 'home',             active: true,  screen: null          },
     { label: 'Students',    icon: 'people-outline',   active: false, screen: 'Students'    },
@@ -371,7 +368,6 @@ export default function AdminDashboard({ navigation }) {
         onMarkRead={handleMarkRead}
       />
 
-      {/* ── CHANGE 2: onAnnouncements prop wired ── */}
       <UserMenuPanel
         visible={userMenuVisible}
         user={user}
@@ -755,7 +751,7 @@ const styles = StyleSheet.create({
   // User Menu Panel
   userMenuPanel: {
     backgroundColor: WHITE, borderRadius: 16,
-    width: width * 0.75, maxHeight: 300,      // ← slightly taller to fit new item
+    width: width * 0.75, maxHeight: 300,     
     marginTop: 60, marginRight: 12,
     elevation: 8, overflow: 'hidden',
   },

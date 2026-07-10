@@ -1,5 +1,6 @@
 const supabase = require('../config/db');
 const { notifyMany } = require('../config/notify');
+const { sendLogbookReminderEmail } = require('../config/mailer');
 
 const sendWeeklyReminders = async () => {
   console.log('--- Starting Weekly Logbook Reminders ---');
@@ -25,7 +26,7 @@ const sendWeeklyReminders = async () => {
 
     for (const attachment of attachments) {
       const startDate = new Date(attachment.start_date);
-      
+
       // Calculate week number: (today - start) / 7 days
       const diffTime = Math.abs(today - startDate);
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
@@ -50,28 +51,53 @@ const sendWeeklyReminders = async () => {
           reminders.push({
             user_id: attachment.students.user_id,
             week: currentWeek,
-            name: attachment.students.full_name
+            name: attachment.students.full_name,
           });
         }
       }
     }
 
-    // Send notifications in bulk
-    if (reminders.length > 0) {
-      console.log(`Sending reminders to ${reminders.length} students...`);
-      
-      // Group by week if needed, or just send general message
-      // For simplicity, sending individual messages via notifyMany if they are the same
-      // But since week numbers might differ, we'll do it in a loop or optimized way
-      for (const r of reminders) {
-        const message = `⚠️ Reminder: Your Weekly Logbook for Week ${r.week} is due today by 11:59 PM. Please ensure your entries are submitted.`;
-        await notifyMany([r.user_id], message);
-        console.log(`Reminder sent to ${r.name} (Week ${r.week})`);
-      }
-    } else {
+    if (reminders.length === 0) {
       console.log('All students have submitted their logbooks for this week.');
+      console.log('--- Weekly Logbook Reminders Completed ---');
+      return;
     }
 
+    console.log(`Sending reminders to ${reminders.length} students...`);
+
+    // Look up emails for everyone being reminded — students table only
+    // holds user_id, the actual login email lives on users.
+    const userIds = reminders.map(r => r.user_id);
+    let emailMap = {};
+    const { data: userRows, error: uErr } = await supabase
+      .from('users').select('user_id, email').in('user_id', userIds);
+    if (uErr) {
+      console.error('Failed to fetch reminder recipient emails:', uErr.message);
+    } else {
+      (userRows || []).forEach(u => { emailMap[u.user_id] = u.email; });
+    }
+
+    for (const r of reminders) {
+      const message = `⚠️ Reminder: Your Weekly Logbook for Week ${r.week} is due today by 11:59 PM. Please ensure your entries are submitted.`;
+
+      // In-app notification
+      await notifyMany([r.user_id], message);
+
+      // Actual email via Brevo — wrapped so one failed send doesn't stop
+      // the rest of the batch.
+      const email = emailMap[r.user_id];
+      if (email) {
+        try {
+          await sendLogbookReminderEmail(email, r.name || 'Student', r.week);
+        } catch (mailErr) {
+          console.error(`Failed to send reminder email to ${r.name} (${email}):`, mailErr.message);
+        }
+      } else {
+        console.warn(`No email on file for user_id ${r.user_id} (${r.name}) — skipped email reminder.`);
+      }
+
+      console.log(`Reminder sent to ${r.name} (Week ${r.week})`);
+    }
   } catch (err) {
     console.error('Weekly reminder task failed:', err.message);
   }

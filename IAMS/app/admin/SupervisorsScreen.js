@@ -69,7 +69,7 @@ function SupervisorCard({ supervisor, onManage, onAssign }) {
     ? supervisor.name.split(' ').filter(Boolean).map(w => w[0]).join('').toUpperCase().slice(0, 2)
     : '??';
 
-  const studentCount = supervisor.student_count ?? supervisor.assigned_students ?? 0;
+  const studentCount = supervisor.assigned_count ?? supervisor.student_count ?? supervisor.assigned_students ?? 0;
 
   return (
     <Pressable
@@ -214,15 +214,12 @@ export default function SupervisorsScreen({ navigation }) {
 
   const onRefresh = () => { setRefreshing(true); fetchSupervisors(); };
 
-  // ── CHANGE: "Manage" now routes into the new ManageSupervisorsScreen
-  // instead of SupervisorDetail.
+
   const handleManage = (supervisor) => {
     navigation.navigate('ManageSupervisors', { supervisor });
   };
 
-  // "Assign Student" routes into the existing AssignSupervisor
-  // screen (Step 2 pre-selects this supervisor) instead of the AssignStudent
-  // placeholder screen.
+
   const handleAssign = (supervisor) => {
     navigation.navigate('AssignSupervisor', {
       supervisorId: supervisor.user_id,

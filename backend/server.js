@@ -2,7 +2,9 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const cron = require('node-cron');
 const { generalLimiter } = require('./middleware/rateLimiter');
+const sendWeeklyReminders = require('./utils/weeklyreminders');
 
 const app = express();
 
@@ -44,3 +46,16 @@ const server = app.listen(PORT, HOST, () => console.log(`Server running on http:
 server.setTimeout(60000);
 server.keepAliveTimeout = 60000;
 server.headersTimeout = 65000;
+
+// ── Weekly logbook reminders: every Friday at 2:30 PM Africa/Nairobi time ──
+cron.schedule('30 14 * * 5', async () => {
+  console.log('[cron] Running weekly logbook reminders...');
+  try {
+    await sendWeeklyReminders();
+    console.log('[cron] Weekly logbook reminders completed.');
+  } catch (err) {
+    console.error('[cron] Weekly logbook reminders failed:', err);
+  }
+}, {
+  timezone: 'Africa/Nairobi'
+});
