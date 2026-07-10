@@ -8,7 +8,7 @@ import { COLORS } from '../../constants/colors';
 import api from '../../api/axios';
 import Spinner from '../../components/Spinner';
 
-const MAX_STUDENTS_PER_SUPERVISOR = 10;
+const MAX_STUDENTS_PER_SUPERVISOR = 15;
 
 function getInitials(name = '') {
   return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
