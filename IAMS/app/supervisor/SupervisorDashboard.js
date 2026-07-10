@@ -10,6 +10,7 @@ import { useAuth } from '../../context/AuthContext';
 import { COLORS } from '../../constants/colors';
 import api from '../../api/axios';
 import AnnouncementBanner from '../shared/AnnouncementBanner';
+import { useNotifications } from '../../hooks/useNotifications';
 
 function ProgressRing({ percent = 0, size = 52, color = '#0F6E56' }) {
   const safePercent = isNaN(percent) ? 0 : Math.min(100, Math.max(0, percent));
@@ -37,6 +38,7 @@ function ProgressRing({ percent = 0, size = 52, color = '#0F6E56' }) {
 export default function SupervisorDashboard({ navigation }) {
   const { width } = useWindowDimensions();
   const { user, logout } = useAuth();
+  const { unreadCount } = useNotifications();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -112,13 +114,28 @@ export default function SupervisorDashboard({ navigation }) {
           <Ionicons name="menu" size={22} color="#1A3A33" />
         </TouchableOpacity>
         <Text style={styles.topBarTitle}>Supervisor Dashboard</Text>
-        <TouchableOpacity onPress={() => navigation.navigate('Profile')}>
-          <View style={styles.profileIcon}>
-            <Text style={styles.profileInitial}>
-              {user?.full_name?.charAt(0).toUpperCase() || 'S'}
-            </Text>
-          </View>
-        </TouchableOpacity>
+        <View style={styles.topBarRight}>
+          <TouchableOpacity
+            style={styles.iconBtn}
+            onPress={() => navigation.navigate('Notifications')}
+          >
+            <Ionicons name="notifications-outline" size={22} color="#1A3A33" />
+            {unreadCount > 0 && (
+              <View style={styles.notifBadge}>
+                <Text style={styles.notifBadgeText}>
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => navigation.navigate('Profile')}>
+            <View style={styles.profileIcon}>
+              <Text style={styles.profileInitial}>
+                {user?.full_name?.charAt(0).toUpperCase() || 'S'}
+              </Text>
+            </View>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <Modal
@@ -342,6 +359,27 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(0,0,0,0.08)',
   },
   topBarTitle: { fontSize: 17, fontWeight: '600', color: '#111' },
+  topBarRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  iconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 0.5,
+    borderColor: 'rgba(0,0,0,0.08)',
+    position: 'relative',
+  },
+  notifBadge: {
+    position: 'absolute', right: -2, top: -2,
+    backgroundColor: '#D85A30',
+    borderRadius: 10, minWidth: 16, height: 16,
+    paddingHorizontal: 3,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: '#EEF4F1',
+  },
+  notifBadgeText: { color: '#fff', fontSize: 9, fontWeight: '700' },
   profileIcon: {
     width: 34, height: 34, borderRadius: 17,
     backgroundColor: '#0F6E56', justifyContent: 'center', alignItems: 'center',
