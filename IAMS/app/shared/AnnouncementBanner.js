@@ -1,8 +1,4 @@
-// components/AnnouncementBanner.js
-// Shared component — drop onto any role dashboard to show latest unread announcement.
-// Props:
-//   navigation — React Navigation prop, used to navigate to AnnouncementsScreen
-//   role       — 'student' | 'supervisor' | 'host' | 'admin'  (determines nav target)
+
 
 import React, { useEffect, useState, useCallback } from 'react';
 import {

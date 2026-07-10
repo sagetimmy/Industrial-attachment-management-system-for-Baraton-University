@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, Alert,
+  ScrollView, Alert, Modal,
   RefreshControl, TextInput,
 } from 'react-native';
 import { COLORS } from '../../constants/colors';
@@ -55,7 +55,7 @@ function StudentCard({ student, selected, onPress }) {
   );
 }
 
-function SupervisorCard({ supervisor, selected, onPress }) {
+function SupervisorCard({ supervisor, selected, onPress, onFullPress }) {
   const isSelected = selected?.supervisor_id === supervisor.supervisor_id;
   const assigned = supervisor.assigned_count ?? 0;
   const capColor = getCapacityColor(assigned, MAX_STUDENTS_PER_SUPERVISOR);
@@ -65,8 +65,8 @@ function SupervisorCard({ supervisor, selected, onPress }) {
   return (
     <TouchableOpacity
       style={[styles.supCard, isSelected && styles.supCardSelected, isFull && styles.supCardFull]}
-      onPress={() => !isFull && onPress(supervisor)}
-      activeOpacity={isFull ? 1 : 0.85}
+      onPress={() => (isFull ? onFullPress(supervisor) : onPress(supervisor))}
+      activeOpacity={0.85}
     >
       <View style={[styles.supInitialBox, { backgroundColor: isSelected ? '#1A6B5A' : '#E8F5F2' }]}>
         <Text style={[styles.supInitialText, { color: isSelected ? '#fff' : '#1A6B5A' }]}>
@@ -103,6 +103,8 @@ export default function AssignSupervisorsScreen({ navigation, route }) {
   const [selectedSupervisor, setSelectedSupervisor] = useState(null);
   const [assigning, setAssigning] = useState(false);
   const [search, setSearch] = useState('');
+  const [confirmVisible, setConfirmVisible] = useState(false);
+  const [fullNotice, setFullNotice] = useState(null);
 
   const preselectAttachmentId = route?.params?.attachmentId;
   const preselectSupervisorId = route?.params?.supervisorId;
@@ -169,38 +171,38 @@ export default function AssignSupervisorsScreen({ navigation, route }) {
     a.org_name?.toLowerCase().includes(search.toLowerCase())
   );
 
-  const handleAssign = () => {
+  const noAttachmentsAtAll = attachments.length === 0;
+  const noSearchMatches = attachments.length > 0 && filteredAttachments.length === 0;
+
+  const openConfirm = () => {
     if (!selectedAttachment || !selectedSupervisor) {
       Alert.alert('Incomplete', 'Please select both a student and a supervisor.');
       return;
     }
-    Alert.alert(
-      'Confirm Assignment',
-      `Assign ${selectedSupervisor.full_name} to ${selectedAttachment.student_name}?\n\nAn email notification will be sent to both parties.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Assign',
-          onPress: async () => {
-            setAssigning(true);
-            try {
-              await api.put('/admin/assign-supervisor', {
-                attachment_id: selectedAttachment.attachment_id,
-                supervisor_id: selectedSupervisor.supervisor_id,
-              });
-              Alert.alert('Success ✅', `${selectedSupervisor.full_name} assigned successfully!`);
-              setSelectedAttachment(null);
-              setSelectedSupervisor(null);
-              fetchData();
-            } catch {
-              Alert.alert('Error', 'Failed to assign supervisor');
-            } finally {
-              setAssigning(false);
-            }
-          },
-        },
-      ]
-    );
+    setConfirmVisible(true);
+  };
+
+  const handleFullPress = (supervisor) => {
+    setFullNotice(supervisor.full_name);
+  };
+
+  const confirmAssign = async () => {
+    setConfirmVisible(false);
+    setAssigning(true);
+    try {
+      await api.put('/admin/assign-supervisor', {
+        attachment_id: selectedAttachment.attachment_id,
+        supervisor_id: selectedSupervisor.supervisor_id,
+      });
+      Alert.alert('Success ✅', `${selectedSupervisor.full_name} assigned successfully!`);
+      setSelectedAttachment(null);
+      setSelectedSupervisor(null);
+      fetchData();
+    } catch (err) {
+      Alert.alert('Error', err.response?.data?.message || 'Failed to assign supervisor');
+    } finally {
+      setAssigning(false);
+    }
   };
 
   if (loading) {
@@ -216,7 +218,7 @@ export default function AssignSupervisorsScreen({ navigation, route }) {
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.headerTop}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.7}>
             <Text style={styles.backIcon}>←</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>IAMS Admin</Text>
@@ -259,11 +261,17 @@ export default function AssignSupervisorsScreen({ navigation, route }) {
         </View>
 
         <View style={styles.listWrap}>
-          {filteredAttachments.length === 0 ? (
+          {noAttachmentsAtAll ? (
             <View style={styles.emptyCard}>
               <Text style={styles.emptyIcon}>✅</Text>
               <Text style={styles.emptyTitle}>All Assigned!</Text>
               <Text style={styles.emptyText}>All active attachments have supervisors.</Text>
+            </View>
+          ) : noSearchMatches ? (
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyIcon}>🔍</Text>
+              <Text style={styles.emptyTitle}>No matches</Text>
+              <Text style={styles.emptyText}>No students match "{search}". Try a different search.</Text>
             </View>
           ) : (
             filteredAttachments.map((att, i) => (
@@ -292,6 +300,7 @@ export default function AssignSupervisorsScreen({ navigation, route }) {
               supervisor={sup}
               selected={selectedSupervisor}
               onPress={setSelectedSupervisor}
+              onFullPress={handleFullPress}
             />
           ))}
         </View>
@@ -303,7 +312,7 @@ export default function AssignSupervisorsScreen({ navigation, route }) {
             styles.assignBtn,
             (!selectedAttachment || !selectedSupervisor || assigning) && styles.assignBtnDisabled,
           ]}
-          onPress={handleAssign}
+          onPress={openConfirm}
           disabled={!selectedAttachment || !selectedSupervisor || assigning}
         >
           {assigning
@@ -313,6 +322,65 @@ export default function AssignSupervisorsScreen({ navigation, route }) {
         </TouchableOpacity>
         <Text style={styles.assignNote}>An email notification will be sent to both parties.</Text>
       </View>
+
+      {/* Custom confirm modal — Alert.alert with a multi-button actions array
+          doesn't reliably render on web, which is why the assign button
+          previously appeared to do nothing. Same pattern as confirmLogout. */}
+      <Modal
+        visible={confirmVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setConfirmVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Confirm Assignment</Text>
+            <Text style={styles.modalBody}>
+              Assign {selectedSupervisor?.full_name} to {selectedAttachment?.student_name}?
+              {'\n\n'}An email notification will be sent to both parties.
+            </Text>
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalBtnCancel]}
+                onPress={() => setConfirmVisible(false)}
+              >
+                <Text style={styles.modalBtnCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalBtnConfirm]}
+                onPress={confirmAssign}
+              >
+                <Text style={styles.modalBtnConfirmText}>Assign</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Full-capacity notice — gives feedback instead of a silent no-op tap */}
+      <Modal
+        visible={!!fullNotice}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setFullNotice(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>At Full Capacity</Text>
+            <Text style={styles.modalBody}>
+              {fullNotice} is already supervising the maximum of {MAX_STUDENTS_PER_SUPERVISOR} students.
+            </Text>
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalBtnConfirm, { flex: 1 }]}
+                onPress={() => setFullNotice(null)}
+              >
+                <Text style={styles.modalBtnConfirmText}>Got it</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -331,7 +399,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     justifyContent: 'space-between', marginBottom: 16,
   },
-  backIcon: { fontSize: 22, color: '#1A3A33', fontWeight: '700' },
+  backBtn: {
+    width: 38, height: 38, borderRadius: 12,
+    backgroundColor: '#F0F4F3',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  backIcon: { fontSize: 18, color: '#1A3A33', fontWeight: '700' },
   headerTitle: { fontSize: 20, fontWeight: '800', color: '#1A3A33' },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   bellIcon: { fontSize: 20 },
@@ -451,4 +524,24 @@ const styles = StyleSheet.create({
   emptyIcon: { fontSize: 36, marginBottom: 8 },
   emptyTitle: { fontSize: 16, fontWeight: '700', color: '#1A3A33' },
   emptyText: { fontSize: 13, color: '#888', marginTop: 4, textAlign: 'center' },
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(15,36,25,0.5)',
+    justifyContent: 'center', alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  modalCard: {
+    backgroundColor: '#fff', borderRadius: 18,
+    padding: 22, width: '100%', maxWidth: 380,
+  },
+  modalTitle: { fontSize: 17, fontWeight: '800', color: '#1A3A33', marginBottom: 8 },
+  modalBody: { fontSize: 14, color: '#555', lineHeight: 20, marginBottom: 20 },
+  modalActions: { flexDirection: 'row', gap: 10 },
+  modalBtn: {
+    flex: 1, paddingVertical: 12, borderRadius: 12,
+    alignItems: 'center',
+  },
+  modalBtnCancel: { backgroundColor: '#F0F2F1' },
+  modalBtnCancelText: { color: '#555', fontWeight: '700', fontSize: 14 },
+  modalBtnConfirm: { backgroundColor: '#1A6B5A' },
+  modalBtnConfirmText: { color: '#fff', fontWeight: '700', fontSize: 14 },
 });

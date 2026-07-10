@@ -3,6 +3,7 @@ const router = express.Router();
 const { protect, authorize } = require('../middleware/auth.middleware');
 const supabase = require('../config/db');
 const audit = require('../utils/audit');
+const { sendStudentSupervisorAssignedEmail, sendSupervisorAssignmentEmail } = require('../config/mailer');
 const {
   ROLE_PERMISSION_KEYS,
   pickRolePermissions,
@@ -1065,24 +1066,70 @@ router.put('/assign-supervisor', protect, authorize('admin'), async (req, res) =
       .from('attachments').select('student_id').eq('attachment_id', attachment_id).single();
 
     let studentUserId = null;
+    let studentName = null;
     if (att?.student_id) {
       const { data: student } = await supabase
-        .from('students').select('user_id').eq('student_id', att.student_id).single();
+        .from('students').select('user_id, full_name').eq('student_id', att.student_id).single();
       studentUserId = student?.user_id;
+      studentName = student?.full_name;
     }
 
     let supervisorName = null;
+    let supervisorUserId = null;
     if (supervisor_id) {
       const { data: sup } = await supabase
-        .from('supervisors').select('full_name').eq('supervisor_id', supervisor_id).single();
+        .from('supervisors').select('full_name, user_id').eq('supervisor_id', supervisor_id).single();
       supervisorName = sup?.full_name;
+      supervisorUserId = sup?.user_id;
     }
 
+    // Look up login emails for both parties — students/supervisors tables
+    // only hold user_id, the actual email lives on users.
+    let studentEmail = null;
+    let supervisorEmail = null;
+    const emailLookupIds = [studentUserId, supervisorUserId].filter(Boolean);
+    if (emailLookupIds.length) {
+      const { data: emailRows } = await supabase
+        .from('users').select('user_id, email').in('user_id', emailLookupIds);
+      (emailRows || []).forEach(u => {
+        if (u.user_id === studentUserId) studentEmail = u.email;
+        if (u.user_id === supervisorUserId) supervisorEmail = u.email;
+      });
+    }
+
+    // Previously only the student got an in-app notification — the
+    // supervisor got nothing, even though the frontend confirm modal
+    // promises "an email notification will be sent to both parties."
     if (studentUserId) {
       await supabase.from('notifications').insert({
         user_id: studentUserId,
         message: `A supervisor has been assigned to your attachment: ${supervisorName || 'Supervisor'}`,
       });
+    }
+
+    if (supervisorUserId) {
+      await supabase.from('notifications').insert({
+        user_id: supervisorUserId,
+        message: `You have been assigned as supervisor for: ${studentName || 'a student'}`,
+      });
+    }
+
+    // Actual emails via Brevo. Wrapped separately so a mail failure never
+    // rolls back the assignment itself or blocks the other party's email.
+    if (studentEmail) {
+      try {
+        await sendStudentSupervisorAssignedEmail(studentEmail, studentName || 'Student', supervisorName || 'Supervisor');
+      } catch (mailErr) {
+        console.error('Failed to send student assignment email:', mailErr.message);
+      }
+    }
+
+    if (supervisorEmail) {
+      try {
+        await sendSupervisorAssignmentEmail(supervisorEmail, supervisorName || 'Supervisor', studentName || 'Student');
+      } catch (mailErr) {
+        console.error('Failed to send supervisor assignment email:', mailErr.message);
+      }
     }
 
     await audit(
