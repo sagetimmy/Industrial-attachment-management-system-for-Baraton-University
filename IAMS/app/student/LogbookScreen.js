@@ -28,6 +28,18 @@ function formatDateLabel(dateStr) {
   };
 }
 
+// Due week is derived from the attachment start_date, not from how many
+// entries already exist — this keeps it correct even if a student skips
+// a week, and matches the server-side computeDueWeek in routes/student.js.
+function computeDueWeek(startDate) {
+  if (!startDate) return 1;
+  const start = new Date(startDate);
+  const now = new Date();
+  const diffDays = Math.floor((now - start) / (1000 * 60 * 60 * 24));
+  const week = Math.floor(diffDays / 7) + 1;
+  return week < 1 ? 1 : week;
+}
+
 export default function LogbookScreen({ navigation }) {
   const { user } = useAuth();
   const canEditLogbooks = hasRolePermission(user, 'editLogbooks');
@@ -46,6 +58,9 @@ export default function LogbookScreen({ navigation }) {
     challenges: '',
     hours_worked: '',
   });
+
+  const dueWeek = attachment ? computeDueWeek(attachment.start_date) : 1;
+  const dueWeekAlreadySubmitted = entries.some((e) => e.week_number === dueWeek);
 
   const fetchData = async () => {
     try {
@@ -85,13 +100,30 @@ export default function LogbookScreen({ navigation }) {
     }
   };
 
+  const openForm = () => {
+    if (!canEditLogbooks) {
+      Alert.alert('Permission Disabled', 'Logbook submissions are currently disabled for students.');
+      return;
+    }
+    if (dueWeekAlreadySubmitted) {
+      Alert.alert('Already Submitted', `You've already submitted your Week ${dueWeek} entry.`);
+      return;
+    }
+    setForm({ ...form, week_number: String(dueWeek) });
+    setShowForm(true);
+  };
+
   const handleSubmit = async () => {
     if (!canEditLogbooks) {
       Alert.alert('Permission Disabled', 'Logbook submissions are currently disabled for students.');
       return;
     }
 
-    if (!form.week_number || !form.description) {
+    // Recompute at submit time rather than trusting stale state, in case
+    // the form was left open across a week boundary.
+    const weekToSubmit = attachment ? computeDueWeek(attachment.start_date) : form.week_number;
+
+    if (!weekToSubmit || !form.description) {
       Alert.alert('Error', 'Week number and description are required');
       return;
     }
@@ -105,7 +137,7 @@ export default function LogbookScreen({ navigation }) {
     try {
       const buildFormData = () => {
         const formData = new FormData();
-        formData.append('week_number', form.week_number);
+        formData.append('week_number', weekToSubmit);
         formData.append('description', form.description);
         formData.append('tasks_done', form.tasks_done);
         formData.append('challenges', form.challenges);
@@ -243,28 +275,36 @@ export default function LogbookScreen({ navigation }) {
             <View style={s.attachCard}>
               <Text style={s.attachOrg}>{attachment.org_name}</Text>
               <Text style={s.attachDetails}>
-                Week {entries.length + 1} is next · {attachment.supervisor_name || 'No supervisor assigned'}
+                {dueWeekAlreadySubmitted
+                  ? `Week ${dueWeek} submitted · ${attachment.supervisor_name || 'No supervisor assigned'}`
+                  : `Week ${dueWeek} is due · ${attachment.supervisor_name || 'No supervisor assigned'}`}
               </Text>
             </View>
 
-            {!showForm && (
-              <TouchableOpacity style={s.newEntryBtn} onPress={() => setShowForm(true)}>
-                <Text style={s.newEntryBtnText}>+ Submit Week {entries.length + 1} Entry</Text>
+            {!showForm && !dueWeekAlreadySubmitted && (
+              <TouchableOpacity style={s.newEntryBtn} onPress={openForm}>
+                <Text style={s.newEntryBtnText}>+ Submit Week {dueWeek} Entry</Text>
               </TouchableOpacity>
+            )}
+
+            {!showForm && dueWeekAlreadySubmitted && (
+              <View style={s.attachCard}>
+                <Text style={s.attachDetails}>
+                  ✓ Week {dueWeek} entry already submitted. Next entry unlocks next week.
+                </Text>
+              </View>
             )}
 
             {showForm && (
               <View style={s.formCard}>
-                <Text style={s.formTitle}>Week {entries.length + 1} Entry</Text>
+                <Text style={s.formTitle}>Week {dueWeek} Entry</Text>
 
-                <Text style={s.label}>Week Number *</Text>
-                <TextInput
-                  style={s.input}
-                  placeholder="e.g. 1"
-                  value={form.week_number}
-                  onChangeText={(v) => setForm({ ...form, week_number: v })}
-                  keyboardType="numeric"
-                />
+                <Text style={s.label}>Week Number</Text>
+                <View style={s.input}>
+                  <Text style={{ fontSize: 14, color: '#333', fontWeight: '600' }}>
+                    Week {dueWeek}
+                  </Text>
+                </View>
 
                 <Text style={s.label}>Hours Worked This Week *</Text>
                 <TextInput
@@ -350,8 +390,8 @@ export default function LogbookScreen({ navigation }) {
             <Text style={s.emptyText}>
               Tap the button below to add a new entry.
             </Text>
-            {canEditLogbooks && attachment?.status === 'ongoing' && (
-              <TouchableOpacity style={s.addManuallyBtn} onPress={() => setShowForm(true)}>
+            {canEditLogbooks && attachment?.status === 'ongoing' && !dueWeekAlreadySubmitted && (
+              <TouchableOpacity style={s.addManuallyBtn} onPress={openForm}>
                 <Text style={s.addManuallyText}>ADD MANUALLY</Text>
               </TouchableOpacity>
             )}
@@ -421,8 +461,8 @@ export default function LogbookScreen({ navigation }) {
       </ScrollView>
 
       {/* FAB */}
-      {canEditLogbooks && attachment?.status === 'ongoing' && !showForm && (
-        <TouchableOpacity style={s.fab} onPress={() => setShowForm(true)}>
+      {canEditLogbooks && attachment?.status === 'ongoing' && !showForm && !dueWeekAlreadySubmitted && (
+        <TouchableOpacity style={s.fab} onPress={openForm}>
           <Text style={s.fabIcon}>+</Text>
         </TouchableOpacity>
       )}

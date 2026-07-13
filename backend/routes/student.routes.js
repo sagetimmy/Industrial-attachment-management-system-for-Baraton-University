@@ -7,11 +7,7 @@ const { notify } = require('../config/notify');
 const multer = require('multer');
 const path = require('path');
 
-// ─── File Upload Setup (Supabase Storage, in-memory buffer) ──────────────────
-// Switched from multer.diskStorage to memoryStorage because Railway's
-// filesystem is ephemeral — anything written to local disk is wiped on
-// every redeploy/restart. Files are uploaded to Supabase Storage instead,
-// same pattern as the profile-photos bucket.
+
 const storage = multer.memoryStorage();
 const upload = multer({
   storage,
@@ -24,11 +20,24 @@ const upload = multer({
   },
 });
 
-const LOGBOOK_BUCKET = 'logbook-documents'; // TODO: confirm this bucket exists in Supabase Storage
+const LOGBOOK_BUCKET = 'logbook-documents'; 
 
 const normalizeDate = (value) => (value ? String(value).slice(0, 10) : '');
 
-// ─── GET /api/students/active-session ────────────────────────────────────────
+// Computes the currently-due week number from an attachment's start_date.
+// Mirrors the frontend's computeDueWeek in LogbookScreen.js — kept here as
+// the source of truth since the server must never trust a client-supplied
+// week_number for gating purposes.
+const computeDueWeek = (startDate) => {
+  if (!startDate) return 1;
+  const start = new Date(startDate);
+  const now = new Date();
+  const diffDays = Math.floor((now - start) / (1000 * 60 * 60 * 24));
+  const week = Math.floor(diffDays / 7) + 1;
+  return week < 1 ? 1 : week;
+};
+
+// GET /api/students/active-session
 // Returns the currently ACTIVE attachment session or null.
 // Used by the student dashboard to gate attachment-related features.
 router.get('/active-session', protect, async (req, res) => {
@@ -52,7 +61,7 @@ router.get('/active-session', protect, async (req, res) => {
   }
 });
 
-// ─── GET /api/students/profile ──────────────────────────────────────────────
+// GET /api/students/profile
 router.get('/profile', protect, async (req, res) => {
   try {
     console.log('👤 Getting profile for user_id:', req.user.user_id);
@@ -91,7 +100,7 @@ router.get('/profile', protect, async (req, res) => {
   }
 });
 
-// ─── GET /api/students/organizations ────────────────────────────────────────
+// GET /api/students/organizations 
 router.get('/organizations', protect, async (req, res) => {
   try {
     console.log('Fetching approved organizations...');
@@ -108,10 +117,7 @@ router.get('/organizations', protect, async (req, res) => {
     }
 
     // available_slots here now comes from summing each org's actual open
-    // vacancy postings, not the manually-typed host_organizations.
-    // available_slots field — that number had no real connection to what
-    // vacancies existed, so ApplyScreen could show "5 SLOTS" on an org with
-    // zero real open vacancies. Same approach as GET /host-orgs/available-slots.
+    
     const orgIds = (orgs || []).map(o => o.org_id).filter(Boolean);
     let openSlotsMap = {};
     if (orgIds.length) {
@@ -143,10 +149,8 @@ router.get('/organizations', protect, async (req, res) => {
   }
 });
 
-// ─── GET /api/students/organizations/:orgId/vacancies ────────────────────────
+
 // Lists the open vacancies for a single org, so a student can pick a
-// specific role/vacancy to apply to instead of applying to the org
-// generically. Only vacancies with real remaining capacity are returned.
 router.get('/organizations/:orgId/vacancies', protect, async (req, res) => {
   const { orgId } = req.params;
 
@@ -201,8 +205,7 @@ router.post('/apply', protect, requireRolePermission('selfPlacement'), async (re
     }
 
     // Verify the vacancy exists, belongs to this org, is open, and still
-    // has capacity — a student could otherwise apply to a vacancy that
-    // filled up or closed between them viewing the list and submitting.
+    
     const { data: vacancy, error: vacError } = await supabase
       .from('vacancies')
       .select('vacancy_id, org_id, available_slots, status')
@@ -300,7 +303,7 @@ router.post('/apply', protect, requireRolePermission('selfPlacement'), async (re
   }
 });
 
-// ─── GET /api/students/my-attachment ────────────────────────────────────────
+//GET /api/students/my-attachment 
 router.get('/my-attachment', protect, async (req, res) => {
   try {
     console.log('📎 Fetching attachment for user_id:', req.user.user_id);
@@ -343,7 +346,7 @@ router.get('/my-attachment', protect, async (req, res) => {
       console.error('Organization query error:', orgError);
     }
 
-    // ── Supervisor lookup ────────────────────────────────────────────────
+    //  Supervisor lookup 
     let supervisor_name = null;
     let supervisor_phone = null;
 
@@ -380,7 +383,7 @@ router.get('/my-attachment', protect, async (req, res) => {
   }
 });
 
-// ─── POST /api/students/logbook ─────────────────────────────────────────────
+// POST /api/students/logbook 
 router.post('/logbook', protect, requireRolePermission('editLogbooks'), upload.single('document'), async (req, res) => {
   const { week_number, description, tasks_done, challenges, hours_worked } = req.body;
   const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -407,8 +410,7 @@ router.post('/logbook', protect, requireRolePermission('editLogbooks'), upload.s
       });
     }
 
-    // FIX: hours_worked is now a real, student-entered value instead of a
-    // derived count of newlines in tasks_done (which was almost always 1).
+  
     const parsedHours = Number(hours_worked);
     if (!hours_worked || Number.isNaN(parsedHours) || parsedHours <= 0) {
       return res.status(400).json({ message: 'A valid number of hours worked is required' });
@@ -426,13 +428,29 @@ router.post('/logbook', protect, requireRolePermission('editLogbooks'), upload.s
 
     const { data: attachment, error: aErr } = await supabase
       .from('attachments')
-      .select('attachment_id')
+      .select('attachment_id, start_date')
       .eq('student_id', student.student_id)
       .eq('status', 'ongoing')
       .maybeSingle();
 
     if (aErr || !attachment) {
       return res.status(400).json({ message: 'No active attachment found' });
+    }
+
+  
+    const dueWeek = computeDueWeek(attachment.start_date);
+    const submittedWeek = Number(week_number);
+
+    if (!week_number || Number.isNaN(submittedWeek)) {
+      return res.status(400).json({ message: 'A valid week number is required' });
+    }
+
+    if (submittedWeek !== dueWeek) {
+      return res.status(400).json({
+        message: submittedWeek < dueWeek
+          ? `Week ${submittedWeek} is already past due and can no longer be submitted.`
+          : `Week ${submittedWeek} is not due yet. The current due week is Week ${dueWeek}.`,
+      });
     }
 
     const { data: existing } = await supabase
@@ -453,7 +471,7 @@ router.post('/logbook', protect, requireRolePermission('editLogbooks'), upload.s
       return res.status(400).json({ message: 'A document file is required for logbook submission' });
     }
 
-    // ── Upload to Supabase Storage ─────────────────────────────────────────
+    // Upload to Supabase Storage
     const ext = path.extname(req.file.originalname).toLowerCase();
     const storagePath = `${attachment.attachment_id}/week-${week_number}-${Date.now()}${ext}`;
 
@@ -498,7 +516,7 @@ router.post('/logbook', protect, requireRolePermission('editLogbooks'), upload.s
   }
 });
 
-// ─── GET /api/students/logbook ──────────────────────────────────────────────
+//  GET /api/students/logbook 
 router.get('/logbook', protect, async (req, res) => {
   try {
     console.log('📓 Fetching logbook for user_id:', req.user.user_id);
@@ -551,7 +569,7 @@ router.get('/logbook', protect, async (req, res) => {
   }
 });
 
-// ─── GET /api/students/site-visits ──────────────────────────────────────────
+// site-visits 
 router.get('/site-visits', protect, async (req, res) => {
   try {
     console.log('📅 Fetching site visits for user_id:', req.user.user_id);
@@ -625,10 +643,10 @@ router.get('/site-visits', protect, async (req, res) => {
   }
 });
 
-// ─── GET /api/students/feedback ─────────────────────────────────────────────
+// GET /api/students/feedback 
 router.get('/feedback', protect, async (req, res) => {
   try {
-    console.log('⭐ Fetching feedback for user_id:', req.user.user_id);
+    console.log('Fetching feedback for user_id:', req.user.user_id);
 
     const { data: student, error: sErr } = await supabase
       .from('students')
