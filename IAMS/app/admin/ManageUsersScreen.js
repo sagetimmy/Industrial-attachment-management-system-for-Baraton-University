@@ -96,7 +96,7 @@ function UserCard({ user, onToggle, onDelete, onNavigate }) {
           onPress={() => onNavigate(user)}
           accessibilityLabel={`Edit role for ${user.name}`}
         >
-          <Text style={styles.actionBtnText}>Deatails</Text>
+          <Text style={styles.actionBtnText}>Details</Text>
         </TouchableOpacity>
 
         <TouchableOpacity

@@ -14,6 +14,7 @@ import RegisterScreen from './app/auth/RegisterScreen';
 import VerifyScreen from './app/auth/VerifyScreen';
 import ForgotPasswordScreen from './app/auth/ForgotPasswordScreen';
 import LogbookScreen from './app/student/LogbookScreen';
+import LogbookSubmittedScreen from './app/student/LogbookSubmittedScreen';
 import FeedbackScreen from './app/student/FeedbackScreen';
 import ProfileScreen from './app/student/ProfileScreen';
 import StudentSettings from './app/student/StudentSettings';
@@ -215,6 +216,7 @@ function RootNavigator() {
         <Stack.Screen name="StudentDashboard" component={StudentDashboard}           />
         <Stack.Screen name="Apply"            component={ApplyScreen}                />
         <Stack.Screen name="Logbook"          component={LogbookScreen}              />
+        <Stack.Screen name="LogbookSubmitted" component={LogbookSubmittedScreen}     />
         <Stack.Screen name="SiteVisits"       component={StudentSiteVisitsScreen}           />
         <Stack.Screen name="LogbookDetail"    component={LogbookDetailScreen}        />
         <Stack.Screen name="Stats"            component={PlaceholderScreen}          />

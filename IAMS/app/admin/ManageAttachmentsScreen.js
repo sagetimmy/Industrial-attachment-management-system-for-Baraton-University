@@ -10,23 +10,23 @@ import api from '../../api/axios';
 import Spinner from '../../components/Spinner';
 
 const STATUS_COLORS = {
-  pending:   { bg: '#FFF3E0', text: '#E65100' },
-  approved:  { bg: '#E8F5E9', text: '#2E7D32' },
-  ongoing:   { bg: '#E3F2FD', text: '#1565C0' },
-  completed: { bg: '#E8F5E9', text: '#1B5E20' },
-  rejected:  { bg: '#FFEBEE', text: '#C62828' },
+  pending:   { bg: '#FAEEDA', text: '#BA7517' },
+  approved:  { bg: '#E1F5EE', text: '#0F6E56' },
+  ongoing:   { bg: '#E1F5EE', text: '#0F6E56' },
+  completed: { bg: '#E3F2FD', text: '#185FA5' },
+  rejected:  { bg: '#FCE8E8', text: '#C62828' },
 };
 
 const STATUS_OPTIONS = ['pending', 'approved', 'ongoing', 'completed', 'rejected'];
 const FILTERS = ['all', ...STATUS_OPTIONS];
 
 /* ─── Tokens ─── */
-const NAVY  = '#0F2419';
-const TEAL  = '#1B7A65';
-const BG    = '#EEF2F0';
-const ORANGE = '#E8711A';
-const GRAY  = '#7A8F86';
-const BORDER = '#D8E4DF';
+const NAVY  = '#0F6E56';
+const TEAL  = '#0F6E56';
+const BG    = '#F7F9FB';
+const ORANGE = '#D85A30';
+const GRAY  = '#6B7280';
+const BORDER = '#E5E7EB';
 
 function fmtDate(d) {
   return d ? new Date(d).toLocaleDateString() : 'TBD';
@@ -681,7 +681,7 @@ const styles = StyleSheet.create({
     width: 96, height: 96, borderRadius: 48,
     borderWidth: 3, borderColor: TEAL,
   },
-  profileAvatarFallback: { backgroundColor: '#E0F5F1', alignItems: 'center', justifyContent: 'center' },
+  profileAvatarFallback: { backgroundColor: '#E1F5EE', alignItems: 'center', justifyContent: 'center' },
   profileAvatarText: { fontSize: 30, fontWeight: '800', color: TEAL },
   verifiedBadge: {
     position: 'absolute', bottom: 2, right: 2,
@@ -703,7 +703,7 @@ const styles = StyleSheet.create({
   orgCardTop: { flexDirection: 'row', alignItems: 'center' },
   orgIconBox: {
     width: 40, height: 40, borderRadius: 10,
-    backgroundColor: '#E0F5F1',
+    backgroundColor: '#E1F5EE',
     alignItems: 'center', justifyContent: 'center',
     marginRight: 12,
   },
@@ -731,7 +731,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   supervisorAvatar: { width: 44, height: 44, borderRadius: 22 },
-  supervisorAvatarFallback: { backgroundColor: '#E0F5F1', alignItems: 'center', justifyContent: 'center' },
+  supervisorAvatarFallback: { backgroundColor: '#E1F5EE', alignItems: 'center', justifyContent: 'center' },
   supervisorAvatarText: { fontSize: 14, fontWeight: '800', color: TEAL },
   supervisorName: { fontSize: 14, fontWeight: '700', color: NAVY },
   supervisorRole: { fontSize: 12, color: GRAY, fontStyle: 'italic', marginTop: 2 },

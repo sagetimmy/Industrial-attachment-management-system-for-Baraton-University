@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   ScrollView, Alert, RefreshControl,
-  FlatList, Image,
+  FlatList, Image, Platform,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import * as DocumentPicker from 'expo-document-picker';
@@ -28,9 +28,6 @@ function formatDateLabel(dateStr) {
   };
 }
 
-// Due week is derived from the attachment start_date, not from how many
-// entries already exist — this keeps it correct even if a student skips
-// a week, and matches the server-side computeDueWeek in routes/student.js.
 function computeDueWeek(startDate) {
   if (!startDate) return 1;
   const start = new Date(startDate);
@@ -119,8 +116,6 @@ export default function LogbookScreen({ navigation }) {
       return;
     }
 
-    // Recompute at submit time rather than trusting stale state, in case
-    // the form was left open across a week boundary.
     const weekToSubmit = attachment ? computeDueWeek(attachment.start_date) : form.week_number;
 
     if (!weekToSubmit || !form.description) {
@@ -135,7 +130,7 @@ export default function LogbookScreen({ navigation }) {
 
     setSubmitting(true);
     try {
-      const buildFormData = () => {
+      const buildFormData = async () => {
         const formData = new FormData();
         formData.append('week_number', weekToSubmit);
         formData.append('description', form.description);
@@ -143,27 +138,50 @@ export default function LogbookScreen({ navigation }) {
         formData.append('challenges', form.challenges);
         formData.append('hours_worked', form.hours_worked);
         if (document) {
-          formData.append('document', {
-            uri: document.uri,
-            name: document.name,
-            type: document.mimeType || 'application/octet-stream',
-          });
+          if (Platform.OS === 'web') {
+            // Some expo-document-picker versions don't populate `.file` on
+            // web at all — only `.uri` (a blob: URL). Fetching that URI and
+            // reading it back as a Blob works regardless of whether `.file`
+            // is present, so it's the more reliable path than depending on
+            // a property that may or may not exist depending on SDK version.
+            let webBlob = document.file;
+            if (!webBlob) {
+              const fetched = await fetch(document.uri);
+              webBlob = await fetched.blob();
+            }
+            formData.append('document', webBlob, document.name);
+          } else {
+            formData.append('document', {
+              uri: document.uri,
+              name: document.name,
+              type: document.mimeType || 'application/octet-stream',
+            });
+          }
         }
         return formData;
       };
 
-      await requestWithRetry(
-        () => api.post('/students/logbook', buildFormData(), {
+      const res = await requestWithRetry(
+        async () => api.post('/students/logbook', await buildFormData(), {
           headers: { 'Content-Type': 'multipart/form-data' },
           timeout: 45000,
         }),
         { retries: 3, baseDelay: 800 }
       );
-      Alert.alert('Success! 🎉', 'Logbook entry submitted successfully!');
       setForm({ week_number: '', description: '', tasks_done: '', challenges: '', hours_worked: '' });
       setDocument(null);
       setShowForm(false);
       fetchData();
+      // Backend returns the created entry on POST /students/logbook — fall back
+      // to what we submitted locally if a field is missing, since submitted_at
+      // in particular is server-assigned.
+      navigation.navigate('LogbookSubmitted', {
+        logbook: {
+          week_number: res?.data?.week_number ?? weekToSubmit,
+          hours_worked: res?.data?.hours_worked ?? form.hours_worked,
+          submitted_at: res?.data?.submitted_at ?? new Date().toISOString(),
+        },
+      });
     } catch (err) {
       console.error('Logbook submit failed:', {
         message: err.message,
@@ -207,8 +225,6 @@ export default function LogbookScreen({ navigation }) {
 
   return (
     <View style={s.root}>
-
-      {/* Header */}
       <View style={s.header}>
         <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={20} color="#333" />
@@ -224,7 +240,6 @@ export default function LogbookScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      {/* Week strip */}
       <View style={s.weekStripWrap}>
         <ScrollView
           horizontal
@@ -460,7 +475,6 @@ export default function LogbookScreen({ navigation }) {
         <View style={{ height: 100 }} />
       </ScrollView>
 
-      {/* FAB */}
       {canEditLogbooks && attachment?.status === 'ongoing' && !showForm && !dueWeekAlreadySubmitted && (
         <TouchableOpacity style={s.fab} onPress={openForm}>
           <Text style={s.fabIcon}>+</Text>
@@ -474,8 +488,6 @@ const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#F0F4F3' },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loadingText: { marginTop: 10, color: '#888' },
-
-  // header
   header: {
     flexDirection: 'row', alignItems: 'center',
     justifyContent: 'space-between',
@@ -493,8 +505,6 @@ const s = StyleSheet.create({
     overflow: 'hidden', backgroundColor: TEAL_LIGHT,
   },
   profileAvatarImage: { width: '100%', height: '100%' },
-
-  // week strip
   weekStripWrap: {
     backgroundColor: '#F0F4F3',
     paddingVertical: 12,
@@ -512,10 +522,7 @@ const s = StyleSheet.create({
   weekMonthActive: { color: '#9FE1CB' },
   weekDay: { fontSize: 20, fontWeight: '700', color: TEAL, marginTop: 2 },
   weekDayActive: { color: '#fff' },
-
   scrollContent: { padding: 16 },
-
-  // warning
   warningCard: {
     backgroundColor: '#FFF3E0',
     padding: 20, borderRadius: 16,
@@ -526,24 +533,18 @@ const s = StyleSheet.create({
   warningIcon: { fontSize: 28, marginBottom: 8 },
   warningTitle: { fontSize: 15, fontWeight: '700', color: '#333' },
   warningText: { fontSize: 13, color: '#666', textAlign: 'center', marginTop: 6 },
-
-  // attach card
   attachCard: {
     backgroundColor: TEAL,
     padding: 14, borderRadius: 14, marginBottom: 12,
   },
   attachOrg: { color: '#fff', fontSize: 14, fontWeight: '700' },
   attachDetails: { color: '#9FE1CB', fontSize: 12, marginTop: 3 },
-
-  // new entry button
   newEntryBtn: {
     backgroundColor: TEAL,
     padding: 14, borderRadius: 14,
     alignItems: 'center', marginBottom: 16,
   },
   newEntryBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
-
-  // form
   formCard: {
     backgroundColor: '#fff',
     padding: 16, borderRadius: 16,
@@ -579,8 +580,6 @@ const s = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(0,0,0,0.15)',
   },
   cancelBtnText: { color: '#888', fontWeight: '600' },
-
-  // empty
   emptyCard: {
     backgroundColor: '#E8F0EE',
     padding: 32, borderRadius: 16,
@@ -596,8 +595,6 @@ const s = StyleSheet.create({
     backgroundColor: TEAL_LIGHT, borderRadius: 10,
   },
   addManuallyText: { color: TEAL, fontWeight: '700', fontSize: 13, letterSpacing: 0.5 },
-
-  // entry card
   entryCard: {
     backgroundColor: '#fff',
     borderRadius: 16, padding: 16,
@@ -643,8 +640,6 @@ const s = StyleSheet.create({
     fontSize: 13, color: '#333', fontWeight: '600',
     textDecorationLine: 'underline',
   },
-
-  // FAB
   fab: {
     position: 'absolute', bottom: 100, right: 10,
     width: 54, height: 54, borderRadius: 27,

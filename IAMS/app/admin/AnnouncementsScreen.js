@@ -1,4 +1,3 @@
-// app/admin/AnnouncementsScreen.js
 import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
@@ -20,35 +19,35 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import api from '../../api/axios';
 
-// ─── Design Tokens ────────────────────────────────────────────────────────────
+
 const C = {
-  teal: '#1B7A65',
-  tealLight: '#E8F5F1',
-  navy: '#0F2419',
-  orange: '#E8711A',
-  orangeLight: '#FEF3EB',
-  bg: '#EEF2F0',
+  teal: '#0F6E56',
+  tealLight: '#E1F5EE',
+  navy: '#0F6E56',
+  orange: '#D85A30',
+  orangeLight: 'rgba(216, 90, 48, 0.12)',
+  bg: '#F7F9FB',
   white: '#FFFFFF',
-  text: '#1A2E25',
-  textMuted: '#6B8F7E',
-  border: '#D4E4DE',
-  red: '#D94040',
-  redLight: '#FDEAEA',
-  pillGreen: '#D1F0E8',
-  pillGreenText: '#0F5E47',
-  pillAmber: '#FEF3D0',
-  pillAmberText: '#92570A',
-  pillBlue: '#D6E8FF',
-  pillBlueText: '#1A4F8C',
-  pillGray: '#E8EEF0',
-  pillGrayText: '#4A6572',
+  text: '#1F2937',
+  textMuted: '#6B7280',
+  border: '#E5E7EB',
+  red: '#C62828',
+  redLight: '#FCE8E8',
+  pillGreen: '#E1F5EE',
+  pillGreenText: '#0F6E56',
+  pillAmber: '#FAEEDA',
+  pillAmberText: '#92400E',
+  pillBlue: '#E3F2FD',
+  pillBlueText: '#185FA5',
+  pillGray: '#F4F4F4',
+  pillGrayText: '#888888',
 };
 
 const AUDIENCE_OPTIONS = [
   { value: 'ALL', label: 'Everyone', icon: 'earth', color: C.orange },
   { value: 'STUDENTS', label: 'Students Only', icon: 'school', color: C.teal },
-  { value: 'SUPERVISORS', label: 'Supervisors Only', icon: 'briefcase', color: '#6B4FBB' },
-  { value: 'HOST_ORGS', label: 'Host Orgs Only', icon: 'business', color: '#2A7BB5' },
+  { value: 'SUPERVISORS', label: 'Supervisors Only', icon: 'briefcase', color: '#8E44AD' },
+  { value: 'HOST_ORGS', label: 'Host Orgs Only', icon: 'business', color: '#1E3A5F' },
 ];
 
 const audienceMeta = {
@@ -375,7 +374,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16, paddingVertical: 7,
     borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.1)',
   },
-  tabActive: { backgroundColor: C.teal },
+  tabActive: { backgroundColor: C.orange },
   tabText: { fontSize: 13, fontWeight: '600', color: 'rgba(255,255,255,0.6)' },
   tabTextActive: { color: C.white },
 
