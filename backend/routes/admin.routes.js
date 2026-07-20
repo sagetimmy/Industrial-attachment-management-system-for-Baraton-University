@@ -34,11 +34,7 @@ const countOrZero = (result, label) => {
   return Number.isFinite(result?.count) ? result.count : 0;
 };
 
-// Sums available_slots across each org's currently open vacancy postings.
-// Returns a map of org_id -> total open slots across its open/active/ongoing
-// vacancies. Used everywhere "vacancy_count"/"open_vacancies" is computed,
-// so admin views agree with the real vacancies table instead of the stale,
-// manually-typed host_organizations.available_slots field.
+
 const getOpenVacancySlotsByOrg = async (orgIds) => {
   const slotsMap = {};
   if (!orgIds || !orgIds.length) return slotsMap;
@@ -61,15 +57,7 @@ const getOpenVacancySlotsByOrg = async (orgIds) => {
   return slotsMap;
 };
 
-// Helper: update attachment status + notify student
-//
-// Also keeps vacancies.available_slots in sync: a slot is considered
-// "taken" the moment an attachment enters the "approved" status (the
-// earliest real commitment point — before a supervisor is even assigned
-// and status moves to "ongoing"), and is given back if an attachment
-// later moves out of "approved" (e.g. rejected). Skipped entirely when
-// attachment.vacancy_id is null, which only applies to a small number of
-// legacy attachments that predate the vacancy_id column.
+
 const updateAttachmentStatus = async (attachmentId, status, actor, ip) => {
   const normalized = String(status || '').toLowerCase();
   if (!VALID_STATUSES.includes(normalized))

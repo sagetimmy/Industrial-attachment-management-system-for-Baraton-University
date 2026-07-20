@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, Alert, RefreshControl, TextInput, Pressable,
+  ScrollView, Alert, RefreshControl, TextInput, Pressable, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -29,6 +29,85 @@ const roleConfig = (role) => {
   }
 };
 
+// ── Confirm modal config per action type ──────────────────────────────────────
+// Alert.alert with multiple buttons silently fails on React Native Web (it maps
+// to window.confirm, which only supports a single OK/Cancel). Every confirm in
+// this screen goes through this custom Modal instead.
+const confirmConfig = (type, user) => {
+  switch (type) {
+    case 'activate':
+      return {
+        title: 'Activate User',
+        message: `Activate ${user?.name}? They will regain access to IAMS.`,
+        confirmLabel: 'Activate',
+        confirmColor: TEAL,
+        icon: 'checkmark-circle-outline',
+        iconColor: TEAL,
+      };
+    case 'deactivate':
+      return {
+        title: 'Deactivate User',
+        message: `Deactivate ${user?.name}? They will lose access to IAMS until reactivated.`,
+        confirmLabel: 'Deactivate',
+        confirmColor: RED,
+        icon: 'ban-outline',
+        iconColor: RED,
+      };
+    case 'delete':
+      return {
+        title: 'Delete User',
+        message: `Permanently delete ${user?.name}? This cannot be undone.`,
+        confirmLabel: 'Delete',
+        confirmColor: RED,
+        icon: 'trash-outline',
+        iconColor: RED,
+      };
+    case 'reset':
+      return {
+        title: 'Reset Password',
+        message: `Send a password reset email to ${user?.email}?`,
+        confirmLabel: 'Send',
+        confirmColor: TEAL,
+        icon: 'key-outline',
+        iconColor: TEAL,
+      };
+    default:
+      return { title: '', message: '', confirmLabel: 'Confirm', confirmColor: TEAL, icon: 'help-outline', iconColor: TEAL };
+  }
+};
+
+// ── Confirm Modal ─────────────────────────────────────────────────────────────
+function ConfirmModal({ visible, type, user, onCancel, onConfirm }) {
+  if (!visible) return null;
+  const cfg = confirmConfig(type, user);
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+      <Pressable style={modalStyles.overlay} onPress={onCancel}>
+        <Pressable style={modalStyles.card} onPress={() => {}}>
+          <View style={[modalStyles.iconWrap, { backgroundColor: `${cfg.iconColor}1A` }]}>
+            <Ionicons name={cfg.icon} size={26} color={cfg.iconColor} />
+          </View>
+          <Text style={modalStyles.title}>{cfg.title}</Text>
+          <Text style={modalStyles.message}>{cfg.message}</Text>
+
+          <View style={modalStyles.actions}>
+            <TouchableOpacity style={modalStyles.cancelBtn} onPress={onCancel}>
+              <Text style={modalStyles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[modalStyles.confirmBtn, { backgroundColor: cfg.confirmColor }]}
+              onPress={onConfirm}
+            >
+              <Text style={modalStyles.confirmText}>{cfg.confirmLabel}</Text>
+            </TouchableOpacity>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
 // ── Avatar initials ───────────────────────────────────────────────────────────
 function InitialsAvatar({ name, role }) {
   const cfg = roleConfig(role);
@@ -54,7 +133,7 @@ function StatusBadge({ isActive }) {
 }
 
 // ── User Card ─────────────────────────────────────────────────────────────────
-function UserCard({ user, onToggle, onDelete, onNavigate }) {
+function UserCard({ user, onToggle, onDelete, onResetPassword, onNavigate }) {
   const cfg = roleConfig(user.role);
   const joined = user.created_at
     ? new Date(user.created_at).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' })
@@ -101,12 +180,7 @@ function UserCard({ user, onToggle, onDelete, onNavigate }) {
 
         <TouchableOpacity
           style={styles.actionBtn}
-          onPress={() => Alert.alert('Reset Password', `Send password reset to ${user.email}?`, [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Send', onPress: () => api.post(`/admin/reset-password/${user.user_id}`)
-                .then(() => Alert.alert('Sent', `Reset email sent to ${user.email}`))
-                .catch(() => Alert.alert('Error', 'Failed to send reset email')) },
-          ])}
+          onPress={() => onResetPassword(user)}
           accessibilityLabel={`Reset password for ${user.name}`}
         >
           <Text style={styles.actionBtnText}>Reset Pwd</Text>
@@ -115,13 +189,22 @@ function UserCard({ user, onToggle, onDelete, onNavigate }) {
         {/* Toggle: teal (activate) or red outlined (deactivate) */}
         <TouchableOpacity
           style={[styles.toggleBtn, user.is_active ? styles.toggleBtnDeactivate : styles.toggleBtnActivate]}
-          onPress={() => onToggle(user.user_id, user.name, user.is_active)}
+          onPress={() => onToggle(user)}
           accessibilityLabel={`${user.is_active ? 'Deactivate' : 'Activate'} ${user.name}`}
         >
           {user.is_active
             ? <Ionicons name="ban-outline" size={18} color={RED} />
             : <Ionicons name="checkmark-circle-outline" size={18} color={WHITE} />
           }
+        </TouchableOpacity>
+
+        {/* Delete */}
+        <TouchableOpacity
+          style={styles.deleteBtn}
+          onPress={() => onDelete(user)}
+          accessibilityLabel={`Delete ${user.name}`}
+        >
+          <Ionicons name="trash-outline" size={18} color={RED} />
         </TouchableOpacity>
       </View>
     </Pressable>
@@ -138,6 +221,10 @@ export default function ManageUsersScreen({ navigation, route }) {
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch]         = useState('');
   const [activeFilter, setActiveFilter] = useState(initialRole);
+
+  // { visible, type: 'activate'|'deactivate'|'delete'|'reset', user }
+  const [confirmModal, setConfirmModal] = useState({ visible: false, type: null, user: null });
+  const [actionLoading, setActionLoading] = useState(false);
 
   // ── API ───────────────────────────────────────────────────────────────────
   const fetchUsers = async () => {
@@ -172,49 +259,49 @@ export default function ManageUsersScreen({ navigation, route }) {
     setFiltered(result);
   }, [search, activeFilter, users]);
 
-  const handleToggleUser = (userId, name, isActive) => {
-    Alert.alert(
-      `${isActive ? 'Deactivate' : 'Activate'} User`,
-      `${isActive ? 'Deactivate' : 'Activate'} ${name}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: isActive ? 'Deactivate' : 'Activate',
-          style: isActive ? 'destructive' : 'default',
-          onPress: async () => {
-            try {
-              await api.put(`/admin/toggle-user/${userId}`);
-              fetchUsers();
-            } catch {
-              Alert.alert('Error', 'Failed to update user');
-            }
-          },
-        },
-      ]
-    );
+  // ── Confirm modal openers ────────────────────────────────────────────────
+  const openToggleConfirm = (user) => {
+    setConfirmModal({ visible: true, type: user.is_active ? 'deactivate' : 'activate', user });
+  };
+  const openDeleteConfirm = (user) => {
+    setConfirmModal({ visible: true, type: 'delete', user });
+  };
+  const openResetConfirm = (user) => {
+    setConfirmModal({ visible: true, type: 'reset', user });
+  };
+  const closeConfirm = () => {
+    if (actionLoading) return;
+    setConfirmModal({ visible: false, type: null, user: null });
   };
 
-  const handleDeleteUser = (userId, name) => {
-    Alert.alert(
-      'Delete User',
-      `Permanently delete ${name}? This cannot be undone!`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await api.delete(`/admin/delete-user/${userId}`);
-              Alert.alert('Deleted', `${name} has been deleted.`);
-              fetchUsers();
-            } catch {
-              Alert.alert('Error', 'Failed to delete user');
-            }
-          },
-        },
-      ]
-    );
+  // ── Confirmed action dispatch ────────────────────────────────────────────
+  const handleConfirm = async () => {
+    const { type, user } = confirmModal;
+    if (!user) return;
+    setActionLoading(true);
+    try {
+      if (type === 'activate' || type === 'deactivate') {
+        await api.patch(`/admin/users/${user.user_id}/status`, { is_active: type === 'activate' });
+        await fetchUsers();
+      } else if (type === 'delete') {
+        await api.delete(`/admin/users/${user.user_id}`);
+        await fetchUsers();
+      } else if (type === 'reset') {
+        await api.post(`/admin/users/${user.user_id}/reset-password`);
+        Alert.alert('Sent', `Reset email sent to ${user.email}`);
+      }
+      setConfirmModal({ visible: false, type: null, user: null });
+    } catch {
+      const messages = {
+        activate: 'Failed to activate user',
+        deactivate: 'Failed to deactivate user',
+        delete: 'Failed to delete user',
+        reset: 'Failed to send reset email',
+      };
+      Alert.alert('Error', messages[type] || 'Something went wrong');
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const onRefresh = () => { setRefreshing(true); fetchUsers(); };
@@ -314,8 +401,9 @@ export default function ManageUsersScreen({ navigation, route }) {
             <UserCard
               key={user.user_id || index}
               user={user}
-              onToggle={handleToggleUser}
-              onDelete={handleDeleteUser}
+              onToggle={openToggleConfirm}
+              onDelete={openDeleteConfirm}
+              onResetPassword={openResetConfirm}
               onNavigate={(u) => navigation.navigate('UserDetail', { user: u })}
             />
           ))
@@ -333,9 +421,61 @@ export default function ManageUsersScreen({ navigation, route }) {
         <Ionicons name="add" size={28} color={WHITE} />
       </TouchableOpacity>
 
+      {/* ── Confirm modal (activate/deactivate/delete/reset) ── */}
+      <ConfirmModal
+        visible={confirmModal.visible}
+        type={confirmModal.type}
+        user={confirmModal.user}
+        onCancel={closeConfirm}
+        onConfirm={handleConfirm}
+      />
+
     </SafeAreaView>
   );
 }
+
+// ── Confirm modal styles ───────────────────────────────────────────────────────
+const modalStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 36, 25, 0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  card: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: WHITE,
+    borderRadius: 20,
+    padding: 24,
+    alignItems: 'center',
+  },
+  iconWrap: {
+    width: 52, height: 52, borderRadius: 26,
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 14,
+  },
+  title: { fontSize: 17, fontWeight: '800', color: DARK, marginBottom: 8, textAlign: 'center' },
+  message: { fontSize: 14, color: GRAY, textAlign: 'center', lineHeight: 20, marginBottom: 20 },
+  actions: { flexDirection: 'row', gap: 10, width: '100%' },
+  cancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: BORDER,
+    alignItems: 'center',
+  },
+  cancelText: { fontSize: 14, fontWeight: '700', color: DARK },
+  confirmBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  confirmText: { fontSize: 14, fontWeight: '700', color: WHITE },
+});
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
@@ -482,6 +622,15 @@ const styles = StyleSheet.create({
   },
   toggleBtnActivate: { backgroundColor: TEAL },
   toggleBtnDeactivate: { backgroundColor: '#FFEBEE', borderWidth: 1.5, borderColor: '#FFCDD2' },
+  deleteBtn: {
+    width: 42, height: 42,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFEBEE',
+    borderWidth: 1.5,
+    borderColor: '#FFCDD2',
+  },
 
   // Empty
   emptyCard: {
