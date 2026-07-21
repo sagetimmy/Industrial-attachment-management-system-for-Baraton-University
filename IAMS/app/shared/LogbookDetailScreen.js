@@ -1,15 +1,5 @@
 import { useMemo, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  TextInput,
-  Image,
-  Alert,
-  Linking,
-} from 'react-native';
+import {View,Text,StyleSheet,TouchableOpacity,ScrollView,TextInput,Image,Alert,Linking,} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import api, { getApiBaseUrl } from '../../api/axios';
@@ -102,9 +92,8 @@ export default function LogbookDetailScreen({ navigation, route }) {
     ? [{ url: docUrl, name: docName, isImage: isImageFile(docName) }]
     : [];
 
-  const totalHours = entry?.tasks_done
-    ? entry.tasks_done.split('\n').filter(Boolean).length
-    : 0;
+  
+  const totalHours = Number(entry?.hours_worked) || 0;
 
   const entryCount = Number.isFinite(totalEntries) ? totalEntries : 1;
   const studentName = entry?.full_name || user?.full_name || user?.email || 'Student';

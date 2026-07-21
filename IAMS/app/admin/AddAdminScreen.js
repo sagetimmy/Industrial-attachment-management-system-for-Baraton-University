@@ -8,7 +8,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import api from '../../api/axios';
 
-// ─── Design tokens ────────────────────────────────────────────────────────────
 const C = {
   navy:       '#0F2419',
   teal:       '#1B7A65',
@@ -28,7 +27,6 @@ const C = {
   border:     '#D8E4DF',
 };
 
-// ─── Permission definitions ───────────────────────────────────────────────────
 const PERMISSIONS = [
   { key: 'manageStudents',     label: 'Manage Students',                   icon: 'school-outline' },
   { key: 'manageSupervisors',  label: 'Manage Supervisors',                icon: 'ribbon-outline' },

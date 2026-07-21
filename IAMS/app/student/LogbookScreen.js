@@ -67,9 +67,17 @@ export default function LogbookScreen({ navigation }) {
       ]);
       setEntries(entriesRes.data);
       setAttachment(attachRes.data);
-      if (entriesRes.data.length > 0) {
-        setSelectedWeek(entriesRes.data[0].week_number);
-      }
+      setSelectedWeek((prev) => {
+        // Keep whatever the user already has selected — don't stomp on it
+        // every time this refetches (e.g. on screen refocus via useFocusEffect).
+        if (prev != null) return prev;
+        if (entriesRes.data.length > 0) {
+          // Default to the most recent week, not entries[0] — the backend's
+          // return order isn't guaranteed to put the current week first.
+          return Math.max(...entriesRes.data.map((e) => e.week_number));
+        }
+        return null;
+      });
     } catch (err) {
       Alert.alert('Error', 'Failed to load logbook');
     } finally {
@@ -139,11 +147,6 @@ export default function LogbookScreen({ navigation }) {
         formData.append('hours_worked', form.hours_worked);
         if (document) {
           if (Platform.OS === 'web') {
-            // Some expo-document-picker versions don't populate `.file` on
-            // web at all — only `.uri` (a blob: URL). Fetching that URI and
-            // reading it back as a Blob works regardless of whether `.file`
-            // is present, so it's the more reliable path than depending on
-            // a property that may or may not exist depending on SDK version.
             let webBlob = document.file;
             if (!webBlob) {
               const fetched = await fetch(document.uri);
@@ -172,9 +175,7 @@ export default function LogbookScreen({ navigation }) {
       setDocument(null);
       setShowForm(false);
       fetchData();
-      // Backend returns the created entry on POST /students/logbook — fall back
-      // to what we submitted locally if a field is missing, since submitted_at
-      // in particular is server-assigned.
+      
       navigation.navigate('LogbookSubmitted', {
         logbook: {
           week_number: res?.data?.week_number ?? weekToSubmit,
