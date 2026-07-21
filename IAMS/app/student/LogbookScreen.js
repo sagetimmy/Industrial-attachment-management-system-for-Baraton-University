@@ -68,12 +68,8 @@ export default function LogbookScreen({ navigation }) {
       setEntries(entriesRes.data);
       setAttachment(attachRes.data);
       setSelectedWeek((prev) => {
-        // Keep whatever the user already has selected — don't stomp on it
-        // every time this refetches (e.g. on screen refocus via useFocusEffect).
         if (prev != null) return prev;
         if (entriesRes.data.length > 0) {
-          // Default to the most recent week, not entries[0] — the backend's
-          // return order isn't guaranteed to put the current week first.
           return Math.max(...entriesRes.data.map((e) => e.week_number));
         }
         return null;
@@ -93,18 +89,33 @@ export default function LogbookScreen({ navigation }) {
     }, [])
   );
 
-  const pickDocument = async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: ['application/pdf', 'image/*'],
-        copyToCacheDirectory: true,
-      });
-      if (!result.canceled) setDocument(result.assets[0]);
-    } catch (err) {
-      Alert.alert('Error', 'Failed to pick document');
-    }
-  };
+  const ALLOWED_DOC_TYPES = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/heic', 'image/webp'];
 
+const pickDocument = async () => {
+  try {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: ['application/pdf', 'image/*'],
+      copyToCacheDirectory: true,
+    });
+    if (result.canceled) return;
+
+    const picked = result.assets[0];
+    const mimeType = picked.mimeType || '';
+    const isAllowed = ALLOWED_DOC_TYPES.includes(mimeType) || mimeType.startsWith('image/');
+
+    if (!isAllowed) {
+      Alert.alert(
+        'Unsupported File',
+        `"${picked.name}" isn't a supported file type. Please pick a PDF or image (JPG, PNG).`
+      );
+      return;
+    }
+
+    setDocument(picked);
+  } catch (err) {
+    Alert.alert('Error', 'Failed to pick document');
+  }
+};
   const openForm = () => {
     if (!canEditLogbooks) {
       Alert.alert('Permission Disabled', 'Logbook submissions are currently disabled for students.');
