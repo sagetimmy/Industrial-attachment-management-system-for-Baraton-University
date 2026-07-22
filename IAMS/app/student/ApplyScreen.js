@@ -12,7 +12,7 @@ import { COLORS } from '../../constants/colors';
 import { hasRolePermission } from '../../utils/permissions';
 import Spinner from '../../components/Spinner';
 import { showAlert } from '../../utils/crossPlatformAlert';
-import DatePickerField from '../../components/DatePickerField';
+import DatePickerfield from '../../components/Datepickerfield';
 
 const TEAL       = '#1B7A65';
 const TEAL_DARK  = '#0F2419';
