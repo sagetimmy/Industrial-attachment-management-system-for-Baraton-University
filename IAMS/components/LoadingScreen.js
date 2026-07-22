@@ -1,9 +1,6 @@
 import { View, Text, StyleSheet } from 'react-native';
 import Spinner from './Spinner';
 
-/**
- * Reusable Loading Screen Component
- */
 export default function LoadingScreen({
   message = 'Loading...',
   color = '#C87941',

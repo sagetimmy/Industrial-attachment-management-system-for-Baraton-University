@@ -10,6 +10,7 @@ import { useNotifications } from '../../hooks/useNotifications';
 import api from '../../api/axios';
 import Spinner from '../../components/Spinner';
 import AnnouncementBanner from '../shared/AnnouncementBanner';
+import { StudentDashboardSkeleton } from '../../components/DashboardSkeletons';
 
 
 const TEAL       = '#0F6E56';
@@ -236,12 +237,7 @@ export default function StudentDashboard({ navigation }) {
   const program = user?.program ?? user?.course ?? '';
 
   if (loading) {
-    return (
-      <View style={[s.loadingContainer, { backgroundColor: theme.surface }]}>
-        <Spinner size="large" color={TEAL} />
-        <Text style={[s.loadingText, { color: theme.textSecondary }]}>Loading dashboard...</Text>
-      </View>
-    );
+    return <StudentDashboardSkeleton />;
   }
 
   return (

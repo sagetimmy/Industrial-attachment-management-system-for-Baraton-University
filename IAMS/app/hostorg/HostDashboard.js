@@ -12,6 +12,7 @@ import { useNotifications } from '../../hooks/useNotifications';
 import { hasRolePermission } from '../../utils/permissions';
 import { confirmLogout } from '../../utils/confirmLogout';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { HostOrgDashboardSkeleton } from '../../components/DashboardSkeletons';
 
 const TEAL = '#0F6E56';
 const HERO_GREEN = '#0E7A6B';
@@ -27,7 +28,7 @@ const DEFAULT_SETTINGS = {
   showAnalytics: true,
 };
 
-// Standard industrial attachment program length used for week display
+
 const STANDARD_ATTACHMENT_WEEKS = 12;
 
 const Storage = {
@@ -177,14 +178,11 @@ export default function HostDashboard({ navigation }) {
   if (loading) {
     return (
       <SafeAreaView style={s.safeArea} edges={['top']}>
-        <View style={s.loadingContainer}>
-          <ActivityIndicator size="large" color={TEAL} />
-          <Text style={s.loadingText}>Loading dashboard...</Text>
-        </View>
+        <HostOrgDashboardSkeleton />
       </SafeAreaView>
     );
   }
-
+  
   const activeStudents = data?.applications?.filter(a => ['approved', 'ongoing'].includes(a.status)) ?? [];
   const pendingApps    = data?.applications?.filter(a => a.status === 'pending') ?? [];
   const recentApps     = pendingApps.slice(0, 3);

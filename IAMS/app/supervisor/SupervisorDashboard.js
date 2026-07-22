@@ -11,6 +11,7 @@ import { COLORS } from '../../constants/colors';
 import api from '../../api/axios';
 import AnnouncementBanner from '../shared/AnnouncementBanner';
 import { useNotifications } from '../../hooks/useNotifications';
+import { SupervisorDashboardSkeleton } from '../../components/DashboardSkeletons';
 
 function ProgressRing({ percent = 0, size = 52, color = '#0F6E56' }) {
   const safePercent = isNaN(percent) ? 0 : Math.min(100, Math.max(0, percent));
@@ -66,12 +67,7 @@ export default function SupervisorDashboard({ navigation }) {
   const onRefresh = () => { setRefreshing(true); fetchDashboard(); };
 
   if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#0F6E56" />
-        <Text style={styles.loadingText}>Loading dashboard...</Text>
-      </View>
-    );
+    return <SupervisorDashboardSkeleton />;
   }
 
   const getInitialColor = (name) => {

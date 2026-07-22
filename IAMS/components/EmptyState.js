@@ -1,9 +1,5 @@
 import { View, Text, StyleSheet } from 'react-native';
 
-/**
- * Reusable Empty State Component
- * Shows when there's no data to display
- */
 export default function EmptyState({
   icon = '📦',
   title = 'No Data',

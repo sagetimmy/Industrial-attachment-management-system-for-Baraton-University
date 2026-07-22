@@ -12,6 +12,7 @@ import api from '../../api/axios';
 import { useAuth } from '../../context/AuthContext';
 import Spinner from '../../components/Spinner';
 import { confirmLogout } from '../../utils/confirmLogout';
+import { AdminDashboardSkeleton } from '../../components/DashboardSkeletons';
 
 const NAVY      = '#0D1B2E';
 const NAVY_CARD = '#162338';
@@ -237,12 +238,7 @@ export default function AdminDashboard({ navigation }) {
   const onRefresh = () => { setRefreshing(true); fetchDashboard(); fetchNotifications(); };
 
   if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <Spinner size="large" color={TEAL} />
-        <Text style={styles.loadingText}>Loading dashboard...</Text>
-      </View>
-    );
+    return <AdminDashboardSkeleton />;
   }
 
   const stats = data?.stats || {};

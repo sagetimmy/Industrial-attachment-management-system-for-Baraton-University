@@ -12,8 +12,8 @@ import { COLORS } from '../../constants/colors';
 import { hasRolePermission } from '../../utils/permissions';
 import Spinner from '../../components/Spinner';
 import { showAlert } from '../../utils/crossPlatformAlert';
+import DatePickerField from '../../components/DatePickerField';
 
-// ── Design accents (match IAMS design system used elsewhere in the app) ─────
 const TEAL       = '#1B7A65';
 const TEAL_DARK  = '#0F2419';
 const MINT_BG    = '#E3F1EE';
@@ -54,7 +54,6 @@ export default function ApplyScreen({ navigation }) {
   const [applications, setApplications] = useState([]);
   const [latestApplication, setLatestApplication] = useState(null);
 
-  // ── Vacancy selection (within the chosen org) ──────────────────────────
   const [orgVacancies, setOrgVacancies] = useState([]);
   const [vacanciesLoading, setVacanciesLoading] = useState(false);
   const [selectedVacancy, setSelectedVacancy] = useState(null);
@@ -91,8 +90,6 @@ export default function ApplyScreen({ navigation }) {
 
   useEffect(() => { fetchData(); }, []);
 
-  // Fetch open vacancies whenever an org is selected, so the student can
-  // pick a specific role instead of applying to the org generically.
   useEffect(() => {
     if (!selectedOrg) {
       setOrgVacancies([]);
@@ -176,9 +173,6 @@ export default function ApplyScreen({ navigation }) {
     }
   };
 
-  // End date can still be overridden by hand — the segmented duration
-  // control keeps re-deriving it from start date, but a manual edit here
-  // takes precedence until start/duration change again.
   const handleEndDateChange = (value) => {
     setEndDate(normalizeDateInput(value));
   };
@@ -295,11 +289,6 @@ export default function ApplyScreen({ navigation }) {
     }
   };
 
-  // Runs all validation, then opens the in-app confirm modal (does NOT
-  // touch the network). We deliberately avoid window.confirm()/Alert.alert
-  // here — native confirm dialogs are blocking and can hang the whole tab
-  // in some embedded/sandboxed browser contexts. A real React modal always
-  // renders reliably regardless of environment.
   const handleApply = () => {
     if (!canSelfPlace) {
       showAlert('Permission Disabled', 'Self-placement applications are currently disabled.');
@@ -321,8 +310,6 @@ export default function ApplyScreen({ navigation }) {
     setConfirmVisible(true);
   };
 
-  // Actually submits the application. Triggered by the "Apply" button
-  // inside the in-app confirm modal.
   const submitApplication = async () => {
     setConfirmVisible(false);
     setApplying(true);
@@ -666,33 +653,23 @@ export default function ApplyScreen({ navigation }) {
                 </View>
 
                 <View style={styles.formFieldFull}>
-                  <Text style={styles.fieldLabel}>START DATE</Text>
-                  <View style={[styles.dateInputWrap, { borderColor: BORDER, backgroundColor: theme.surface }]}>
-                    <TextInput
-                      style={[styles.dateInput, { color: theme.text }]}
-                      value={startDate}
-                      onChangeText={handleStartDateChange}
-                      placeholder="YYYY-MM-DD"
-                      placeholderTextColor={theme.textSecondary}
-                      autoCapitalize="none"
-                    />
-                    <Ionicons name="calendar-outline" size={18} color={GRAY} />
-                  </View>
+                  <DatePickerField
+                    label="START DATE"
+                    value={parseDateFromInput(startDate)}
+                    onChange={(date) => handleStartDateChange(formatDateYmd(date))}
+                    minDate={new Date()}
+                    placeholder="Select start date"
+                  />
                 </View>
 
                 <View style={styles.formFieldFull}>
-                  <Text style={styles.fieldLabel}>END DATE</Text>
-                  <View style={[styles.dateInputWrap, { borderColor: BORDER, backgroundColor: theme.surface }]}>
-                    <TextInput
-                      style={[styles.dateInput, { color: theme.text }]}
-                      value={endDate}
-                      onChangeText={handleEndDateChange}
-                      placeholder="YYYY-MM-DD"
-                      placeholderTextColor={theme.textSecondary}
-                      autoCapitalize="none"
-                    />
-                    <Ionicons name="calendar-outline" size={18} color={GRAY} />
-                  </View>
+                  <DatePickerField
+                    label="END DATE"
+                    value={parseDateFromInput(endDate)}
+                    onChange={(date) => handleEndDateChange(formatDateYmd(date))}
+                    minDate={parseDateFromInput(startDate) || undefined}
+                    placeholder="Select end date"
+                  />
                 </View>
               </View>
             </View>
