@@ -1,8 +1,3 @@
-/**
- * Frontend input validation utilities
- */
-
-// Email validation
 export const isValidEmail = (email) => {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return email && emailRegex.test(email.trim());

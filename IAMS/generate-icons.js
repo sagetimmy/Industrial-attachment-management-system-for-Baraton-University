@@ -1,14 +1,6 @@
-#!/usr/bin/env node
-
-/**
- * Icon Generator for IAMS
- * Converts SVG to PNG icons in required sizes
- */
-
 const fs = require('fs');
 const path = require('path');
 
-// Try to use sharp, fall back to simple instructions if not available
 let sharp;
 try {
   sharp = require('sharp');
@@ -27,7 +19,6 @@ try {
 const svgPath = path.join(__dirname, 'icon-source.svg');
 const assetsDir = path.join(__dirname, 'assets');
 
-// Ensure assets directory exists
 if (!fs.existsSync(assetsDir)) {
   fs.mkdirSync(assetsDir, { recursive: true });
 }

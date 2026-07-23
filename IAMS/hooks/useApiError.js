@@ -1,10 +1,6 @@
 import { useState, useCallback } from 'react';
 import { Alert } from 'react-native';
 
-/**
- * Custom hook for handling API errors consistently
- * Provides error handling utilities and error state management
- */
 export const useApiError = () => {
   const [error, setError] = useState(null);
 

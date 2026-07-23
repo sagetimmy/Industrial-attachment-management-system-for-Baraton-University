@@ -76,7 +76,7 @@ export default function RegisterScreen({ navigation }) {
     setLoading(true);
     try {
       await register({ ...form, role });
-      navigation.navigate('Verify', { email: form.email });
+      navigation.navigate('Verify', { email: form.email, password: form.password });
     } catch (err) {
       Alert.alert('Registration Failed', err.message || 'Something went wrong');
     } finally {

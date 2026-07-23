@@ -5,7 +5,6 @@ const { registrationLimiter, verificationLimiter } = require('../middleware/rate
 const supabase = require('../config/db');
 const { sendVerificationEmail } = require('../config/mailer');
 
-// Helper: get role permissions
 const getRolePermissions = (role) => {
   const permissions = {
     admin: ['view_all', 'edit_all', 'manage_users', 'manage_attachments', 'manage_orgs', 'view_reports'],
@@ -15,8 +14,6 @@ const getRolePermissions = (role) => {
   };
   return permissions[role] || [];
 };
-
-// Helper: generate 6-digit OTP
 const generateOTP = () => Math.floor(100000 + Math.random() * 900000).toString();
 
 const rollbackRegistration = async ({ auth_id, user_id, email }) => {
@@ -98,14 +95,7 @@ router.post('/register-profile', registrationLimiter, async (req, res) => {
     auth_id, email, role, full_name, reg_number,
     department, course, year_of_study, phone,
     org_name, location, contact_person,
-    // NOTE: available_slots intentionally NOT destructured/used here anymore.
-    // host_organizations.available_slots is superseded by the vacancy-sum
-    // calculation (GET /host-orgs/available-slots, GET /students/organizations)
-    // — a host org's real "available slots" now comes entirely from actual
-    // vacancy postings, not a number typed once at signup. Even if an older
-    // client build still sends available_slots in the request body, it's
-    // ignored, same as PUT /host-orgs/profile.
-    // Admin-specific fields
+    
     is_super_admin, permissions,
   } = req.body;
   let createdUserId = null;
@@ -358,14 +348,7 @@ router.get('/me', protect, async (req, res) => {
         const { data } = await supabase.from('supervisors').select('*').eq('user_id', userId).maybeSingle();
         profile = data || {};
       } else if (userRole === 'host_org') {
-        // NOTE: select('*') here still includes the raw available_slots
-        // column, which is stale/unreliable — see the note in
-        // POST /register-profile above. Downstream consumers of this
-        // /me response (e.g. CustomDrawerContent.js) should prefer
-        // GET /host-orgs/available-slots for an accurate figure rather
-        // than reading profile.available_slots from here. Left as-is for
-        // now since select('*') is relied on elsewhere for other org
-        // fields — narrowing it is a separate cleanup pass.
+        
         const { data } = await supabase.from('host_organizations').select('*').eq('user_id', userId).maybeSingle();
         profile = data || {};
       }

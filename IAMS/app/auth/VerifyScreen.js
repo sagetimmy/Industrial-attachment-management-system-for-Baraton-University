@@ -1,29 +1,39 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
-  StyleSheet, Alert, ScrollView,
+  StyleSheet, ScrollView, Animated,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import Spinner from '../../components/Spinner';
 
-// Educational theme colors
 const NAVY   = '#0D1B3E';
 const BLUE   = '#1A56DB';
 const GOLD   = '#D4A017';
 const WHITE  = '#FFFFFF';
 const GRAY   = '#9CA3AF';
+const GREEN  = '#1E9E5A';
+const RED    = '#DC2626';
 const INPUT_BG = '#F3F6FB';
 const BORDER   = '#D1D9E6';
 
 export default function VerifyScreen({ navigation, route }) {
-  const { verifyEmail, resendVerificationCode } = useAuth();
-  const { email } = route.params;
+  const { verifyEmail, resendVerificationCode, login } = useAuth();
+  const { email, password } = route.params;
   const [code, setCode] = useState(['', '', '', '', '', '']);
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
   const [countdown, setCountdown] = useState(60);
+
+  // 'idle' | 'success' | 'error'
+  const [status, setStatus] = useState('idle');
+  const [statusMessage, setStatusMessage] = useState('');
+  const [resendBanner, setResendBanner] = useState(null); // { type: 'success'|'error', text }
+
   const inputs = useRef([]);
+  const shakeAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const statusFade = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -32,7 +42,16 @@ export default function VerifyScreen({ navigation, route }) {
     return () => clearInterval(timer);
   }, []);
 
+  const resetStatus = () => {
+    if (status !== 'idle') {
+      setStatus('idle');
+      setStatusMessage('');
+      statusFade.setValue(0);
+    }
+  };
+
   const handleChange = (text, index) => {
+    resetStatus();
     const newCode = [...code];
     newCode[index] = text;
     setCode(newCode);
@@ -45,41 +64,102 @@ export default function VerifyScreen({ navigation, route }) {
     }
   };
 
+  const showStatus = () => {
+    Animated.timing(statusFade, {
+      toValue: 1,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const triggerSuccess = (autoLogin, message) => {
+    setLoading(false);
+    setStatus('success');
+    setStatusMessage(message);
+    showStatus();
+    Animated.sequence([
+      Animated.timing(scaleAnim, { toValue: 1.06, duration: 160, useNativeDriver: true }),
+      Animated.timing(scaleAnim, { toValue: 1, duration: 160, useNativeDriver: true }),
+    ]).start();
+
+    if (!autoLogin) {
+      setTimeout(() => navigation.replace('Login'), 1100);
+    }
+  };
+
+  const triggerError = (message) => {
+    setLoading(false);
+    setStatus('error');
+    setStatusMessage(message);
+    showStatus();
+
+    shakeAnim.setValue(0);
+    Animated.sequence([
+      Animated.timing(shakeAnim, { toValue: 1, duration: 55, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: -1, duration: 55, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 1, duration: 55, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: -1, duration: 55, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 0, duration: 55, useNativeDriver: true }),
+    ]).start(() => {
+      setCode(['', '', '', '', '', '']);
+      inputs.current[0]?.focus();
+    });
+  };
+
   const handleVerify = async () => {
     const fullCode = code.join('');
     if (fullCode.length < 6) {
-      Alert.alert('Error', 'Please enter the complete 6-digit code');
+      triggerError('Please enter the complete 6-digit code');
       return;
     }
     setLoading(true);
+    setStatus('idle');
+
     try {
       await verifyEmail(email, fullCode);
-      Alert.alert('Success! 🎉', 'Your email has been verified!', [
-        {
-          text: 'Continue',
-          onPress: () => navigation.replace('Login'),
-        }
-      ]);
     } catch (err) {
-      Alert.alert('Error', err.response?.data?.message || 'Invalid code');
-    } finally {
-      setLoading(false);
+      triggerError(err.response?.data?.message || 'Invalid code, please try again');
+      return;
+    }
+    if (!password) {
+      triggerSuccess(false, 'Email verified! Please log in to continue.');
+      return;
+    }
+
+    try {
+      await login(email, password);
+      triggerSuccess(true, 'Email verified! Taking you in…');
+    } catch (err) {
+      triggerSuccess(false, 'Email verified! Please log in to continue.');
     }
   };
 
   const handleResend = async () => {
     if (countdown > 0) return;
     setResending(true);
+    setResendBanner(null);
     try {
       await resendVerificationCode(email);
       setCountdown(60);
       setCode(['', '', '', '', '', '']);
-      Alert.alert('Sent!', 'A new verification code has been sent to your email.');
+      resetStatus();
+      setResendBanner({ type: 'success', text: 'A new code has been sent to your email.' });
     } catch (err) {
-      Alert.alert('Error', err.response?.data?.message || 'Failed to resend code');
+      setResendBanner({ type: 'error', text: err.response?.data?.message || 'Failed to resend code' });
     } finally {
       setResending(false);
     }
+  };
+
+  const shakeTranslate = shakeAnim.interpolate({
+    inputRange: [-1, 0, 1],
+    outputRange: [-8, 0, 8],
+  });
+
+  const getInputBorderColor = (digit) => {
+    if (status === 'success') return GREEN;
+    if (status === 'error') return RED;
+    return digit ? BLUE : BORDER;
   };
 
   return (
@@ -112,16 +192,51 @@ export default function VerifyScreen({ navigation, route }) {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
+        {resendBanner && (
+          <View
+            style={[
+              styles.banner,
+              resendBanner.type === 'success' ? styles.bannerSuccess : styles.bannerError,
+            ]}
+          >
+            <Ionicons
+              name={resendBanner.type === 'success' ? 'checkmark-circle' : 'alert-circle'}
+              size={18}
+              color={resendBanner.type === 'success' ? GREEN : RED}
+            />
+            <Text
+              style={[
+                styles.bannerText,
+                { color: resendBanner.type === 'success' ? GREEN : RED },
+              ]}
+            >
+              {resendBanner.text}
+            </Text>
+          </View>
+        )}
+
         <Text style={styles.sectionLabel}>Verification Code</Text>
 
-        <View style={styles.codeContainer}>
+        <Animated.View
+          style={[
+            styles.codeContainer,
+            {
+              transform: [
+                { translateX: shakeTranslate },
+                { scale: scaleAnim },
+              ],
+            },
+          ]}
+        >
           {code.map((digit, index) => (
             <TextInput
               key={index}
               ref={(ref) => (inputs.current[index] = ref)}
               style={[
                 styles.codeInput,
-                { borderColor: digit ? BLUE : BORDER }
+                { borderColor: getInputBorderColor(digit) },
+                status === 'success' && styles.codeInputSuccess,
+                status === 'error' && styles.codeInputError,
               ]}
               value={digit}
               onChangeText={(text) => handleChange(text.slice(-1), index)}
@@ -129,20 +244,40 @@ export default function VerifyScreen({ navigation, route }) {
               keyboardType="numeric"
               maxLength={1}
               textAlign="center"
+              editable={!loading && status !== 'success'}
             />
           ))}
-        </View>
+        </Animated.View>
+
+        {status !== 'idle' && (
+          <Animated.View style={[styles.statusRow, { opacity: statusFade }]}>
+            <Ionicons
+              name={status === 'success' ? 'checkmark-circle' : 'close-circle'}
+              size={20}
+              color={status === 'success' ? GREEN : RED}
+            />
+            <Text style={[styles.statusText, { color: status === 'success' ? GREEN : RED }]}>
+              {statusMessage}
+            </Text>
+          </Animated.View>
+        )}
 
         <TouchableOpacity
-          style={[styles.primaryBtn, loading && { opacity: 0.7 }]}
+          style={[
+            styles.primaryBtn,
+            loading && { opacity: 0.7 },
+            status === 'success' && styles.primaryBtnSuccess,
+          ]}
           onPress={handleVerify}
-          disabled={loading}
+          disabled={loading || status === 'success'}
           activeOpacity={0.85}
         >
           {loading ? (
             <Spinner color={WHITE} size="small" />
           ) : (
-            <Text style={styles.primaryBtnText}>Verify Email</Text>
+            <Text style={styles.primaryBtnText}>
+              {status === 'success' ? 'Verified' : 'Verify Email'}
+            </Text>
           )}
         </TouchableOpacity>
 
@@ -230,6 +365,18 @@ const styles = StyleSheet.create({
     paddingTop: 24,
     paddingBottom: 40,
   },
+  banner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginBottom: 16,
+  },
+  bannerSuccess: { backgroundColor: '#E7F7EF' },
+  bannerError: { backgroundColor: '#FDECEC' },
+  bannerText: { fontSize: 13, fontWeight: '600', flexShrink: 1 },
   sectionLabel: {
     fontSize: 15,
     fontWeight: '700',
@@ -242,7 +389,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     gap: 10,
-    marginBottom: 24,
+    marginBottom: 12,
   },
   codeInput: {
     width: 48,
@@ -254,6 +401,16 @@ const styles = StyleSheet.create({
     color: NAVY,
     backgroundColor: INPUT_BG,
   },
+  codeInputSuccess: { backgroundColor: '#E7F7EF' },
+  codeInputError: { backgroundColor: '#FDECEC' },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginBottom: 16,
+  },
+  statusText: { fontSize: 14, fontWeight: '700' },
   primaryBtn: {
     backgroundColor: BLUE,
     borderRadius: 14,
@@ -267,6 +424,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 6,
   },
+  primaryBtnSuccess: { backgroundColor: GREEN, shadowColor: GREEN },
   primaryBtnText: { color: WHITE, fontSize: 17, fontWeight: '700' },
   resendBtn: { alignItems: 'center', paddingVertical: 6 },
   resendText: { fontSize: 14, fontWeight: '600', color: BLUE },
