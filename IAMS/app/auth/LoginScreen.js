@@ -19,11 +19,14 @@ const BLUE     = '#1A56DB';
 const GOLD     = '#D4A017';
 const WHITE    = '#FFFFFF';
 const GRAY     = '#9CA3AF';
+const RED      = '#DC2626';
 const INPUT_BG = '#F3F6FB';
 const BORDER   = '#D1D9E6';
 const CARD_BG  = '#FAF9F6';
 
 const heroImage = require('../../assets/graduation-bg.png');
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function LoginScreen({ navigation }) {
   const { login } = useAuth();
@@ -33,33 +36,55 @@ export default function LoginScreen({ navigation }) {
   const [showPass, setShowPass]   = useState(false);
   const [loading, setLoading]     = useState(false);
 
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [formError, setFormError]     = useState('');
+
   const heroHeight = Math.max(height * 0.45, 320);
   const waveHeight = 48;
 
+  const clearFieldError = (key) => {
+    if (fieldErrors[key]) setFieldErrors((e) => ({ ...e, [key]: undefined }));
+    if (formError) setFormError('');
+  };
+
+  const validate = () => {
+    const errors = {};
+    if (!email.trim()) {
+      errors.email = 'Email is required';
+    } else if (!EMAIL_REGEX.test(email.trim())) {
+      errors.email = 'Enter a valid email address';
+    }
+    if (!password) {
+      errors.password = 'Password is required';
+    }
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
   const handleLogin = async () => {
-    if (!email || !password) {
-      Alert.alert('Error', 'Please fill in all fields');
-      return;
-    }
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      Alert.alert('Error', 'Please enter a valid email address');
-      return;
-    }
+    setFormError('');
+    if (!validate()) return;
+
     setLoading(true);
     try {
       await login(email.trim(), password);
     } catch (err) {
+      setLoading(false);
+
       if (err.response?.data?.requiresVerification) {
         navigation.navigate('Verify', { email });
-      } else {
-        const message = err.response?.data?.message
-          || (err.request
-            ? `Cannot reach the server at ${getApiBaseUrl()}. Make sure the backend is running.`
-            : err.message || 'Something went wrong');
-        Alert.alert('Login Failed', message);
+        return;
       }
-      setLoading(false);
+
+      if (err.response) {
+    
+        setFormError(err.response.data?.message || 'Incorrect email or password');
+        return;
+      }
+      const message = err.request
+        ? `Cannot reach the server at ${getApiBaseUrl()}. Make sure the backend is running.`
+        : err.message || 'Something went wrong';
+      Alert.alert('Login Failed', message);
     }
   };
 
@@ -148,28 +173,45 @@ export default function LoginScreen({ navigation }) {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.formInner}>
-            <View style={styles.inputWrap}>
-              <Ionicons name="mail-outline" size={20} color={BLUE} style={styles.inputIcon} />
+            <View
+              style={[styles.inputWrap, fieldErrors.email && styles.inputWrapError]}
+            >
+              <Ionicons
+                name="mail-outline"
+                size={20}
+                color={fieldErrors.email ? RED : BLUE}
+                style={styles.inputIcon}
+              />
               <TextInput
                 style={styles.input}
                 placeholder="Email"
                 placeholderTextColor={GRAY}
                 value={email}
-                onChangeText={setEmail}
+                onChangeText={(v) => { setEmail(v); clearFieldError('email'); }}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 allowFontScaling={false}
               />
             </View>
+            {fieldErrors.email ? (
+              <Text style={styles.fieldErrorText}>{fieldErrors.email}</Text>
+            ) : null}
 
-            <View style={styles.inputWrap}>
-              <MaterialCommunityIcons name="lock-outline" size={20} color={BLUE} style={styles.inputIcon} />
+            <View
+              style={[styles.inputWrap, fieldErrors.password && styles.inputWrapError]}
+            >
+              <MaterialCommunityIcons
+                name="lock-outline"
+                size={20}
+                color={fieldErrors.password ? RED : BLUE}
+                style={styles.inputIcon}
+              />
               <TextInput
                 style={[styles.input, { flex: 1 }]}
                 placeholder="Password"
                 placeholderTextColor={GRAY}
                 value={password}
-                onChangeText={setPassword}
+                onChangeText={(v) => { setPassword(v); clearFieldError('password'); }}
                 secureTextEntry={!showPass}
                 allowFontScaling={false}
               />
@@ -177,6 +219,16 @@ export default function LoginScreen({ navigation }) {
                 <Ionicons name={showPass ? 'eye-outline' : 'eye-off-outline'} size={20} color={GRAY} />
               </TouchableOpacity>
             </View>
+            {fieldErrors.password ? (
+              <Text style={styles.fieldErrorText}>{fieldErrors.password}</Text>
+            ) : null}
+
+            {formError ? (
+              <View style={styles.formErrorBox}>
+                <Ionicons name="alert-circle" size={16} color={RED} />
+                <Text style={styles.formErrorText}>{formError}</Text>
+              </View>
+            ) : null}
 
             <View style={styles.optionsRow}>
               <View style={{ flex: 1 }} />
@@ -332,6 +384,34 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginBottom: 16,
     height: 56,
+  },
+  inputWrapError: {
+    borderColor: RED,
+    marginBottom: 6,
+  },
+  fieldErrorText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: RED,
+    marginTop: -2,
+    marginBottom: 12,
+    marginLeft: 4,
+  },
+  formErrorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FDECEC',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 16,
+  },
+  formErrorText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: RED,
+    flexShrink: 1,
   },
   inputIcon: { marginRight: 12 },
   input: {

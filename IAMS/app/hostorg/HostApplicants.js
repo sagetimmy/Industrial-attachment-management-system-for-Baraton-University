@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import * as WebBrowser from 'expo-web-browser';
 import api from '../../api/axios';
 import { showAlert } from '../../utils/crossPlatformAlert';
 
@@ -37,6 +38,24 @@ const statusMeta = (status) => {
   }
 };
 
+const docIconFor = (fileName = '') => {
+  const ext = fileName.split('.').pop()?.toLowerCase();
+  switch (ext) {
+    case 'pdf':
+      return { name: 'file-pdf-box', color: RED };
+    case 'doc':
+    case 'docx':
+      return { name: 'file-word-box', color: BLUE };
+    case 'jpg':
+    case 'jpeg':
+    case 'png':
+    case 'heic':
+      return { name: 'file-image-box', color: AMBER };
+    default:
+      return { name: 'file-document-outline', color: GRAY };
+  }
+};
+
 function DetailPair({ leftLabel, leftValue, rightLabel, rightValue }) {
   return (
     <View style={styles.detailRow}>
@@ -48,6 +67,43 @@ function DetailPair({ leftLabel, leftValue, rightLabel, rightValue }) {
         <Text style={styles.detailLabel}>{rightLabel}</Text>
         <Text style={styles.detailValue}>{rightValue || '—'}</Text>
       </View>
+    </View>
+  );
+}
+
+function DocumentReview({ documentUrls }) {
+  const docs = Array.isArray(documentUrls) ? documentUrls : [];
+
+  return (
+    <View style={styles.docReviewBlock}>
+      <View style={styles.docReviewHeaderRow}>
+        <MaterialCommunityIcons name="folder-search-outline" size={16} color={DARK} />
+        <Text style={styles.docReviewTitle}>DOCUMENTS TO REVIEW</Text>
+      </View>
+
+      {docs.length === 0 ? (
+        <View style={styles.docWarningRow}>
+          <Ionicons name="warning-outline" size={16} color={AMBER} />
+          <Text style={styles.docWarningText}>No documents attached to this application</Text>
+        </View>
+      ) : (
+        docs.map((url) => {
+          const fileName = decodeURIComponent(url.split('/').pop().split('?')[0]);
+          const icon = docIconFor(fileName);
+          return (
+            <TouchableOpacity
+              key={url}
+              style={styles.docCard}
+              onPress={() => WebBrowser.openBrowserAsync(url)}
+              activeOpacity={0.7}
+            >
+              <MaterialCommunityIcons name={icon.name} size={22} color={icon.color} />
+              <Text style={styles.docCardText} numberOfLines={1}>{fileName}</Text>
+              <Ionicons name="open-outline" size={16} color={GRAY} />
+            </TouchableOpacity>
+          );
+        })
+      )}
     </View>
   );
 }
@@ -189,6 +245,9 @@ export default function HostApplicants({ navigation }) {
                   )}
                 </View>
 
+                {/* ── Document review — always visible above the decision ── */}
+                <DocumentReview documentUrls={app.document_urls} />
+
                 {!!app.response_message && (
                   <View style={styles.responseBox}>
                     <Text style={styles.responseLabel}>LATEST RESPONSE</Text>
@@ -310,6 +369,46 @@ const styles = StyleSheet.create({
   detailFullRow: { marginBottom: 14 },
   detailLabel: { fontSize: 10, fontWeight: '800', color: GRAY, letterSpacing: 0.5, marginBottom: 4 },
   detailValue: { fontSize: 14, fontWeight: '600', color: DARK },
+
+  // Document review section
+  docReviewBlock: {
+    backgroundColor: '#FAFBFA',
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 14,
+  },
+  docReviewHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 10,
+  },
+  docReviewTitle: { fontSize: 11, fontWeight: '800', color: DARK, letterSpacing: 0.5 },
+  docCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+  },
+  docCardText: { flex: 1, fontSize: 13, fontWeight: '600', color: DARK },
+  docWarningRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: AMBER_BG,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  docWarningText: { fontSize: 12.5, fontWeight: '600', color: AMBER, flexShrink: 1 },
 
   // Latest response box
   responseBox: {

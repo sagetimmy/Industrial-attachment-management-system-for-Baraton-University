@@ -2,7 +2,6 @@ import 'react-native-gesture-handler';
 import { registerRootComponent } from 'expo';
 import React from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import App from './App';
 
 class ErrorBoundary extends React.Component {
@@ -26,7 +25,7 @@ class ErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <SafeAreaView style={{ flex: 1, backgroundColor: '#F0F4F3', justifyContent: 'center', alignItems: 'center' }}>
+        <View style={{ flex: 1, backgroundColor: '#F0F4F3', justifyContent: 'center', alignItems: 'center', paddingTop: 48 }}>
           <View style={{ alignItems: 'center', paddingHorizontal: 32 }}>
             <Text style={{ fontSize: 56, marginBottom: 16 }}>💥</Text>
             <Text style={{ fontSize: 22, fontWeight: '800', color: '#111827', marginBottom: 10, textAlign: 'center' }}>
@@ -42,7 +41,7 @@ class ErrorBoundary extends React.Component {
               <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>Try Again</Text>
             </TouchableOpacity>
           </View>
-        </SafeAreaView>
+        </View>
       );
     }
 

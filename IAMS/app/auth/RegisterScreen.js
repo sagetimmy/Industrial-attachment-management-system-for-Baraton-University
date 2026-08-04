@@ -2,21 +2,22 @@ import { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, Alert, ScrollView,
-  Dimensions
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
+import { getApiBaseUrl } from '../../api/axios';
 import Spinner from '../../components/Spinner';
-
-const { height } = Dimensions.get('window');
 
 const NAVY     = '#0D1B3E';
 const BLUE     = '#1A56DB';
 const GOLD     = '#D4A017';
 const WHITE    = '#FFFFFF';
 const GRAY     = '#9CA3AF';
+const RED      = '#DC2626';
 const INPUT_BG = '#F3F6FB';
 const BORDER   = '#D1D9E6';
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function RegisterScreen({ navigation }) {
   const { register } = useAuth();
@@ -38,47 +39,81 @@ export default function RegisterScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
   const [agreeTerms, setAgreeTerms] = useState(false);
 
-  const handleChange = (key, value) => setForm({ ...form, [key]: value });
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [formError, setFormError]     = useState('');
 
-  const handleRegister = async () => {
+  const handleChange = (key, value) => {
+    setForm({ ...form, [key]: value });
+    if (fieldErrors[key]) setFieldErrors((e) => ({ ...e, [key]: undefined }));
+    if (formError) setFormError('');
+  };
+
+  const toggleAgreeTerms = () => {
+    setAgreeTerms(!agreeTerms);
+    if (fieldErrors.terms) setFieldErrors((e) => ({ ...e, terms: undefined }));
+  };
+
+  const validate = () => {
+    const errors = {};
+
     if (role === 'host_org') {
-      if (!form.email || !form.password || !form.org_name || !form.location) {
-        Alert.alert('Error', 'Please fill in all required fields');
-        return;
-      }
+      if (!form.org_name.trim()) errors.org_name = 'Organization name is required';
+      if (!form.location.trim()) errors.location = 'Physical address is required';
     } else {
-      if (!form.full_name || !form.email || !form.password) {
-        Alert.alert('Error', 'Please fill in all required fields');
-        return;
-      }
+      if (!form.full_name.trim()) errors.full_name = 'Full name is required';
     }
 
-    if (form.password !== form.confirm_password) {
-      Alert.alert('Error', 'Passwords do not match');
-      return;
+    if (!form.email.trim()) {
+      errors.email = 'Email is required';
+    } else if (!EMAIL_REGEX.test(form.email.trim())) {
+      errors.email = 'Enter a valid email address';
+    }
+
+    if (!form.password) {
+      errors.password = 'Password is required';
+    } else if (form.password.length < 6) {
+      errors.password = 'Password must be at least 6 characters';
+    }
+
+    if (!form.confirm_password) {
+      errors.confirm_password = 'Please confirm your password';
+    } else if (form.password && form.password !== form.confirm_password) {
+      errors.confirm_password = 'Passwords do not match';
+    }
+
+    if (role === 'student') {
+      if (!form.reg_number.trim()) errors.reg_number = 'Registration number is required';
+      if (!form.course.trim()) errors.course = 'Course is required';
     }
 
     if (!agreeTerms) {
-      Alert.alert('Error', 'Please agree to Terms & Conditions and Privacy Policy');
-      return;
+      errors.terms = 'You must agree to the Terms & Conditions and Privacy Policy';
     }
 
-    if (role === 'student' && !form.reg_number) {
-      Alert.alert('Error', 'Registration number is required for students');
-      return;
-    }
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
 
-    if (role === 'student' && !form.course) {
-      Alert.alert('Error', 'Course is required for students');
-      return;
-    }
+  const handleRegister = async () => {
+    setFormError('');
+    if (!validate()) return;
 
     setLoading(true);
     try {
       await register({ ...form, role });
       navigation.navigate('Verify', { email: form.email, password: form.password });
     } catch (err) {
-      Alert.alert('Registration Failed', err.message || 'Something went wrong');
+      if (err.response) {
+        // Server responded — e.g. "Email already registered".
+        // Surface it inline instead of a popup so it reads like a form error.
+        setFormError(err.response.data?.message || err.message || 'Registration failed');
+      } else {
+        // No response reached us — network / server-down issue.
+        const message = err.request
+          ? `Cannot reach the server at ${getApiBaseUrl()}. Make sure the backend is running.`
+          : err.message || 'Something went wrong';
+        Alert.alert('Registration Failed', message);
+      }
     } finally {
       setLoading(false);
     }
@@ -149,7 +184,12 @@ export default function RegisterScreen({ navigation }) {
               <TouchableOpacity
                 key={r.key}
                 style={[styles.roleOption, role === r.key && styles.roleOptionSelected]}
-                onPress={() => { setRole(r.key); setShowRoleDropdown(false); }}
+                onPress={() => {
+                  setRole(r.key);
+                  setShowRoleDropdown(false);
+                  setFieldErrors({});
+                  setFormError('');
+                }}
               >
                 <MaterialCommunityIcons
                   name={r.icon}
@@ -169,8 +209,13 @@ export default function RegisterScreen({ navigation }) {
         {role !== 'host_org' && (
           <>
             <Text style={styles.sectionLabel}>Personal Information</Text>
-            <View style={styles.inputWrap}>
-              <Ionicons name="person-outline" size={20} color={BLUE} style={styles.inputIcon} />
+            <View style={[styles.inputWrap, fieldErrors.full_name && styles.inputWrapError]}>
+              <Ionicons
+                name="person-outline"
+                size={20}
+                color={fieldErrors.full_name ? RED : BLUE}
+                style={styles.inputIcon}
+              />
               <TextInput
                 style={styles.input}
                 placeholder="Full Name"
@@ -179,12 +224,20 @@ export default function RegisterScreen({ navigation }) {
                 onChangeText={(v) => handleChange('full_name', v)}
               />
             </View>
+            {fieldErrors.full_name ? (
+              <Text style={styles.fieldErrorText}>{fieldErrors.full_name}</Text>
+            ) : null}
           </>
         )}
 
         {/* Email */}
-        <View style={styles.inputWrap}>
-          <Ionicons name="mail-outline" size={20} color={BLUE} style={styles.inputIcon} />
+        <View style={[styles.inputWrap, fieldErrors.email && styles.inputWrapError]}>
+          <Ionicons
+            name="mail-outline"
+            size={20}
+            color={fieldErrors.email ? RED : BLUE}
+            style={styles.inputIcon}
+          />
           <TextInput
             style={styles.input}
             placeholder="Email"
@@ -195,10 +248,18 @@ export default function RegisterScreen({ navigation }) {
             autoCapitalize="none"
           />
         </View>
+        {fieldErrors.email ? (
+          <Text style={styles.fieldErrorText}>{fieldErrors.email}</Text>
+        ) : null}
 
         {/* Password */}
-        <View style={styles.inputWrap}>
-          <MaterialCommunityIcons name="lock-outline" size={20} color={BLUE} style={styles.inputIcon} />
+        <View style={[styles.inputWrap, fieldErrors.password && styles.inputWrapError]}>
+          <MaterialCommunityIcons
+            name="lock-outline"
+            size={20}
+            color={fieldErrors.password ? RED : BLUE}
+            style={styles.inputIcon}
+          />
           <TextInput
             style={styles.input}
             placeholder="Password"
@@ -208,10 +269,18 @@ export default function RegisterScreen({ navigation }) {
             secureTextEntry
           />
         </View>
+        {fieldErrors.password ? (
+          <Text style={styles.fieldErrorText}>{fieldErrors.password}</Text>
+        ) : null}
 
         {/* Confirm Password */}
-        <View style={styles.inputWrap}>
-          <MaterialCommunityIcons name="lock-outline" size={20} color={BLUE} style={styles.inputIcon} />
+        <View style={[styles.inputWrap, fieldErrors.confirm_password && styles.inputWrapError]}>
+          <MaterialCommunityIcons
+            name="lock-outline"
+            size={20}
+            color={fieldErrors.confirm_password ? RED : BLUE}
+            style={styles.inputIcon}
+          />
           <TextInput
             style={styles.input}
             placeholder="Confirm Password"
@@ -221,6 +290,9 @@ export default function RegisterScreen({ navigation }) {
             secureTextEntry
           />
         </View>
+        {fieldErrors.confirm_password ? (
+          <Text style={styles.fieldErrorText}>{fieldErrors.confirm_password}</Text>
+        ) : null}
 
         {/* Phone */}
         <View style={styles.inputWrap}>
@@ -239,8 +311,13 @@ export default function RegisterScreen({ navigation }) {
         {role === 'student' && (
           <>
             <Text style={styles.sectionLabel}>Student Details</Text>
-            <View style={styles.inputWrap}>
-              <Ionicons name="id-card-outline" size={20} color={BLUE} style={styles.inputIcon} />
+            <View style={[styles.inputWrap, fieldErrors.reg_number && styles.inputWrapError]}>
+              <Ionicons
+                name="id-card-outline"
+                size={20}
+                color={fieldErrors.reg_number ? RED : BLUE}
+                style={styles.inputIcon}
+              />
               <TextInput
                 style={styles.input}
                 placeholder="Registration Number"
@@ -250,8 +327,17 @@ export default function RegisterScreen({ navigation }) {
                 autoCapitalize="characters"
               />
             </View>
-            <View style={styles.inputWrap}>
-              <MaterialCommunityIcons name="book-education-outline" size={20} color={BLUE} style={styles.inputIcon} />
+            {fieldErrors.reg_number ? (
+              <Text style={styles.fieldErrorText}>{fieldErrors.reg_number}</Text>
+            ) : null}
+
+            <View style={[styles.inputWrap, fieldErrors.course && styles.inputWrapError]}>
+              <MaterialCommunityIcons
+                name="book-education-outline"
+                size={20}
+                color={fieldErrors.course ? RED : BLUE}
+                style={styles.inputIcon}
+              />
               <TextInput
                 style={styles.input}
                 placeholder="Course (e.g. BSc Information Systems & Computing)"
@@ -260,6 +346,10 @@ export default function RegisterScreen({ navigation }) {
                 onChangeText={(v) => handleChange('course', v)}
               />
             </View>
+            {fieldErrors.course ? (
+              <Text style={styles.fieldErrorText}>{fieldErrors.course}</Text>
+            ) : null}
+
             <View style={styles.inputWrap}>
               <Ionicons name="book-outline" size={20} color={BLUE} style={styles.inputIcon} />
               <TextInput
@@ -305,8 +395,13 @@ export default function RegisterScreen({ navigation }) {
         {role === 'host_org' && (
           <>
             <Text style={styles.sectionLabel}>Organization Information</Text>
-            <View style={styles.inputWrap}>
-              <MaterialCommunityIcons name="office-building-outline" size={20} color={BLUE} style={styles.inputIcon} />
+            <View style={[styles.inputWrap, fieldErrors.org_name && styles.inputWrapError]}>
+              <MaterialCommunityIcons
+                name="office-building-outline"
+                size={20}
+                color={fieldErrors.org_name ? RED : BLUE}
+                style={styles.inputIcon}
+              />
               <TextInput
                 style={styles.input}
                 placeholder="Organization Name"
@@ -315,6 +410,10 @@ export default function RegisterScreen({ navigation }) {
                 onChangeText={(v) => handleChange('org_name', v)}
               />
             </View>
+            {fieldErrors.org_name ? (
+              <Text style={styles.fieldErrorText}>{fieldErrors.org_name}</Text>
+            ) : null}
+
             <View style={styles.inputWrap}>
               <Ionicons name="briefcase-outline" size={20} color={BLUE} style={styles.inputIcon} />
               <TextInput
@@ -325,8 +424,14 @@ export default function RegisterScreen({ navigation }) {
                 onChangeText={(v) => handleChange('industry', v)}
               />
             </View>
-            <View style={styles.inputWrap}>
-              <Ionicons name="location-outline" size={20} color={BLUE} style={styles.inputIcon} />
+
+            <View style={[styles.inputWrap, fieldErrors.location && styles.inputWrapError]}>
+              <Ionicons
+                name="location-outline"
+                size={20}
+                color={fieldErrors.location ? RED : BLUE}
+                style={styles.inputIcon}
+              />
               <TextInput
                 style={styles.input}
                 placeholder="Physical Address"
@@ -335,6 +440,10 @@ export default function RegisterScreen({ navigation }) {
                 onChangeText={(v) => handleChange('location', v)}
               />
             </View>
+            {fieldErrors.location ? (
+              <Text style={styles.fieldErrorText}>{fieldErrors.location}</Text>
+            ) : null}
+
             <View style={styles.inputWrap}>
               <Ionicons name="mail-outline" size={20} color={BLUE} style={styles.inputIcon} />
               <TextInput
@@ -362,8 +471,12 @@ export default function RegisterScreen({ navigation }) {
         )}
 
         {/* Terms */}
-        <TouchableOpacity style={styles.termsRow} onPress={() => setAgreeTerms(!agreeTerms)}>
-          <View style={[styles.checkbox, agreeTerms && styles.checkboxChecked]}>
+        <TouchableOpacity style={styles.termsRow} onPress={toggleAgreeTerms}>
+          <View style={[
+            styles.checkbox,
+            agreeTerms && styles.checkboxChecked,
+            fieldErrors.terms && styles.checkboxError,
+          ]}>
             {agreeTerms && <Ionicons name="checkmark" size={12} color={WHITE} />}
           </View>
           <Text style={styles.termsText}>
@@ -373,6 +486,16 @@ export default function RegisterScreen({ navigation }) {
             </Text>
           </Text>
         </TouchableOpacity>
+        {fieldErrors.terms ? (
+          <Text style={[styles.fieldErrorText, { marginTop: -14 }]}>{fieldErrors.terms}</Text>
+        ) : null}
+
+        {formError ? (
+          <View style={styles.formErrorBox}>
+            <Ionicons name="alert-circle" size={16} color={RED} />
+            <Text style={styles.formErrorText}>{formError}</Text>
+          </View>
+        ) : null}
 
         {/* Submit */}
         <TouchableOpacity
@@ -473,15 +596,45 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16, marginBottom: 16, height: 56,
     borderWidth: 1, borderColor: '#E5E7EB',
   },
+  inputWrapError: {
+    borderColor: RED,
+    borderWidth: 1.5,
+    marginBottom: 6,
+  },
+  fieldErrorText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: RED,
+    marginTop: -2,
+    marginBottom: 12,
+    marginLeft: 4,
+  },
+  formErrorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FDECEC',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 16,
+  },
+  formErrorText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: RED,
+    flexShrink: 1,
+  },
   inputIcon: { marginRight: 12 },
   input: { flex: 1, fontSize: 15, color: NAVY, fontWeight: '500' },
-  termsRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 24, marginTop: 8 },
+  termsRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, marginTop: 8 },
   checkbox: {
     width: 20, height: 20, borderRadius: 6,
     borderWidth: 2, borderColor: BLUE,
     marginRight: 10, alignItems: 'center', justifyContent: 'center',
   },
   checkboxChecked: { backgroundColor: BLUE },
+  checkboxError: { borderColor: RED },
   termsText: { fontSize: 13, color: '#6B7280', flex: 1 },
   termsLink: { color: BLUE, fontWeight: '700' },
   signUpBtn: {
