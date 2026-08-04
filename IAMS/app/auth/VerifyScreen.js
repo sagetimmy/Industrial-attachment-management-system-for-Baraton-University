@@ -4,18 +4,23 @@ import {
   StyleSheet, ScrollView, Animated,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Path } from 'react-native-svg';
 import { useAuth } from '../../context/AuthContext';
 import Spinner from '../../components/Spinner';
 
-const NAVY   = '#0D1B3E';
-const BLUE   = '#1A56DB';
-const GOLD   = '#D4A017';
-const WHITE  = '#FFFFFF';
-const GRAY   = '#9CA3AF';
-const GREEN  = '#1E9E5A';
-const RED    = '#DC2626';
-const INPUT_BG = '#F3F6FB';
-const BORDER   = '#D1D9E6';
+const NAVY       = '#0D1B3E';
+const NAVY_DEEP  = '#081226';
+const BLUE       = '#1A56DB';
+const GOLD       = '#D4A017';
+const WHITE      = '#FFFFFF';
+const GRAY       = '#9CA3AF';
+const GREEN      = '#1E9E5A';
+const RED        = '#DC2626';
+const INPUT_BG   = '#F3F6FB';
+const BORDER     = '#D1D9E6';
+const CARD_BG    = '#FAF9F6';
+const FORM_MAX_WIDTH = 420;
 
 export default function VerifyScreen({ navigation, route }) {
   const { verifyEmail, resendVerificationCode, login } = useAuth();
@@ -25,10 +30,9 @@ export default function VerifyScreen({ navigation, route }) {
   const [resending, setResending] = useState(false);
   const [countdown, setCountdown] = useState(60);
 
-  // 'idle' | 'success' | 'error'
   const [status, setStatus] = useState('idle');
   const [statusMessage, setStatusMessage] = useState('');
-  const [resendBanner, setResendBanner] = useState(null); // { type: 'success'|'error', text }
+  const [resendBanner, setResendBanner] = useState(null); 
 
   const inputs = useRef([]);
   const shakeAnim = useRef(new Animated.Value(0)).current;
@@ -165,26 +169,49 @@ export default function VerifyScreen({ navigation, route }) {
   return (
     <View style={styles.root}>
       {/* ── Navy header section ── */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={24} color={WHITE} />
+      <LinearGradient
+        colors={[NAVY_DEEP, NAVY]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.header}
+      >
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.backBtn}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="arrow-back" size={22} color={WHITE} />
         </TouchableOpacity>
 
         <View style={styles.headerContent}>
+          <View style={styles.iconBadge}>
+            <MaterialCommunityIcons name="email-check-outline" size={26} color={GOLD} />
+          </View>
+
+          <Text style={styles.kicker}>IAMS · SECURE VERIFICATION</Text>
           <Text style={styles.headerTitle}>Verify Email</Text>
+
           <Text style={styles.headerSubtitle}>Enter the 6-digit code sent to</Text>
           <Text style={styles.headerEmail}>{email}</Text>
+
           <View style={styles.goldLine} />
-          <Text style={styles.headerAcronym}>IAMS</Text>
         </View>
+      </LinearGradient>
 
-        <View style={styles.headerIcon}>
-          <MaterialCommunityIcons name="email-check-outline" size={30} color={GOLD} />
-        </View>
+      {/* ── SVG wave transition ── */}
+      <View style={styles.waveWrap}>
+        <Svg
+          width="100%"
+          height="100%"
+          viewBox="0 0 400 40"
+          preserveAspectRatio="none"
+        >
+          <Path
+            d="M0,0 L0,18 C66,34 133,34 200,20 C267,6 333,6 400,18 L400,0 Z"
+            fill={NAVY}
+          />
+        </Svg>
       </View>
-
-      {/* ── Decorative wave divider ── */}
-      <View style={styles.waveDivider} />
 
       <ScrollView
         style={styles.formContainer}
@@ -192,114 +219,116 @@ export default function VerifyScreen({ navigation, route }) {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {resendBanner && (
-          <View
-            style={[
-              styles.banner,
-              resendBanner.type === 'success' ? styles.bannerSuccess : styles.bannerError,
-            ]}
-          >
-            <Ionicons
-              name={resendBanner.type === 'success' ? 'checkmark-circle' : 'alert-circle'}
-              size={18}
-              color={resendBanner.type === 'success' ? GREEN : RED}
-            />
-            <Text
+        <View style={styles.formInner}>
+          {resendBanner && (
+            <View
               style={[
-                styles.bannerText,
-                { color: resendBanner.type === 'success' ? GREEN : RED },
+                styles.banner,
+                resendBanner.type === 'success' ? styles.bannerSuccess : styles.bannerError,
               ]}
             >
-              {resendBanner.text}
-            </Text>
-          </View>
-        )}
+              <Ionicons
+                name={resendBanner.type === 'success' ? 'checkmark-circle' : 'alert-circle'}
+                size={18}
+                color={resendBanner.type === 'success' ? GREEN : RED}
+              />
+              <Text
+                style={[
+                  styles.bannerText,
+                  { color: resendBanner.type === 'success' ? GREEN : RED },
+                ]}
+              >
+                {resendBanner.text}
+              </Text>
+            </View>
+          )}
 
-        <Text style={styles.sectionLabel}>Verification Code</Text>
+          <Text style={styles.sectionLabel}>Verification Code</Text>
 
-        <Animated.View
-          style={[
-            styles.codeContainer,
-            {
-              transform: [
-                { translateX: shakeTranslate },
-                { scale: scaleAnim },
-              ],
-            },
-          ]}
-        >
-          {code.map((digit, index) => (
-            <TextInput
-              key={index}
-              ref={(ref) => (inputs.current[index] = ref)}
-              style={[
-                styles.codeInput,
-                { borderColor: getInputBorderColor(digit) },
-                status === 'success' && styles.codeInputSuccess,
-                status === 'error' && styles.codeInputError,
-              ]}
-              value={digit}
-              onChangeText={(text) => handleChange(text.slice(-1), index)}
-              onKeyPress={(e) => handleBackspace(e, index)}
-              keyboardType="numeric"
-              maxLength={1}
-              textAlign="center"
-              editable={!loading && status !== 'success'}
-            />
-          ))}
-        </Animated.View>
-
-        {status !== 'idle' && (
-          <Animated.View style={[styles.statusRow, { opacity: statusFade }]}>
-            <Ionicons
-              name={status === 'success' ? 'checkmark-circle' : 'close-circle'}
-              size={20}
-              color={status === 'success' ? GREEN : RED}
-            />
-            <Text style={[styles.statusText, { color: status === 'success' ? GREEN : RED }]}>
-              {statusMessage}
-            </Text>
+          <Animated.View
+            style={[
+              styles.codeContainer,
+              {
+                transform: [
+                  { translateX: shakeTranslate },
+                  { scale: scaleAnim },
+                ],
+              },
+            ]}
+          >
+            {code.map((digit, index) => (
+              <TextInput
+                key={index}
+                ref={(ref) => (inputs.current[index] = ref)}
+                style={[
+                  styles.codeInput,
+                  { borderColor: getInputBorderColor(digit) },
+                  status === 'success' && styles.codeInputSuccess,
+                  status === 'error' && styles.codeInputError,
+                ]}
+                value={digit}
+                onChangeText={(text) => handleChange(text.slice(-1), index)}
+                onKeyPress={(e) => handleBackspace(e, index)}
+                keyboardType="numeric"
+                maxLength={1}
+                textAlign="center"
+                editable={!loading && status !== 'success'}
+              />
+            ))}
           </Animated.View>
-        )}
 
-        <TouchableOpacity
-          style={[
-            styles.primaryBtn,
-            loading && { opacity: 0.7 },
-            status === 'success' && styles.primaryBtnSuccess,
-          ]}
-          onPress={handleVerify}
-          disabled={loading || status === 'success'}
-          activeOpacity={0.85}
-        >
-          {loading ? (
-            <Spinner color={WHITE} size="small" />
-          ) : (
-            <Text style={styles.primaryBtnText}>
-              {status === 'success' ? 'Verified' : 'Verify Email'}
-            </Text>
+          {status !== 'idle' && (
+            <Animated.View style={[styles.statusRow, { opacity: statusFade }]}>
+              <Ionicons
+                name={status === 'success' ? 'checkmark-circle' : 'close-circle'}
+                size={20}
+                color={status === 'success' ? GREEN : RED}
+              />
+              <Text style={[styles.statusText, { color: status === 'success' ? GREEN : RED }]}>
+                {statusMessage}
+              </Text>
+            </Animated.View>
           )}
-        </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.resendBtn}
-          onPress={handleResend}
-          disabled={countdown > 0 || resending}
-        >
-          {resending ? (
-            <Spinner color={BLUE} size="small" />
-          ) : (
-            <Text style={[styles.resendText, countdown > 0 && styles.resendDisabledText]}>
-              {countdown > 0 ? `Resend code in ${countdown}s` : 'Resend Code'}
-            </Text>
-          )}
-        </TouchableOpacity>
-
-        <View style={styles.signInRow}>
-          <Text style={styles.signInText}>Back to </Text>
-          <TouchableOpacity onPress={() => navigation.navigate('Login')}>
-            <Text style={styles.signInLink}>Login</Text>
+          <TouchableOpacity
+            style={[
+              styles.primaryBtn,
+              loading && { opacity: 0.7 },
+              status === 'success' && styles.primaryBtnSuccess,
+            ]}
+            onPress={handleVerify}
+            disabled={loading || status === 'success'}
+            activeOpacity={0.85}
+          >
+            {loading ? (
+              <Spinner color={WHITE} size="small" />
+            ) : (
+              <Text style={styles.primaryBtnText}>
+                {status === 'success' ? 'Verified' : 'Verify Email'}
+              </Text>
+            )}
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.resendBtn}
+            onPress={handleResend}
+            disabled={countdown > 0 || resending}
+          >
+            {resending ? (
+              <Spinner color={BLUE} size="small" />
+            ) : (
+              <Text style={[styles.resendText, countdown > 0 && styles.resendDisabledText]}>
+                {countdown > 0 ? `Resend code in ${countdown}s` : 'Resend Code'}
+              </Text>
+            )}
+          </TouchableOpacity>
+
+          <View style={styles.signInRow}>
+            <Text style={styles.signInText}>Back to </Text>
+            <TouchableOpacity onPress={() => navigation.navigate('Login')}>
+              <Text style={styles.signInLink}>Login</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </ScrollView>
     </View>
@@ -307,29 +336,57 @@ export default function VerifyScreen({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: WHITE },
+  root: { flex: 1, backgroundColor: CARD_BG },
   header: {
-    backgroundColor: NAVY,
-    paddingTop: 40,
-    paddingBottom: 30,
+    paddingTop: 46,
+    paddingBottom: 26,
     paddingHorizontal: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
   },
-  backBtn: { padding: 8 },
-  headerContent: { flex: 1, alignItems: 'center' },
+  backBtn: {
+    position: 'absolute',
+    top: 46,
+    left: 16,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+  },
+  headerContent: { alignItems: 'center', paddingTop: 6 },
+  iconBadge: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: 'rgba(212,160,23,0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(212,160,23,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  kicker: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: GOLD,
+    letterSpacing: 2,
+    marginBottom: 6,
+    textAlign: 'center',
+  },
   headerTitle: {
-    fontSize: 26,
+    fontSize: 30,
     fontWeight: '900',
     color: WHITE,
-    letterSpacing: 0.4,
+    letterSpacing: 0.3,
+    textAlign: 'center',
   },
   headerSubtitle: {
     fontSize: 13,
-    color: WHITE,
+    color: 'rgba(255,255,255,0.85)',
     fontWeight: '600',
-    marginTop: 4,
+    marginTop: 10,
+    textAlign: 'center',
   },
   headerEmail: {
     fontSize: 13,
@@ -341,30 +398,22 @@ const styles = StyleSheet.create({
   goldLine: {
     height: 2,
     backgroundColor: GOLD,
-    width: 150,
-    marginTop: 8,
+    width: 60,
+    marginTop: 14,
     borderRadius: 1,
   },
-  headerAcronym: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: WHITE,
-    letterSpacing: 4,
-    marginTop: 6,
+  waveWrap: {
+    height: 30,
+    width: '100%',
   },
-  headerIcon: { padding: 8 },
-  waveDivider: {
-    height: 34,
-    backgroundColor: NAVY,
-    borderBottomLeftRadius: 1000,
-    borderBottomRightRadius: 1000,
-  },
-  formContainer: { flex: 1, backgroundColor: WHITE },
+  formContainer: { flex: 1, backgroundColor: CARD_BG },
   formContent: {
-    paddingHorizontal: 20,
-    paddingTop: 24,
+    paddingHorizontal: 24,
+    paddingTop: 20,
     paddingBottom: 40,
+    alignItems: 'center',
   },
+  formInner: { width: '100%', maxWidth: FORM_MAX_WIDTH },
   banner: {
     flexDirection: 'row',
     alignItems: 'center',

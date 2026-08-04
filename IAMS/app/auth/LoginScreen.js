@@ -2,32 +2,39 @@ import { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, Alert,
-  ImageBackground, ScrollView, Dimensions,
+  ImageBackground, ScrollView, useWindowDimensions,
   KeyboardAvoidingView, Platform, SafeAreaView,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Path } from 'react-native-svg';
 import { useAuth } from '../../context/AuthContext';
 import { getApiBaseUrl } from '../../api/axios';
 import Spinner from '../../components/Spinner';
 
-const { height } = Dimensions.get('window');
+const FORM_MAX_WIDTH = 420;
 
-const NAVY   = '#0D1B3E';
-const BLUE   = '#1A56DB';
-const GOLD   = '#D4A017';
-const WHITE  = '#FFFFFF';
-const GRAY   = '#9CA3AF';
+const NAVY     = '#0D1B3E';
+const BLUE     = '#1A56DB';
+const GOLD     = '#D4A017';
+const WHITE    = '#FFFFFF';
+const GRAY     = '#9CA3AF';
 const INPUT_BG = '#F3F6FB';
 const BORDER   = '#D1D9E6';
+const CARD_BG  = '#FAF9F6';
 
-const heroImage = require('../../assets/graduation-bg.jpg.png');
+const heroImage = require('../../assets/graduation-bg.png');
 
 export default function LoginScreen({ navigation }) {
   const { login } = useAuth();
+  const { height } = useWindowDimensions();
   const [email, setEmail]         = useState('');
   const [password, setPassword]   = useState('');
   const [showPass, setShowPass]   = useState(false);
   const [loading, setLoading]     = useState(false);
+
+  const heroHeight = Math.max(height * 0.45, 320);
+  const waveHeight = 48;
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -42,10 +49,6 @@ export default function LoginScreen({ navigation }) {
     setLoading(true);
     try {
       await login(email.trim(), password);
-      // Don't setLoading(false) here on success — the screen is about to
-      // unmount once AuthContext's `user` state propagates and RootNavigator
-      // switches to the dashboard stack. Turning the spinner off first just
-      // creates a visible flash back to the login form during that gap.
     } catch (err) {
       if (err.response?.data?.requiresVerification) {
         navigation.navigate('Verify', { email });
@@ -60,75 +63,83 @@ export default function LoginScreen({ navigation }) {
     }
   };
 
-  const heroContent = (
-    <>
-      <View style={styles.heroOverlay} />
-
-      <View style={styles.iconDecor}>
-        <Ionicons name="book-outline" size={24} color={WHITE} style={styles.decorIcon} />
-        <MaterialCommunityIcons name="school" size={24} color={WHITE} style={styles.decorIcon} />
-        <Ionicons name="ribbon-outline" size={24} color={WHITE} style={styles.decorIcon} />
-      </View>
-
-      <View style={styles.heroContent}>
-        <Text
-          style={styles.welcomeText}
-          numberOfLines={2}
-          adjustsFontSizeToFit
-          allowFontScaling={false}
-        >
-          University of Eastern Africa, Baraton
-        </Text>
-        <Text style={styles.appName} allowFontScaling={false}>IAMS</Text>
-
-        <View style={styles.subtitleRow}>
-          <View style={styles.goldLine} />
-          <Text
-            style={styles.subtitleText}
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            allowFontScaling={false}
-          >
-            Industrial Attachment Management
-          </Text>
-          <View style={styles.goldLine} />
-        </View>
-
-        <Text style={styles.capEmoji}>🎓</Text>
-      </View>
-    </>
-  );
-
   return (
     <SafeAreaView style={styles.root}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        {Platform.OS === 'web' ? (
-          <View
-            style={[
-              styles.hero,
-              {
-                backgroundImage: `url(${heroImage})`,
-                backgroundSize: 'cover',
-                backgroundPosition: 'center',
-                backgroundRepeat: 'no-repeat',
-              },
-            ]}
+        <ImageBackground
+          source={heroImage}
+          style={[styles.hero, { height: heroHeight }]}
+          resizeMode="cover"
+          imageStyle={styles.heroImage}
+        >
+          {/* Gradient: near-transparent up top so the photo reads clearly,
+              deepening toward the bottom so the white text stays legible */}
+          <LinearGradient
+            colors={['rgba(13,27,62,0.15)', 'rgba(13,27,62,0.35)', 'rgba(13,27,62,0.82)']}
+            locations={[0, 0.5, 1]}
+            style={StyleSheet.absoluteFillObject}
+          />
+
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => navigation.goBack()}
+            activeOpacity={0.75}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            {heroContent}
+            <Ionicons name="arrow-back" size={22} color={WHITE} />
+          </TouchableOpacity>
+
+          <View style={styles.heroContent}>
+            <View style={styles.badgeRow}>
+              <Ionicons name="book-outline" size={16} color={GOLD} />
+              <View style={styles.goldDot} />
+              <MaterialCommunityIcons name="school" size={18} color={GOLD} />
+              <View style={styles.goldDot} />
+              <Ionicons name="ribbon-outline" size={16} color={GOLD} />
+            </View>
+
+            <Text
+              style={styles.kickerText}
+              numberOfLines={2}
+              adjustsFontSizeToFit
+              allowFontScaling={false}
+            >
+              University of Eastern Africa, Baraton
+            </Text>
+
+            <Text style={styles.appName} allowFontScaling={false}>IAMS</Text>
+
+            <View style={styles.subtitleRow}>
+              <View style={styles.goldLine} />
+              <Text
+                style={styles.subtitleText}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                allowFontScaling={false}
+              >
+                Industrial Attachment Management
+              </Text>
+              <View style={styles.goldLine} />
+            </View>
           </View>
-        ) : (
-          <ImageBackground
-            source={heroImage}
-            style={styles.hero}
-            resizeMode="cover"
-            imageStyle={{ opacity: 0.9 }}
+
+          {/* Wave transition into the card below, replaces a hard straight edge */}
+          <Svg
+            width="100%"
+            height={waveHeight}
+            viewBox="0 0 1440 100"
+            preserveAspectRatio="none"
+            style={styles.wave}
           >
-            {heroContent}
-          </ImageBackground>
-        )}
+            <Path
+              d="M0,40 C240,90 480,10 720,35 C960,60 1200,95 1440,45 L1440,100 L0,100 Z"
+              fill={CARD_BG}
+            />
+          </Svg>
+        </ImageBackground>
 
         <ScrollView
           style={styles.card}
@@ -136,64 +147,66 @@ export default function LoginScreen({ navigation }) {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.inputWrap}>
-            <Ionicons name="mail-outline" size={20} color={BLUE} style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder="Email"
-              placeholderTextColor={GRAY}
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              allowFontScaling={false}
-            />
-          </View>
+          <View style={styles.formInner}>
+            <View style={styles.inputWrap}>
+              <Ionicons name="mail-outline" size={20} color={BLUE} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Email"
+                placeholderTextColor={GRAY}
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                allowFontScaling={false}
+              />
+            </View>
 
-          <View style={styles.inputWrap}>
-            <MaterialCommunityIcons name="lock-outline" size={20} color={BLUE} style={styles.inputIcon} />
-            <TextInput
-              style={[styles.input, { flex: 1 }]}
-              placeholder="Password"
-              placeholderTextColor={GRAY}
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={!showPass}
-              allowFontScaling={false}
-            />
-            <TouchableOpacity onPress={() => setShowPass(!showPass)} style={styles.eyeBtn}>
-              <Ionicons name={showPass ? 'eye-outline' : 'eye-off-outline'} size={20} color={GRAY} />
+            <View style={styles.inputWrap}>
+              <MaterialCommunityIcons name="lock-outline" size={20} color={BLUE} style={styles.inputIcon} />
+              <TextInput
+                style={[styles.input, { flex: 1 }]}
+                placeholder="Password"
+                placeholderTextColor={GRAY}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPass}
+                allowFontScaling={false}
+              />
+              <TouchableOpacity onPress={() => setShowPass(!showPass)} style={styles.eyeBtn}>
+                <Ionicons name={showPass ? 'eye-outline' : 'eye-off-outline'} size={20} color={GRAY} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.optionsRow}>
+              <View style={{ flex: 1 }} />
+              <TouchableOpacity onPress={() => navigation.navigate('ForgotPassword')}>
+                <Text style={styles.forgotText} allowFontScaling={false}>Forgot Password?</Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.signInBtn, loading && { opacity: 0.7 }]}
+              onPress={handleLogin}
+              disabled={loading}
+              activeOpacity={0.85}
+            >
+              {loading ? (
+                <Spinner color={WHITE} size="small" />
+              ) : (
+                <>
+                  <Text style={styles.signInText} allowFontScaling={false}>Log In</Text>
+                  <Ionicons name="arrow-forward" size={20} color={WHITE} style={{ marginLeft: 8 }} />
+                </>
+              )}
             </TouchableOpacity>
-          </View>
 
-          <View style={styles.optionsRow}>
-            <View style={{ flex: 1 }} />
-            <TouchableOpacity onPress={() => navigation.navigate('ForgotPassword')}>
-              <Text style={styles.forgotText} allowFontScaling={false}>Forgot Password?</Text>
-            </TouchableOpacity>
-          </View>
-
-          <TouchableOpacity
-            style={[styles.signInBtn, loading && { opacity: 0.7 }]}
-            onPress={handleLogin}
-            disabled={loading}
-            activeOpacity={0.85}
-          >
-            {loading ? (
-              <Spinner color={WHITE} size="small" />
-            ) : (
-              <>
-                <Text style={styles.signInText} allowFontScaling={false}>Log In</Text>
-                <Ionicons name="arrow-forward" size={20} color={WHITE} style={{ marginLeft: 8 }} />
-              </>
-            )}
-          </TouchableOpacity>
-
-          <View style={styles.registerRow}>
-            <Text style={styles.registerText} allowFontScaling={false}>Don't have an account? </Text>
-            <TouchableOpacity onPress={() => navigation.navigate('Register')}>
-              <Text style={styles.registerLink} allowFontScaling={false}>Sign Up</Text>
-            </TouchableOpacity>
+            <View style={styles.registerRow}>
+              <Text style={styles.registerText} allowFontScaling={false}>Don't have an account? </Text>
+              <TouchableOpacity onPress={() => navigation.navigate('Register')}>
+                <Text style={styles.registerLink} allowFontScaling={false}>Sign Up</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -202,59 +215,81 @@ export default function LoginScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: WHITE },
+  root: { flex: 1, backgroundColor: CARD_BG },
   hero: {
-    height: height * 0.45,
     minHeight: 320,
     justifyContent: 'flex-end',
+    overflow: 'hidden',
+    width: '100%',
+    backgroundColor: NAVY,
+    position: 'relative',
   },
-  heroOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(13, 27, 62, 0.50)',
-  },
-  iconDecor: {
+  heroImage: Platform.select({
+    web: { objectPosition: 'top' },
+    default: {},
+  }),
+  backBtn: {
     position: 'absolute',
-    top: 40,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingHorizontal: 40,
-    opacity: 0.4,
+    top: 16,
+    left: 16,
+    zIndex: 4,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  decorIcon: { opacity: 0.6 },
   heroContent: {
     paddingHorizontal: 24,
-    paddingBottom: 32,
+    paddingBottom: 56,
     alignItems: 'center',
     zIndex: 2,
     width: '100%',
   },
-  welcomeText: {
-    fontSize: 24,
-    fontWeight: '600',
+  badgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 14,
+  },
+  goldDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: GOLD,
+    opacity: 0.8,
+  },
+  kickerText: {
+    fontSize: 12,
+    fontWeight: '700',
     color: WHITE,
     textAlign: 'center',
     width: '100%',
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    opacity: 0.85,
     textShadowColor: 'rgba(0,0,0,0.4)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
   },
   appName: {
-    fontSize: 44,
+    fontSize: 54,
     fontWeight: '900',
     color: WHITE,
     letterSpacing: 1,
     textAlign: 'center',
     textShadowColor: 'rgba(0,0,0,0.5)',
     textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 6,
-    marginVertical: 8,
+    textShadowRadius: 8,
+    marginTop: 6,
+    marginBottom: 10,
   },
   subtitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 12,
     gap: 8,
     width: '100%',
     justifyContent: 'center',
@@ -268,15 +303,25 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     flexShrink: 1,
   },
-  capEmoji: { fontSize: 32, marginTop: 12, textAlign: 'center' },
+  wave: {
+    position: 'absolute',
+    bottom: -1,
+    left: 0,
+    right: 0,
+    zIndex: 3,
+  },
   card: {
     flex: 1,
-    backgroundColor: WHITE,
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    marginTop: -28,
+    backgroundColor: CARD_BG,
+    marginTop: -1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 8,
   },
-  cardContent: { paddingHorizontal: 24, paddingTop: 32, paddingBottom: 40 },
+  cardContent: { paddingHorizontal: 24, paddingTop: 32, paddingBottom: 40, alignItems: 'center' },
+  formInner: { width: '100%', maxWidth: FORM_MAX_WIDTH },
   inputWrap: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -125,6 +125,7 @@ export default function RegisterScreen({ navigation }) {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
+      <View style={styles.formInner}>
 
         {/* Role dropdown */}
         <Text style={styles.sectionLabel}>Registering as:</Text>
@@ -398,6 +399,7 @@ export default function RegisterScreen({ navigation }) {
           </TouchableOpacity>
         </View>
 
+      </View>
       </ScrollView>
     </View>
   );
@@ -437,7 +439,8 @@ const styles = StyleSheet.create({
   },
   waveDivider: { height: 20 },
   formContainer: { flex: 1 },
-  formContent: { paddingHorizontal: 24, paddingTop: 20, paddingBottom: 40 },
+  formContent: { paddingHorizontal: 24, paddingTop: 20, paddingBottom: 40, alignItems: 'center' },
+  formInner: { width: '100%', maxWidth: 480 },
   sectionLabel: {
     fontSize: 14, fontWeight: '700', color: NAVY,
     marginBottom: 12, marginTop: 8,

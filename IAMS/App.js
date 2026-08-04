@@ -1,14 +1,19 @@
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer, useNavigation } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { createStackNavigator } from '@react-navigation/stack';
 import { createDrawerNavigator } from '@react-navigation/drawer';
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, Text, TouchableOpacity, Animated } from 'react-native';
+import { useFonts } from 'expo-font';
+import { Alegreya_600SemiBold, Alegreya_600SemiBold_Italic } from '@expo-google-fonts/alegreya';
+import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { confirmLogout } from './utils/confirmLogout';
 
 
 // Auth screens
+import LandingPageScreen from './app/auth/LandingPageScreen';
 import LoginScreen from './app/auth/LoginScreen';
 import RegisterScreen from './app/auth/RegisterScreen';
 import VerifyScreen from './app/auth/VerifyScreen';
@@ -78,11 +83,60 @@ import HostEditProfile from './app/hostorg/HostEditProfile';
 import InternDetailScreen from './app/hostorg/InternDetailScreen';
 import VacancyPostedScreen from './app/hostorg/VacancyPostedScreen';
 
-// Custom drawer
 import CustomDrawerContent from './components/CustomDrawerContent';
 import Spinner from './components/Spinner';
 
 const Stack = createNativeStackNavigator();
+const AuthStack = createStackNavigator();
+
+const authCardStyleInterpolator = ({ current, next, inverted, layouts: { screen } }) => {
+  const translateFocused = Animated.multiply(
+    current.progress.interpolate({
+      inputRange: [0, 1],
+      outputRange: [screen.width, 0],
+      extrapolate: 'clamp',
+    }),
+    inverted
+  );
+
+  const translateUnfocused = next
+    ? Animated.multiply(
+        next.progress.interpolate({
+          inputRange: [0, 1],
+          outputRange: [0, screen.width * -0.25],
+          extrapolate: 'clamp',
+        }),
+        inverted
+      )
+    : 0;
+
+  const scaleUnfocused = next
+    ? next.progress.interpolate({
+        inputRange: [0, 1],
+        outputRange: [1, 0.9],
+        extrapolate: 'clamp',
+      })
+    : 1;
+
+  const overlayOpacity = next
+    ? next.progress.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0, 0.25],
+        extrapolate: 'clamp',
+      })
+    : 0;
+
+  return {
+    cardStyle: {
+      transform: [
+        { translateX: translateFocused },
+        { translateX: translateUnfocused },
+        { scale: scaleUnfocused },
+      ],
+    },
+    overlayStyle: { opacity: overlayOpacity },
+  };
+};
 const Drawer = createDrawerNavigator();
 
 const PlaceholderScreen = ({ route }) => (
@@ -139,7 +193,6 @@ const UnsupportedRoleScreen = ({ route }) => {
   );
 };
 
-// ── Host Org Drawer Navigator ─────────────────────────────────────────────────
 function HostOrgDrawerNavigator({ route }) {
   const { logout } = useAuth();
   const orgData = route.params?.orgData;
@@ -177,8 +230,6 @@ function HostOrgDrawerNavigator({ route }) {
   );
 }
 
-// Wraps the drawer in a stack so screens like VacancyPosted can be pushed
-// on top without becoming a permanent drawer item.
 function HostOrgNavigator({ route }) {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
@@ -192,7 +243,7 @@ function HostOrgNavigator({ route }) {
   );
 }
 
-// ── Root Navigator ────────────────────────────────────────────────────────────
+
 function RootNavigator() {
   const { user, loading } = useAuth();
 
@@ -200,13 +251,21 @@ function RootNavigator() {
 
   if (!user) {
     return (
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="Login"          component={LoginScreen}          />
-        <Stack.Screen name="Register"       component={RegisterScreen}       />
-        <Stack.Screen name="PrivacyPolicy"  component={PrivacyPolicyScreen}  />
-        <Stack.Screen name="Verify"         component={VerifyScreen}         />
-        <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
-      </Stack.Navigator>
+      <AuthStack.Navigator
+        initialRouteName="Landing"
+        screenOptions={{
+          headerShown: false,
+          cardStyleInterpolator: authCardStyleInterpolator,
+          cardStyle: { flex: 1 },
+        }}
+      >
+        <AuthStack.Screen name="Landing"         component={LandingPageScreen}    />
+        <AuthStack.Screen name="Login"           component={LoginScreen}          />
+        <AuthStack.Screen name="Register"        component={RegisterScreen}       />
+        <AuthStack.Screen name="PrivacyPolicy"   component={PrivacyPolicyScreen}  />
+        <AuthStack.Screen name="Verify"          component={VerifyScreen}         />
+        <AuthStack.Screen name="ForgotPassword"  component={ForgotPasswordScreen} />
+      </AuthStack.Navigator>
     );
   }
 
@@ -319,6 +378,19 @@ function RootNavigator() {
 }
 
 export default function App() {
+  const [fontsLoaded] = useFonts({
+    Alegreya_600SemiBold,
+    Alegreya_600SemiBold_Italic,
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Inter_700Bold,
+  });
+
+  if (!fontsLoaded) {
+    return null;
+  }
+
   return (
     <SafeAreaProvider>
       <ThemeProvider>

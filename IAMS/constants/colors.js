@@ -1,7 +1,6 @@
-// Legacy export for backward compatibility - use useTheme() hook instead
 export const COLORS = {
-  primary: '#C87941',      // UEAB Orange
-  secondary: '#1E3A5F',    // Navy Blue
+  primary: '#C87941',     
+  secondary: '#1E3A5F',  
   white: '#FFFFFF',
   lightGray: '#F4F4F4',
   gray: '#CCCCCC',
@@ -38,7 +37,6 @@ export const lightColors = {
   disabled: '#AABBCC',
 };
 
-// Dark theme
 export const darkColors = {
   primary: '#FF9F43',
   secondary: '#2E5090',

@@ -2,22 +2,24 @@ import { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, Alert, ScrollView,
-  Dimensions
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Path } from 'react-native-svg';
 import { useAuth } from '../../context/AuthContext';
 import Spinner from '../../components/Spinner';
 
-const { height } = Dimensions.get('window');
-
 // Educational theme colors
-const NAVY   = '#0D1B3E';
-const BLUE   = '#1A56DB';
-const GOLD   = '#D4A017';
-const WHITE  = '#FFFFFF';
-const GRAY   = '#9CA3AF';
-const INPUT_BG = '#F3F6FB';
-const BORDER   = '#D1D9E6';
+const NAVY      = '#0D1B3E';
+const NAVY_DEEP = '#081226';
+const BLUE      = '#1A56DB';
+const GOLD      = '#D4A017';
+const WHITE     = '#FFFFFF';
+const GRAY      = '#9CA3AF';
+const INPUT_BG  = '#F3F6FB';
+const BORDER    = '#D1D9E6';
+const CARD_BG   = '#FAF9F6';
+const FORM_MAX_WIDTH = 420;
 
 export default function ForgotPasswordScreen({ navigation }) {
   const { forgotPassword, resetPassword } = useAuth();
@@ -78,23 +80,50 @@ export default function ForgotPasswordScreen({ navigation }) {
   return (
     <View style={styles.root}>
       {/* ── Navy header section ── */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={24} color={WHITE} />
+      <LinearGradient
+        colors={[NAVY_DEEP, NAVY]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.header}
+      >
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.backBtn}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="arrow-back" size={22} color={WHITE} />
         </TouchableOpacity>
-        
+
         <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>Forgot your password?</Text>
-          <Text style={styles.headerSubtitle}>
-            {step === 1 
-              ? 'RESET YOUR PASSWORD' 
+          <Text style={styles.kicker} numberOfLines={2}>
+            {step === 1 ? 'IAMS · RESET YOUR PASSWORD' : 'IAMS · CONFIRM RESET'}
+          </Text>
+          <Text style={styles.headerTitle}>
+            {step === 1 ? 'Forgot your password?' : 'Check your email'}
+          </Text>
+          <Text style={styles.headerSubtitle} numberOfLines={2}>
+            {step === 1
+              ? "We'll send you a code to reset it"
               : 'Enter the code sent to your email'}
           </Text>
+          <View style={styles.goldLine} />
         </View>
-      </View>
+      </LinearGradient>
 
-      {/* ── Decorative wave divider ── */}
-      <View style={styles.waveDivider} />
+      {/* ── SVG wave transition ── */}
+      <View style={styles.waveWrap}>
+        <Svg
+          width="100%"
+          height="100%"
+          viewBox="0 0 400 40"
+          preserveAspectRatio="none"
+        >
+          <Path
+            d="M0,0 L0,18 C66,34 133,34 200,20 C267,6 333,6 400,18 L400,0 Z"
+            fill={NAVY}
+          />
+        </Svg>
+      </View>
 
       {/* ── Form section ── */}
       <ScrollView
@@ -103,142 +132,144 @@ export default function ForgotPasswordScreen({ navigation }) {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* Decorative icon */}
-        <View style={styles.iconContainer}>
+        <View style={styles.formInner}>
+          {/* Decorative icon */}
+          <View style={styles.iconContainer}>
+            {step === 1 ? (
+              <MaterialCommunityIcons name="lock-question" size={64} color={BLUE} />
+            ) : (
+              <MaterialCommunityIcons name="email-check-outline" size={64} color={BLUE} />
+            )}
+          </View>
+
+          {/* Step 1: Request Reset Code */}
           {step === 1 ? (
-            <MaterialCommunityIcons name="lock-question" size={64} color={BLUE} />
+            <>
+              <Text style={styles.instructionText}>
+                Enter an email address to receive a password reset code
+              </Text>
+
+              {/* Email input */}
+              <View style={styles.inputWrap}>
+                <Ionicons name="mail-outline" size={20} color={BLUE} style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Email Address"
+                  placeholderTextColor={GRAY}
+                  value={email}
+                  onChangeText={setEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+              </View>
+
+              {/* Helper text */}
+              <View style={styles.helperBox}>
+                <Ionicons name="shield-checkmark-outline" size={18} color={BLUE} />
+                <Text style={styles.helperText}>We will send you a password reset code via email</Text>
+              </View>
+
+              {/* Send Reset Link button */}
+              <TouchableOpacity
+                style={[styles.primaryBtn, loading && { opacity: 0.7 }]}
+                onPress={handleRequestCode}
+                disabled={loading}
+                activeOpacity={0.85}
+              >
+                {loading ? (
+                  <Spinner color={WHITE} size="small" />
+                ) : (
+                  <>
+                    <Text style={styles.primaryBtnText}>Send Code</Text>
+                    <Ionicons name="arrow-forward" size={20} color={WHITE} style={{ marginLeft: 8 }} />
+                  </>
+                )}
+              </TouchableOpacity>
+            </>
           ) : (
-            <MaterialCommunityIcons name="email-check-outline" size={64} color={BLUE} />
+            <>
+              {/* Step 2: Reset Password */}
+              <Text style={styles.emailConfirmText}>
+                We sent a verification code to{'\n'}
+                <Text style={styles.emailConfirmBold}>{email}</Text>
+              </Text>
+
+              {/* Reset Code input */}
+              <Text style={styles.inputLabel}>Reset Code</Text>
+              <View style={styles.inputWrap}>
+                <MaterialCommunityIcons name="numeric" size={20} color={BLUE} style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter 6-digit code"
+                  placeholderTextColor={GRAY}
+                  value={code}
+                  onChangeText={setCode}
+                  keyboardType="numeric"
+                  maxLength={6}
+                />
+              </View>
+
+              {/* New Password input */}
+              <Text style={styles.inputLabel}>New Password</Text>
+              <View style={styles.inputWrap}>
+                <MaterialCommunityIcons name="lock-outline" size={20} color={BLUE} style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter new password"
+                  placeholderTextColor={GRAY}
+                  value={newPassword}
+                  onChangeText={setNewPassword}
+                  secureTextEntry
+                />
+              </View>
+
+              {/* Confirm Password input */}
+              <Text style={styles.inputLabel}>Confirm Password</Text>
+              <View style={styles.inputWrap}>
+                <MaterialCommunityIcons name="lock-outline" size={20} color={BLUE} style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Confirm new password"
+                  placeholderTextColor={GRAY}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  secureTextEntry
+                />
+              </View>
+
+              {/* Reset Password button */}
+              <TouchableOpacity
+                style={[styles.primaryBtn, loading && { opacity: 0.7 }]}
+                onPress={handleResetPassword}
+                disabled={loading}
+                activeOpacity={0.85}
+              >
+                {loading ? (
+                  <Spinner color={WHITE} size="small" />
+                ) : (
+                  <Text style={styles.primaryBtnText}>Reset Password</Text>
+                )}
+              </TouchableOpacity>
+
+              {/* Resend Code link */}
+              <TouchableOpacity 
+                onPress={handleRequestCode} 
+                disabled={loading}
+                style={styles.resendContainer}
+              >
+                <Text style={styles.resendText}>Didn't receive code? </Text>
+                <Text style={styles.resendLink}>Resend</Text>
+              </TouchableOpacity>
+            </>
           )}
+
+          {/* Back to Login link */}
+          <TouchableOpacity onPress={() => navigation.navigate('Login')}>
+            <Text style={styles.backToLoginLink}>Back to Login</Text>
+          </TouchableOpacity>
+
+          <View style={{ height: 40 }} />
         </View>
-
-        {/* Step 1: Request Reset Code */}
-        {step === 1 ? (
-          <>
-            <Text style={styles.instructionText}>
-              Enter an email address to receive a password reset code
-            </Text>
-
-            {/* Email input */}
-            <View style={styles.inputWrap}>
-              <Ionicons name="mail-outline" size={20} color={BLUE} style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Email Address"
-                placeholderTextColor={GRAY}
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
-            </View>
-
-            {/* Helper text */}
-            <View style={styles.helperBox}>
-              <Ionicons name="shield-checkmark-outline" size={18} color={BLUE} />
-              <Text style={styles.helperText}>We will send you a password reset code via email</Text>
-            </View>
-
-            {/* Send Reset Link button */}
-            <TouchableOpacity
-              style={[styles.primaryBtn, loading && { opacity: 0.7 }]}
-              onPress={handleRequestCode}
-              disabled={loading}
-              activeOpacity={0.85}
-            >
-              {loading ? (
-                <Spinner color={WHITE} size="small" />
-              ) : (
-                <>
-                  <Text style={styles.primaryBtnText}>Send Code</Text>
-                  <Ionicons name="arrow-forward" size={20} color={WHITE} style={{ marginLeft: 8 }} />
-                </>
-              )}
-            </TouchableOpacity>
-          </>
-        ) : (
-          <>
-            {/* Step 2: Reset Password */}
-            <Text style={styles.emailConfirmText}>
-              We sent a verification code to{'\n'}
-              <Text style={styles.emailConfirmBold}>{email}</Text>
-            </Text>
-
-            {/* Reset Code input */}
-            <Text style={styles.inputLabel}>Reset Code</Text>
-            <View style={styles.inputWrap}>
-              <MaterialCommunityIcons name="numeric" size={20} color={BLUE} style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Enter 6-digit code"
-                placeholderTextColor={GRAY}
-                value={code}
-                onChangeText={setCode}
-                keyboardType="numeric"
-                maxLength={6}
-              />
-            </View>
-
-            {/* New Password input */}
-            <Text style={styles.inputLabel}>New Password</Text>
-            <View style={styles.inputWrap}>
-              <MaterialCommunityIcons name="lock-outline" size={20} color={BLUE} style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Enter new password"
-                placeholderTextColor={GRAY}
-                value={newPassword}
-                onChangeText={setNewPassword}
-                secureTextEntry
-              />
-            </View>
-
-            {/* Confirm Password input */}
-            <Text style={styles.inputLabel}>Confirm Password</Text>
-            <View style={styles.inputWrap}>
-              <MaterialCommunityIcons name="lock-outline" size={20} color={BLUE} style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Confirm new password"
-                placeholderTextColor={GRAY}
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                secureTextEntry
-              />
-            </View>
-
-            {/* Reset Password button */}
-            <TouchableOpacity
-              style={[styles.primaryBtn, loading && { opacity: 0.7 }]}
-              onPress={handleResetPassword}
-              disabled={loading}
-              activeOpacity={0.85}
-            >
-              {loading ? (
-                <Spinner color={WHITE} size="small" />
-              ) : (
-                <Text style={styles.primaryBtnText}>Reset Password</Text>
-              )}
-            </TouchableOpacity>
-
-            {/* Resend Code link */}
-            <TouchableOpacity 
-              onPress={handleRequestCode} 
-              disabled={loading}
-              style={styles.resendContainer}
-            >
-              <Text style={styles.resendText}>Didn't receive code? </Text>
-              <Text style={styles.resendLink}>Resend</Text>
-            </TouchableOpacity>
-          </>
-        )}
-
-        {/* Back to Login link */}
-        <TouchableOpacity onPress={() => navigation.navigate('Login')}>
-          <Text style={styles.backToLoginLink}>Back to Login</Text>
-        </TouchableOpacity>
-
-        <View style={{ height: 40 }} />
       </ScrollView>
     </View>
   );
@@ -247,56 +278,80 @@ export default function ForgotPasswordScreen({ navigation }) {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: WHITE,
+    backgroundColor: CARD_BG,
   },
 
   // Header
   header: {
-    backgroundColor: NAVY,
-    paddingTop: 45,
-    paddingBottom: 45,
+    paddingTop: 46,
+    paddingBottom: 28,
     paddingHorizontal: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
   },
   backBtn: {
-    padding: 8,
-    marginRight: 12,
+    position: 'absolute',
+    top: 46,
+    left: 16,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
   },
   headerContent: {
-    flex: 1,
+    alignItems: 'center',
+    width: '100%',
+    paddingTop: 4,
+  },
+  kicker: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: GOLD,
+    letterSpacing: 2,
+    marginBottom: 8,
+    textAlign: 'center',
   },
   headerTitle: {
     fontSize: 28,
     fontWeight: '900',
     color: WHITE,
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
+    textAlign: 'center',
   },
   headerSubtitle: {
-    fontSize: 16,
-    color: WHITE,
-    fontWeight: '500',
-    marginTop: 4,
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.85)',
+    fontWeight: '600',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  goldLine: {
+    height: 2,
+    backgroundColor: GOLD,
+    width: 60,
+    marginTop: 14,
+    borderRadius: 1,
   },
 
   // Wave divider
-  waveDivider: {
-    height: 25,
-    backgroundColor: NAVY,
-    borderBottomLeftRadius: 32,
-    borderBottomRightRadius: 32,
+  waveWrap: {
+    height: 30,
+    width: '100%',
   },
 
   // Form
   formContainer: {
     flex: 1,
-    backgroundColor: WHITE,
+    backgroundColor: CARD_BG,
   },
   formContent: {
-    paddingHorizontal: 20,
-    paddingTop: 24,
+    paddingHorizontal: 24,
+    paddingTop: 20,
     paddingBottom: 40,
+    alignItems: 'center',
   },
+  formInner: { width: '100%', maxWidth: FORM_MAX_WIDTH },
 
   // Icon container
   iconContainer: {
