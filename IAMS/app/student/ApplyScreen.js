@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, Alert, RefreshControl, TextInput, Modal,
+  ScrollView, Alert, RefreshControl, TextInput, Modal, Platform,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
@@ -219,6 +219,10 @@ export default function ApplyScreen({ navigation }) {
         uri: a.uri,
         mimeType: a.mimeType,
         size: a.size,
+        // On web, expo-document-picker also gives us the real browser
+        // File object — this is what FormData actually needs there.
+        // The {uri, name, type} shape below only works on native.
+        file: a.file,
       }));
       setDocuments((prev) => [...prev, ...picked]);
     } catch (err) {
@@ -332,11 +336,18 @@ export default function ApplyScreen({ navigation }) {
         formData.append('supporting_info', supportingInfo.trim());
       }
       documents.forEach((doc) => {
-        formData.append('documents', {
-          uri: doc.uri,
-          name: doc.name,
-          type: doc.mimeType || 'application/octet-stream',
-        });
+        if (Platform.OS === 'web' && doc.file) {
+          // Web needs a real File/Blob — a plain {uri, name, type} object
+          // gets silently stringified by the browser's FormData and never
+          // reaches the server as an actual file.
+          formData.append('documents', doc.file, doc.name);
+        } else {
+          formData.append('documents', {
+            uri: doc.uri,
+            name: doc.name,
+            type: doc.mimeType || 'application/octet-stream',
+          });
+        }
       });
 
       const res = await requestWithRetry(
