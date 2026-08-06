@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 
-
 const supabase = require('../config/db');
 const { protect } = require('../middleware/auth.middleware');
 
@@ -14,6 +13,21 @@ const {
 // All report routes require a logged-in supervisor
 router.use(protect);
 
+// Helper: get supervisor record from user_id
+// (mirrors supervisors.routes.js exactly)
+const getSupervisor = async (user_id) => {
+  const { data, error } = await supabase
+    .from('supervisors')
+    .select('*')
+    .eq('user_id', user_id)
+    .single();
+  return { supervisor: data, error };
+};
+
+const getSupervisorAssignmentId = (supervisor, fallbackUserId) => (
+  supervisor?.supervisor_id || supervisor?.user_id || fallbackUserId
+);
+
 function streamPdf(res, doc, filename) {
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -23,31 +37,31 @@ function streamPdf(res, doc, filename) {
 
 /**
  * GET /supervisors/reports/student-performance
- * ⚠️ Adjust table/column names to match your actual schema.
- * Assumes: students table has supervisor_id FK, joins to users for name,
- * logbook_entries has supervisor_score + hours_worked.
+ * Real schema: attachments is the join table (supervisor_id, student_id,
+ * org_id live here) -> students / host_organizations / logbook_entries.
  */
 router.get('/student-performance', async (req, res) => {
   try {
-    const supervisorId = req.user.user_id || req.user.id;
+    const { supervisor, error: sErr } = await getSupervisor(req.user.user_id);
+    if (sErr || !supervisor) return res.status(404).json({ message: 'Supervisor not found' });
 
-    const { data: students, error } = await supabase
-      .from('students')
-      .select(
-        `
-        student_id,
+    const supervisorAssignmentId = getSupervisorAssignmentId(supervisor, req.user.user_id);
+
+    const { data: attachments, error } = await supabase
+      .from('attachments')
+      .select(`
+        attachment_id,
         status,
-        users!inner ( name ),
-        host_organizations ( name ),
-        logbook_entries ( hours_worked, supervisor_score )
-      `
-      )
-      .eq('supervisor_id', supervisorId);
+        students!attachments_student_id_fkey ( full_name, reg_number ),
+        host_organizations!attachments_org_id_fkey ( org_name ),
+        logbook_entries!logbook_entries_attachment_id_fkey ( hours_worked, supervisor_score )
+      `)
+      .eq('supervisor_id', supervisorAssignmentId);
 
     if (error) throw error;
 
-    const rows = (students || []).map((s) => {
-      const entries = s.logbook_entries || [];
+    const rows = (attachments || []).map((a) => {
+      const entries = a.logbook_entries || [];
       const totalHours = entries.reduce((sum, e) => sum + (Number(e.hours_worked) || 0), 0);
       const scored = entries.filter((e) => e.supervisor_score != null);
       const avgScore = scored.length
@@ -55,9 +69,9 @@ router.get('/student-performance', async (req, res) => {
         : null;
 
       return {
-        name: s.users?.name || 'Unknown',
-        org: s.host_organizations?.name,
-        status: s.status,
+        name: a.students?.full_name || 'Unknown',
+        org: a.host_organizations?.org_name,
+        status: a.status,
         hours_worked: totalHours,
         avg_score: avgScore,
       };
@@ -74,29 +88,30 @@ router.get('/student-performance', async (req, res) => {
 
 /**
  * GET /supervisors/reports/logbook-completion
- * ⚠️ "expected_count" here assumes a fixed 4-week cycle — swap in your real
- * session length (e.g. from attachment_sessions) if that's tracked.
+ * EXPECTED_PER_STUDENT still assumes a fixed 4-week cycle — swap in the
+ * real session length (e.g. from attachment_sessions) if that's tracked.
  */
 router.get('/logbook-completion', async (req, res) => {
   try {
-    const supervisorId = req.user.user_id || req.user.id;
+    const { supervisor, error: sErr } = await getSupervisor(req.user.user_id);
+    if (sErr || !supervisor) return res.status(404).json({ message: 'Supervisor not found' });
+
+    const supervisorAssignmentId = getSupervisorAssignmentId(supervisor, req.user.user_id);
     const EXPECTED_PER_STUDENT = 4;
 
-    const { data: students, error } = await supabase
-      .from('students')
-      .select(
-        `
-        student_id,
-        users!inner ( name ),
-        logbook_entries ( submitted_at )
-      `
-      )
-      .eq('supervisor_id', supervisorId);
+    const { data: attachments, error } = await supabase
+      .from('attachments')
+      .select(`
+        attachment_id,
+        students!attachments_student_id_fkey ( full_name, reg_number ),
+        logbook_entries!logbook_entries_attachment_id_fkey ( submitted_at )
+      `)
+      .eq('supervisor_id', supervisorAssignmentId);
 
     if (error) throw error;
 
-    const rows = (students || []).map((s) => {
-      const entries = s.logbook_entries || [];
+    const rows = (attachments || []).map((a) => {
+      const entries = a.logbook_entries || [];
       const submitted = entries.length;
       const lastEntry = entries
         .map((e) => e.submitted_at)
@@ -105,7 +120,7 @@ router.get('/logbook-completion', async (req, res) => {
         .pop();
 
       return {
-        name: s.users?.name || 'Unknown',
+        name: a.students?.full_name || 'Unknown',
         submitted_count: submitted,
         expected_count: EXPECTED_PER_STUDENT,
         completion_pct: Math.min(100, Math.round((submitted / EXPECTED_PER_STUDENT) * 100)),
@@ -124,40 +139,43 @@ router.get('/logbook-completion', async (req, res) => {
 
 /**
  * GET /supervisors/reports/host-org-feedback
- * ⚠️ This assumes a `site_visits` table with student_id, org, visit_date,
- * rating, notes. Point this at whatever table actually stores host org
- * feedback in your schema (SiteVisitsScreen's GET /students/site-visits
- * endpoint may already query the right table — mirror that here).
+ * site_visits has no `rating` column (only visit_date, visit_time, notes,
+ * status), so this pulls from `evaluations` instead, which actually has
+ * `score` + `comments` — a much better fit for "feedback on student
+ * conduct and skills." Output field names (student_name, org, visit_date,
+ * rating, notes) are kept the same as before so generateHostOrgFeedbackPDF
+ * doesn't need changes; update those keys if the generator expects
+ * eval-specific names instead.
  */
 router.get('/host-org-feedback', async (req, res) => {
   try {
-    const supervisorId = req.user.user_id || req.user.id;
+    const { supervisor, error: sErr } = await getSupervisor(req.user.user_id);
+    if (sErr || !supervisor) return res.status(404).json({ message: 'Supervisor not found' });
 
-    const { data: visits, error } = await supabase
-      .from('site_visits')
-      .select(
-        `
-        visit_date,
-        rating,
-        notes,
-        students!inner (
-          supervisor_id,
-          users!inner ( name ),
-          host_organizations ( name )
+    const supervisorAssignmentId = getSupervisorAssignmentId(supervisor, req.user.user_id);
+
+    const { data: evaluations, error } = await supabase
+      .from('evaluations')
+      .select(`
+        eval_date,
+        score,
+        comments,
+        attachments!evaluations_attachment_id_fkey (
+          students!attachments_student_id_fkey ( full_name ),
+          host_organizations!attachments_org_id_fkey ( org_name )
         )
-      `
-      )
-      .eq('students.supervisor_id', supervisorId)
-      .order('visit_date', { ascending: false });
+      `)
+      .eq('supervisor_id', supervisorAssignmentId)
+      .order('eval_date', { ascending: false });
 
     if (error) throw error;
 
-    const rows = (visits || []).map((v) => ({
-      student_name: v.students?.users?.name || 'Unknown',
-      org: v.students?.host_organizations?.name,
-      visit_date: v.visit_date,
-      rating: v.rating,
-      notes: v.notes,
+    const rows = (evaluations || []).map((e) => ({
+      student_name: e.attachments?.students?.full_name || 'Unknown',
+      org: e.attachments?.host_organizations?.org_name,
+      visit_date: e.eval_date,
+      rating: e.score,
+      notes: e.comments,
     }));
 
     const supervisorName = req.user.name || req.user.full_name;

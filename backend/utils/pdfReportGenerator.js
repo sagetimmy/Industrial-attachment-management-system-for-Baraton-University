@@ -166,6 +166,9 @@ function generateLogbookCompletionPDF(students, meta = {}) {
 
 /**
  * entries: [{ student_name, org, visit_date, rating, notes }]
+ * NOTE: this now sources from `evaluations` (score is a 0-100 percentage,
+ * matching the notification text in POST /evaluations), not site_visits'
+ * old /5 rating — hence "Score: X%" below instead of "Rating: X/5".
  */
 function generateHostOrgFeedbackPDF(entries, meta = {}) {
   const doc = new PDFDocument({ margin: 40, bufferPages: true, size: 'A4' });
@@ -192,7 +195,7 @@ function generateHostOrgFeedbackPDF(entries, meta = {}) {
       .fillColor(COLORS.lightGrey)
       .text(
         `${e.visit_date ? new Date(e.visit_date).toLocaleDateString() : '-'}${
-          e.rating != null ? `   •   Rating: ${e.rating}/5` : ''
+          e.rating != null ? `   •   Score: ${e.rating}%` : ''
         }`,
         40,
         doc.y + 2

@@ -9,6 +9,7 @@ import {
   RefreshControl,
   Alert,
   useWindowDimensions,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system';
@@ -242,6 +243,25 @@ const ReportsScreen = ({ navigation }) => {
       });
 
       const base64 = arrayBufferToBase64(response.data);
+
+      // IAMS is web-first (GitHub Pages) — expo-file-system's cache
+      // directory and expo-sharing's share sheet are both no-ops in a
+      // browser, so on web we build a real Blob and trigger a normal
+      // browser download instead. Native (Expo Go / builds) keeps the
+      // original write-to-disk + share-sheet path.
+      if (Platform.OS === 'web') {
+        const blob = await (await fetch(`data:application/pdf;base64,${base64}`)).blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = config.filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        return;
+      }
+
       const fileUri = `${FileSystem.cacheDirectory}${config.filename}`;
 
       await FileSystem.writeAsStringAsync(fileUri, base64, {
