@@ -9,6 +9,7 @@ const {
   pickRolePermissions,
   normalizeRolePermissions,
 } = require('../utils/rolePermissions');
+const { generateAdminSummaryPDF } = require('../utils/pdfReportGenerator');
 
 const VALID_STATUSES = ['pending', 'approved', 'ongoing', 'completed', 'rejected'];
 
@@ -1321,68 +1322,97 @@ router.delete('/delete-user/:id', protect, authorize('admin'), async (req, res) 
   }
 });
 
+// Shared aggregation used by both the JSON summary route and the PDF export route.
+async function buildSummaryReport() {
+  const [
+    { count: totalAttachments },
+    { count: totalStudents },
+    { count: totalSupervisors },
+    { count: totalOrgs },
+    { data: statusRows },
+    { data: allAttachments },
+  ] = await Promise.all([
+    supabase.from('attachments').select('*', { count: 'exact', head: true }),
+    supabase.from('students').select('*', { count: 'exact', head: true }),
+    supabase.from('supervisors').select('*', { count: 'exact', head: true }),
+    supabase.from('host_organizations').select('*', { count: 'exact', head: true }),
+    supabase.from('attachments').select('status'),
+    supabase.from('attachments').select('student_id, org_id'),
+  ]);
+
+  const statusMap = {};
+  (statusRows || []).forEach(a => { statusMap[a.status] = (statusMap[a.status] || 0) + 1; });
+  const statusBreakdown = Object.entries(statusMap).map(([status, count]) => ({ status, count }));
+
+  const orgIds = allAttachments.map(a => a.org_id).filter(Boolean);
+  let orgNameMap = {};
+  if (orgIds.length) {
+    const { data: orgs } = await supabase
+      .from('host_organizations').select('org_id, org_name').in('org_id', orgIds);
+    orgs.forEach(o => orgNameMap[o.org_id] = o.org_name);
+  }
+  const orgCount = {};
+  allAttachments.forEach(a => {
+    const name = orgNameMap[a.org_id] || 'Unknown';
+    orgCount[name] = (orgCount[name] || 0) + 1;
+  });
+  const orgBreakdown = Object.entries(orgCount)
+    .map(([org_name, count]) => ({ org_name, count }))
+    .sort((a, b) => b.count - a.count).slice(0, 5);
+
+  const studentIds = allAttachments.map(a => a.student_id).filter(Boolean);
+  let deptMap = {};
+  if (studentIds.length) {
+    const { data: students } = await supabase
+      .from('students').select('student_id, department').in('student_id', studentIds);
+    students.forEach(s => deptMap[s.student_id] = s.department || 'Unspecified');
+  }
+  const deptCount = {};
+  allAttachments.forEach(a => {
+    const dept = deptMap[a.student_id] || 'Unspecified';
+    deptCount[dept] = (deptCount[dept] || 0) + 1;
+  });
+  const deptBreakdown = Object.entries(deptCount)
+    .map(([department, count]) => ({ department, count }))
+    .sort((a, b) => b.count - a.count);
+
+  return { totalAttachments, totalStudents, totalSupervisors, totalOrgs, statusBreakdown, orgBreakdown, deptBreakdown };
+}
+
 // ─── GET /api/admin/reports/summary ──────────────────────────────────────
 router.get('/reports/summary', protect, authorize('admin'), async (req, res) => {
   try {
-    const [
-      { count: totalAttachments },
-      { count: totalStudents },
-      { count: totalSupervisors },
-      { count: totalOrgs },
-      { data: statusRows },
-      { data: allAttachments },
-    ] = await Promise.all([
-      supabase.from('attachments').select('*', { count: 'exact', head: true }),
-      supabase.from('students').select('*', { count: 'exact', head: true }),
-      supabase.from('supervisors').select('*', { count: 'exact', head: true }),
-      supabase.from('host_organizations').select('*', { count: 'exact', head: true }),
-      supabase.from('attachments').select('status'),
-      supabase.from('attachments').select('student_id, org_id'),
-    ]);
-
-    const statusMap = {};
-    (statusRows || []).forEach(a => { statusMap[a.status] = (statusMap[a.status] || 0) + 1; });
-    const statusBreakdown = Object.entries(statusMap).map(([status, count]) => ({ status, count }));
-
-    const orgIds = allAttachments.map(a => a.org_id).filter(Boolean);
-    let orgNameMap = {};
-    if (orgIds.length) {
-      const { data: orgs } = await supabase
-        .from('host_organizations').select('org_id, org_name').in('org_id', orgIds);
-      orgs.forEach(o => orgNameMap[o.org_id] = o.org_name);
-    }
-    const orgCount = {};
-    allAttachments.forEach(a => {
-      const name = orgNameMap[a.org_id] || 'Unknown';
-      orgCount[name] = (orgCount[name] || 0) + 1;
-    });
-    const orgBreakdown = Object.entries(orgCount)
-      .map(([org_name, count]) => ({ org_name, count }))
-      .sort((a, b) => b.count - a.count).slice(0, 5);
-
-    const studentIds = allAttachments.map(a => a.student_id).filter(Boolean);
-    let deptMap = {};
-    if (studentIds.length) {
-      const { data: students } = await supabase
-        .from('students').select('student_id, department').in('student_id', studentIds);
-      students.forEach(s => deptMap[s.student_id] = s.department || 'Unspecified');
-    }
-    const deptCount = {};
-    allAttachments.forEach(a => {
-      const dept = deptMap[a.student_id] || 'Unspecified';
-      deptCount[dept] = (deptCount[dept] || 0) + 1;
-    });
-    const deptBreakdown = Object.entries(deptCount)
-      .map(([department, count]) => ({ department, count }))
-      .sort((a, b) => b.count - a.count);
+    const summary = await buildSummaryReport();
 
     await audit(
       req.user, 'VIEW_SUMMARY_REPORT', 'reports', null,
       `Admin ${req.user?.email} viewed the summary report`, {}, req.ip
     );
 
-    res.json({ totalAttachments, totalStudents, totalSupervisors, totalOrgs, statusBreakdown, orgBreakdown, deptBreakdown });
+    res.json(summary);
   } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// ─── GET /api/admin/reports/summary/pdf ──────────────────────────────────
+router.get('/reports/summary/pdf', protect, authorize('admin'), async (req, res) => {
+  try {
+    const summary = await buildSummaryReport();
+    const adminName = req.user.name || req.user.full_name || req.user.email;
+    const doc = generateAdminSummaryPDF(summary, { adminName });
+
+    await audit(
+      req.user, 'EXPORT_SUMMARY_REPORT_PDF', 'reports', null,
+      `Admin ${req.user?.email} exported the summary report as PDF`, {}, req.ip
+    );
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename="system-summary-report.pdf"');
+    doc.pipe(res);
+    doc.end();
+  } catch (err) {
+    console.error('Error generating admin summary PDF:', err.message);
     res.status(500).json({ message: err.message });
   }
 });

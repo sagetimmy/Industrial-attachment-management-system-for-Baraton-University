@@ -4,6 +4,8 @@ import {
   RefreshControl, Alert, Dimensions,
 } from 'react-native';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../api/axios';
 import Spinner from '../../components/Spinner';
@@ -34,6 +36,70 @@ const RECENT_REPORTS = [
   { title: 'Org Performance Review', lastGenerated: '1d ago', icon: 'office-building-outline', iconBg: '#FFF3E0', iconColor: '#E8711A' },
   { title: 'Student Completion Audit', lastGenerated: '3d ago', icon: 'clipboard-check-outline', iconBg: '#EDE7F6', iconColor: '#7B3FE4' },
 ];
+
+// Converts an ArrayBuffer (from axios responseType: 'arraybuffer') into a
+// base64 string, chunked to avoid call-stack limits on large PDFs.
+function arrayBufferToBase64(buffer) {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode.apply(null, chunk);
+  }
+
+  return global.btoa ? global.btoa(binary) : Buffer.from(binary, 'binary').toString('base64');
+}
+
+async function shareFile(fileUri, mimeType, dialogTitle) {
+  const canShare = await Sharing.isAvailableAsync();
+  if (canShare) {
+    await Sharing.shareAsync(fileUri, { mimeType, dialogTitle });
+  } else {
+    Alert.alert('Downloaded', `Saved to ${fileUri}`);
+  }
+}
+
+function csvEscape(value) {
+  const str = value === null || value === undefined ? '' : String(value);
+  return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+}
+
+function rowsToCsv(rows) {
+  return rows.map(row => row.map(csvEscape).join(',')).join('\n');
+}
+
+function buildSummaryCsvRows(data) {
+  if (!data) return [['No data available']];
+  return [
+    ['Metric', 'Value'],
+    ['Total Placements', data.totalAttachments ?? ''],
+    ['Active Students', data.totalStudents ?? ''],
+    ['Supervisors', data.totalSupervisors ?? ''],
+    ['Partner Organizations', data.totalOrgs ?? ''],
+    [],
+    ['Status', 'Count'],
+    ...(data.statusBreakdown || []).map(s => [s.status, s.count]),
+    [],
+    ['Organization', 'Placements'],
+    ...(data.orgBreakdown || []).map(o => [o.org_name, o.count]),
+    [],
+    ['Department', 'Placements'],
+    ...(data.deptBreakdown || []).map(d => [d.department, d.count]),
+  ];
+}
+
+function buildDetailedCsvRows(data) {
+  if (!data?.details?.length) return [['No records available']];
+  const header = ['Student', 'Reg No', 'Department', 'Organization', 'Supervisor', 'Status', 'Start Date', 'End Date', 'Logbook Entries', 'Rating'];
+  const rows = data.details.map(d => [
+    d.student_name, d.reg_number, d.department, d.org_name, d.supervisor_name,
+    d.status, d.start_date, d.end_date, d.logbook_count,
+    d.evaluation_rating != null ? Number(d.evaluation_rating).toFixed(1) : '',
+  ]);
+  return [header, ...rows];
+}
 
 // ─── Donut Chart ──────────────────────────────────────────────────────────
 function DonutChart({ data }) {
@@ -246,6 +312,7 @@ const Reports = ({ navigation }) => {
   const [detailedData, setDetailedData] = useState(null);
   const [statusFilter, setStatusFilter] = useState('');
   const [dateRange] = useState({ start: '', end: '' });
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     if (reportType === 'summary') fetchSummaryReport();
@@ -289,10 +356,45 @@ const Reports = ({ navigation }) => {
     fn().then(() => setRefreshing(false));
   }, [reportType, statusFilter]);
 
-  const handleExport = (format) => {
-    Alert.alert('Export', `Exporting as ${format.toUpperCase()}...`, [
-      { text: 'OK', onPress: () => Alert.alert('Success', `Report exported as ${format.toUpperCase()}`) },
-    ]);
+  const handleExport = async (format) => {
+    if (exporting) return;
+    setExporting(true);
+
+    try {
+      if (format === 'pdf') {
+        if (reportType !== 'summary') {
+          Alert.alert('Not available', 'PDF export is only available for the summary report.');
+          return;
+        }
+        const response = await api.get('/admin/reports/summary/pdf', { responseType: 'arraybuffer' });
+        const base64 = arrayBufferToBase64(response.data);
+        const fileUri = `${FileSystem.cacheDirectory}system-summary-report.pdf`;
+        await FileSystem.writeAsStringAsync(fileUri, base64, { encoding: FileSystem.EncodingType.Base64 });
+        await shareFile(fileUri, 'application/pdf', 'System Summary Report');
+        return;
+      }
+
+      const filename = reportType === 'summary' ? 'system-summary-report' : 'detailed-attachment-report';
+
+      if (format === 'csv') {
+        const rows = reportType === 'summary'
+          ? buildSummaryCsvRows(summaryData)
+          : buildDetailedCsvRows(detailedData);
+        const fileUri = `${FileSystem.cacheDirectory}${filename}.csv`;
+        await FileSystem.writeAsStringAsync(fileUri, rowsToCsv(rows), { encoding: FileSystem.EncodingType.UTF8 });
+        await shareFile(fileUri, 'text/csv', filename);
+      } else if (format === 'json') {
+        const payload = reportType === 'summary' ? summaryData : detailedData;
+        const fileUri = `${FileSystem.cacheDirectory}${filename}.json`;
+        await FileSystem.writeAsStringAsync(fileUri, JSON.stringify(payload, null, 2), { encoding: FileSystem.EncodingType.UTF8 });
+        await shareFile(fileUri, 'application/json', filename);
+      }
+    } catch (err) {
+      console.log('Export error:', err.message);
+      Alert.alert('Error', 'Failed to export report. Please try again.');
+    } finally {
+      setExporting(false);
+    }
   };
 
   // Build donut data from summaryData or fallback
@@ -406,17 +508,23 @@ const Reports = ({ navigation }) => {
 
       {/* Export */}
       <View style={[styles.card, { flexDirection: 'row', gap: 10 }]}>
-        <TouchableOpacity style={styles.exportBtnLight} onPress={() => handleExport('csv')}>
+        <TouchableOpacity disabled={exporting} style={[styles.exportBtnLight, exporting && styles.exportBtnDisabled]} onPress={() => handleExport('csv')}>
           <MaterialCommunityIcons name="file-delimited-outline" size={16} color="#1A6B5A" />
           <Text style={styles.exportBtnLightText}> CSV</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.exportBtnLight} onPress={() => handleExport('json')}>
+        <TouchableOpacity disabled={exporting} style={[styles.exportBtnLight, exporting && styles.exportBtnDisabled]} onPress={() => handleExport('json')}>
           <MaterialCommunityIcons name="code-json" size={16} color="#1A6B5A" />
           <Text style={styles.exportBtnLightText}> JSON</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.exportBtn} onPress={() => handleExport('pdf')}>
-          <MaterialCommunityIcons name="file-pdf-box" size={16} color="#fff" />
-          <Text style={styles.exportBtnText}> PDF</Text>
+        <TouchableOpacity disabled={exporting} style={[styles.exportBtn, exporting && styles.exportBtnDisabled]} onPress={() => handleExport('pdf')}>
+          {exporting ? (
+            <Spinner size="small" color="#fff" />
+          ) : (
+            <>
+              <MaterialCommunityIcons name="file-pdf-box" size={16} color="#fff" />
+              <Text style={styles.exportBtnText}> PDF</Text>
+            </>
+          )}
         </TouchableOpacity>
       </View>
     </ScrollView>
@@ -485,11 +593,15 @@ const Reports = ({ navigation }) => {
 
       {/* Export */}
       <View style={[styles.padded, { flexDirection: 'row', gap: 10 }]}>
-        <TouchableOpacity style={[styles.exportBtn, { flex: 1 }]} onPress={() => handleExport('csv')}>
-          <Ionicons name="download-outline" size={16} color="#fff" />
-          <Text style={styles.exportBtnText}> Export CSV</Text>
+        <TouchableOpacity disabled={exporting} style={[styles.exportBtn, { flex: 1 }, exporting && styles.exportBtnDisabled]} onPress={() => handleExport('csv')}>
+          {exporting ? <Spinner size="small" color="#fff" /> : (
+            <>
+              <Ionicons name="download-outline" size={16} color="#fff" />
+              <Text style={styles.exportBtnText}> Export CSV</Text>
+            </>
+          )}
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.exportBtnOutline, { flex: 1 }]} onPress={() => handleExport('json')}>
+        <TouchableOpacity disabled={exporting} style={[styles.exportBtnOutline, { flex: 1 }, exporting && styles.exportBtnDisabled]} onPress={() => handleExport('json')}>
           <MaterialCommunityIcons name="code-json" size={16} color="#1A6B5A" />
           <Text style={styles.exportBtnOutlineText}> Export JSON</Text>
         </TouchableOpacity>
@@ -680,6 +792,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
   },
   exportBtnOutlineText: { color: '#13362C', fontWeight: '700', fontSize: 13 },
+  exportBtnDisabled: { opacity: 0.6 },
 
   // Filter chips
   chipBar: { paddingHorizontal: 16, paddingTop: 14, gap: 8 },
