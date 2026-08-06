@@ -88,8 +88,9 @@ router.get('/student-performance', async (req, res) => {
 
 /**
  * GET /supervisors/reports/logbook-completion
- * EXPECTED_PER_STUDENT still assumes a fixed 4-week cycle — swap in the
- * real session length (e.g. from attachment_sessions) if that's tracked.
+ * EXPECTED_PER_STUDENT assumes a fixed 12-week attachment cycle. If any
+ * students run a different length placement, swap this for a per-student
+ * calculation off attachments.start_date/end_date or attachment_sessions.
  */
 router.get('/logbook-completion', async (req, res) => {
   try {
@@ -97,7 +98,7 @@ router.get('/logbook-completion', async (req, res) => {
     if (sErr || !supervisor) return res.status(404).json({ message: 'Supervisor not found' });
 
     const supervisorAssignmentId = getSupervisorAssignmentId(supervisor, req.user.user_id);
-    const EXPECTED_PER_STUDENT = 4;
+    const EXPECTED_PER_STUDENT = 12;
 
     const { data: attachments, error } = await supabase
       .from('attachments')
