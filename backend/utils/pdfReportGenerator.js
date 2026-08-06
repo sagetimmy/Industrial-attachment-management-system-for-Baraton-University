@@ -272,9 +272,100 @@ function generateAdminSummaryPDF(summary, meta = {}) {
   return doc;
 }
 
+/**
+ * attachment: single attachment record with joined student/org/supervisor fields
+ * logbookEntries: [{ week_number, description, tasks_done, challenges, submitted_at }]
+ * evaluation: { rating, comments, supervisor_name } | null
+ */
+function generateAttachmentReportPDF(attachment, logbookEntries = [], evaluation = null) {
+  const doc = new PDFDocument({ margin: 40, bufferPages: true, size: 'A4' });
+
+  addHeader(
+    doc,
+    'Attachment Report',
+    `${attachment.student_name || 'Unknown Student'}  •  Reg: ${attachment.reg_number || '-'}`
+  );
+
+  const infoRows = [
+    ['Department', attachment.department || '-'],
+    ['Organization', attachment.org_name || '-'],
+    ['Location', attachment.location || '-'],
+    ['Supervisor', attachment.supervisor_name || 'Not assigned'],
+    ['Status', (attachment.status || '-').toUpperCase()],
+    ['Start Date', attachment.start_date ? new Date(attachment.start_date).toLocaleDateString() : '-'],
+    ['End Date', attachment.end_date ? new Date(attachment.end_date).toLocaleDateString() : '-'],
+  ];
+  const infoWidths = [140, 320];
+  infoRows.forEach(([label, value]) => {
+    addTableRow(doc, [label, value], infoWidths, { bold: true, fontSize: 10 });
+  });
+  doc.moveDown(0.5);
+  doc.moveTo(40, doc.y).lineTo(doc.page.width - 40, doc.y).strokeColor(COLORS.border).stroke();
+  doc.moveDown(1);
+
+  // Logbook entries
+  if (doc.y > doc.page.height - 160) doc.addPage();
+  doc.font('Helvetica-Bold').fontSize(13).fillColor(COLORS.navy).text('Logbook Entries', 40, doc.y);
+  doc.moveDown(0.6);
+
+  if (!logbookEntries.length) {
+    doc.font('Helvetica').fontSize(10).fillColor(COLORS.lightGrey).text('No logbook entries submitted.', 40, doc.y);
+    doc.moveDown(1);
+  } else {
+    logbookEntries.forEach((e) => {
+      if (doc.y > doc.page.height - 140) doc.addPage();
+      doc
+        .font('Helvetica-Bold').fontSize(11).fillColor(COLORS.navy)
+        .text(`Week ${e.week_number ?? '-'}`, 40, doc.y);
+      doc
+        .font('Helvetica').fontSize(9).fillColor(COLORS.lightGrey)
+        .text(e.submitted_at ? `Submitted: ${new Date(e.submitted_at).toLocaleDateString()}` : 'Not submitted', 40, doc.y + 2);
+      doc.moveDown(0.4);
+      doc
+        .font('Helvetica').fontSize(10).fillColor(COLORS.grey)
+        .text(e.tasks_done || e.description || 'No details provided.', 40, doc.y, { width: doc.page.width - 80 });
+      if (e.challenges) {
+        doc.moveDown(0.2);
+        doc
+          .font('Helvetica-Oblique').fontSize(9).fillColor(COLORS.lightGrey)
+          .text(`Challenges: ${e.challenges}`, 40, doc.y, { width: doc.page.width - 80 });
+      }
+      doc.moveDown(0.8);
+      doc.moveTo(40, doc.y).lineTo(doc.page.width - 40, doc.y).strokeColor(COLORS.border).stroke();
+      doc.moveDown(0.8);
+    });
+  }
+
+  // Evaluation
+  if (doc.y > doc.page.height - 140) doc.addPage();
+  doc.font('Helvetica-Bold').fontSize(13).fillColor(COLORS.navy).text('Evaluation', 40, doc.y);
+  doc.moveDown(0.6);
+
+  if (!evaluation) {
+    doc.font('Helvetica').fontSize(10).fillColor(COLORS.lightGrey).text('No evaluation submitted yet.', 40, doc.y);
+  } else {
+    doc
+      .font('Helvetica-Bold').fontSize(10).fillColor(COLORS.navy)
+      .text(`Rating: ${evaluation.rating != null ? `${evaluation.rating}/5` : '-'}`, 40, doc.y);
+    doc
+      .font('Helvetica').fontSize(9).fillColor(COLORS.lightGrey)
+      .text(`Evaluated by: ${evaluation.supervisor_name || '-'}`, 40, doc.y + 2);
+    if (evaluation.comments) {
+      doc.moveDown(0.5);
+      doc
+        .font('Helvetica').fontSize(10).fillColor(COLORS.grey)
+        .text(evaluation.comments, 40, doc.y, { width: doc.page.width - 80 });
+    }
+  }
+
+  addFooter(doc);
+  return doc;
+}
+
 module.exports = {
   generateStudentPerformancePDF,
   generateLogbookCompletionPDF,
   generateHostOrgFeedbackPDF,
   generateAdminSummaryPDF,
+  generateAttachmentReportPDF,
 };

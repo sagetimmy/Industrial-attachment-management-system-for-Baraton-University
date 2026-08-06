@@ -2,12 +2,54 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
   ScrollView, Alert, RefreshControl,
-  TextInput, Modal, FlatList, Image,
+  TextInput, Modal, FlatList, Image, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 import api from '../../api/axios';
 import Spinner from '../../components/Spinner';
+
+// Converts an ArrayBuffer (from axios responseType: 'arraybuffer') into a
+// base64 string, chunked to avoid call-stack limits on large PDFs.
+function arrayBufferToBase64(buffer) {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode.apply(null, chunk);
+  }
+  return global.btoa ? global.btoa(binary) : Buffer.from(binary, 'binary').toString('base64');
+}
+
+// On web, expo-file-system/expo-sharing are no-ops, so build a Blob and
+// trigger a real browser download instead. On native, write to disk and
+// open the share sheet, same as the admin Reports screen.
+async function downloadBase64File(filename, mimeType, base64) {
+  if (Platform.OS === 'web') {
+    const blob = await (await fetch(`data:${mimeType};base64,${base64}`)).blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    return;
+  }
+
+  const fileUri = `${FileSystem.cacheDirectory}${filename}`;
+  await FileSystem.writeAsStringAsync(fileUri, base64, { encoding: FileSystem.EncodingType.Base64 });
+  const canShare = await Sharing.isAvailableAsync();
+  if (canShare) {
+    await Sharing.shareAsync(fileUri, { mimeType, dialogTitle: filename });
+  } else {
+    Alert.alert('Downloaded', `Saved to ${fileUri}`);
+  }
+}
 
 const STATUS_COLORS = {
   pending:   { bg: '#FAEEDA', text: '#BA7517' },
@@ -124,10 +166,24 @@ export default function ManageAttachmentsScreen({ navigation }) {
     }
   };
 
-  // TODO: no real "download report" endpoint exists yet — wire this up once
-  // the backend can generate/export a PDF or CSV for a single attachment.
-  const handleDownloadReport = () => {
-    Alert.alert('Coming soon', 'Report download isn\u2019t wired up to the backend yet.');
+  const [downloadingReport, setDownloadingReport] = useState(false);
+
+  const handleDownloadReport = async () => {
+    if (!selected?.attachment_id || downloadingReport) return;
+    setDownloadingReport(true);
+    try {
+      const response = await api.get(`/admin/attachment/${selected.attachment_id}/report/pdf`, {
+        responseType: 'arraybuffer',
+      });
+      const base64 = arrayBufferToBase64(response.data);
+      const filename = `attachment-report-${details?.attachment?.reg_number || selected.attachment_id}.pdf`;
+      await downloadBase64File(filename, 'application/pdf', base64);
+    } catch (err) {
+      console.log('Error downloading attachment report:', err.message);
+      Alert.alert('Error', 'Failed to generate report. Please try again.');
+    } finally {
+      setDownloadingReport(false);
+    }
   };
 
   /* ─── Status badge ─── */
@@ -385,9 +441,19 @@ export default function ManageAttachmentsScreen({ navigation }) {
               </View>
 
               {/* ── Download report ── */}
-              <TouchableOpacity style={styles.downloadBtn} onPress={handleDownloadReport}>
-                <MaterialCommunityIcons name="tray-arrow-down" size={18} color="#fff" />
-                <Text style={styles.downloadBtnText}>Download Report</Text>
+              <TouchableOpacity
+                style={[styles.downloadBtn, downloadingReport && styles.downloadBtnDisabled]}
+                onPress={handleDownloadReport}
+                disabled={downloadingReport}
+              >
+                {downloadingReport ? (
+                  <Spinner size="small" color="#fff" />
+                ) : (
+                  <>
+                    <MaterialCommunityIcons name="tray-arrow-down" size={18} color="#fff" />
+                    <Text style={styles.downloadBtnText}>Download Report</Text>
+                  </>
+                )}
               </TouchableOpacity>
 
             </ScrollView>
@@ -788,4 +854,5 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   downloadBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  downloadBtnDisabled: { opacity: 0.6 },
 });

@@ -9,7 +9,7 @@ const {
   pickRolePermissions,
   normalizeRolePermissions,
 } = require('../utils/rolePermissions');
-const { generateAdminSummaryPDF } = require('../utils/pdfReportGenerator');
+const { generateAdminSummaryPDF, generateAttachmentReportPDF } = require('../utils/pdfReportGenerator');
 
 const VALID_STATUSES = ['pending', 'approved', 'ongoing', 'completed', 'rejected'];
 
@@ -786,76 +786,108 @@ router.get('/all-attachments', protect, authorize('admin'), async (req, res) => 
 });
 
 // ─── GET /api/admin/attachment/:id ────────────────────────────────────────
+// Shared fetch used by both the JSON detail route and the per-attachment
+// PDF export route.
+async function buildAttachmentDetail(attachmentId) {
+  const { data, error } = await supabase
+    .from('attachments').select('*').eq('attachment_id', attachmentId).single();
+  if (error || !data) return null;
+
+  let studentData = null;
+  if (data.student_id) {
+    const { data: student } = await supabase
+      .from('students').select('full_name, reg_number, department, year_of_study, phone')
+      .eq('student_id', data.student_id).single();
+    studentData = student;
+  }
+
+  let orgData = null;
+  if (data.org_id) {
+    const { data: org } = await supabase
+      .from('host_organizations').select('org_name, location, contact_person, phone')
+      .eq('org_id', data.org_id).single();
+    orgData = org;
+  }
+
+  let supervisorData = null;
+  if (data.supervisor_id) {
+    const { data: supervisor } = await supabase
+      .from('supervisors').select('full_name, phone')
+      .eq('supervisor_id', data.supervisor_id).single();
+    supervisorData = supervisor;
+  }
+
+  const { data: logbookEntries } = await supabase
+    .from('logbook_entries')
+    .select('entry_id, week_number, description, tasks_done, challenges, document_url, submitted_at')
+    .eq('attachment_id', attachmentId).order('week_number', { ascending: true });
+
+  const { data: evaluations } = await supabase
+    .from('evaluations').select('*, supervisor_id')
+    .eq('attachment_id', attachmentId).order('created_at', { ascending: false });
+
+  let evalSupervisorMap = {};
+  if (evaluations && evaluations.length) {
+    const supIds = evaluations.map(e => e.supervisor_id).filter(Boolean);
+    if (supIds.length) {
+      const { data: supervisors } = await supabase
+        .from('supervisors').select('supervisor_id, full_name').in('supervisor_id', supIds);
+      supervisors.forEach(s => evalSupervisorMap[s.supervisor_id] = s.full_name);
+    }
+  }
+
+  return {
+    attachment: {
+      ...data,
+      student_name:     studentData?.full_name,
+      reg_number:       studentData?.reg_number,
+      department:       studentData?.department,
+      year_of_study:    studentData?.year_of_study,
+      student_phone:    studentData?.phone,
+      org_name:         orgData?.org_name,
+      location:         orgData?.location,
+      contact_person:   orgData?.contact_person,
+      org_phone:        orgData?.phone,
+      supervisor_name:  supervisorData?.full_name,
+      supervisor_phone: supervisorData?.phone,
+    },
+    logbookEntries: logbookEntries || [],
+    evaluation: (evaluations || []).map(e => ({
+      ...e, supervisor_name: evalSupervisorMap[e.supervisor_id] || null,
+    }))[0] || null,
+  };
+}
+
 router.get('/attachment/:id', protect, authorize('admin'), async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .from('attachments').select('*').eq('attachment_id', req.params.id).single();
-    if (error || !data) return res.status(404).json({ message: 'Attachment not found' });
-
-    let studentData = null;
-    if (data.student_id) {
-      const { data: student } = await supabase
-        .from('students').select('full_name, reg_number, department, year_of_study, phone')
-        .eq('student_id', data.student_id).single();
-      studentData = student;
-    }
-
-    let orgData = null;
-    if (data.org_id) {
-      const { data: org } = await supabase
-        .from('host_organizations').select('org_name, location, contact_person, phone')
-        .eq('org_id', data.org_id).single();
-      orgData = org;
-    }
-
-    let supervisorData = null;
-    if (data.supervisor_id) {
-      const { data: supervisor } = await supabase
-        .from('supervisors').select('full_name, phone')
-        .eq('supervisor_id', data.supervisor_id).single();
-      supervisorData = supervisor;
-    }
-
-    const { data: logbookEntries } = await supabase
-      .from('logbook_entries')
-      .select('entry_id, week_number, description, tasks_done, challenges, document_url, submitted_at')
-      .eq('attachment_id', req.params.id).order('week_number', { ascending: true });
-
-    const { data: evaluations } = await supabase
-      .from('evaluations').select('*, supervisor_id')
-      .eq('attachment_id', req.params.id).order('created_at', { ascending: false });
-
-    let evalSupervisorMap = {};
-    if (evaluations && evaluations.length) {
-      const supIds = evaluations.map(e => e.supervisor_id).filter(Boolean);
-      if (supIds.length) {
-        const { data: supervisors } = await supabase
-          .from('supervisors').select('supervisor_id, full_name').in('supervisor_id', supIds);
-        supervisors.forEach(s => evalSupervisorMap[s.supervisor_id] = s.full_name);
-      }
-    }
-
-    res.json({
-      attachment: {
-        ...data,
-        student_name:     studentData?.full_name,
-        reg_number:       studentData?.reg_number,
-        department:       studentData?.department,
-        year_of_study:    studentData?.year_of_study,
-        student_phone:    studentData?.phone,
-        org_name:         orgData?.org_name,
-        location:         orgData?.location,
-        contact_person:   orgData?.contact_person,
-        org_phone:        orgData?.phone,
-        supervisor_name:  supervisorData?.full_name,
-        supervisor_phone: supervisorData?.phone,
-      },
-      logbookEntries: logbookEntries || [],
-      evaluation: (evaluations || []).map(e => ({
-        ...e, supervisor_name: evalSupervisorMap[e.supervisor_id] || null,
-      }))[0] || null,
-    });
+    const detail = await buildAttachmentDetail(req.params.id);
+    if (!detail) return res.status(404).json({ message: 'Attachment not found' });
+    res.json(detail);
   } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// ─── GET /api/admin/attachment/:id/report/pdf ─────────────────────────────
+router.get('/attachment/:id/report/pdf', protect, authorize('admin'), async (req, res) => {
+  try {
+    const detail = await buildAttachmentDetail(req.params.id);
+    if (!detail) return res.status(404).json({ message: 'Attachment not found' });
+
+    const doc = generateAttachmentReportPDF(detail.attachment, detail.logbookEntries, detail.evaluation);
+
+    await audit(
+      req.user, 'EXPORT_ATTACHMENT_REPORT_PDF', 'attachments', req.params.id,
+      `Admin ${req.user?.email} exported a PDF report for attachment ${req.params.id}`, {}, req.ip
+    );
+
+    const filename = `attachment-report-${detail.attachment.reg_number || req.params.id}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    doc.pipe(res);
+    doc.end();
+  } catch (err) {
+    console.error('Error generating attachment report PDF:', err.message);
     res.status(500).json({ message: err.message });
   }
 });
