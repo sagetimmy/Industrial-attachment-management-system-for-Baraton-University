@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  RefreshControl, Alert, Dimensions,
+  RefreshControl, Alert, Dimensions, Platform,
 } from 'react-native';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system';
@@ -52,7 +52,33 @@ function arrayBufferToBase64(buffer) {
   return global.btoa ? global.btoa(binary) : Buffer.from(binary, 'binary').toString('base64');
 }
 
-async function shareFile(fileUri, mimeType, dialogTitle) {
+// On native, writes the string/base64 content to disk and opens the share
+// sheet (same pattern as the supervisor ReportsScreen). On web, there is no
+// filesystem or share sheet — expo-file-system silently no-ops and
+// expo-sharing.isAvailableAsync() resolves false, so we instead build a
+// Blob and trigger a real browser download via a temporary <a download>.
+async function downloadFile({ filename, mimeType, dialogTitle, content, isBase64 }) {
+  if (Platform.OS === 'web') {
+    const blob = isBase64
+      ? await (await fetch(`data:${mimeType};base64,${content}`)).blob()
+      : new Blob([content], { type: mimeType });
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    return;
+  }
+
+  const fileUri = `${FileSystem.cacheDirectory}${filename}`;
+  await FileSystem.writeAsStringAsync(fileUri, content, {
+    encoding: isBase64 ? FileSystem.EncodingType.Base64 : FileSystem.EncodingType.UTF8,
+  });
+
   const canShare = await Sharing.isAvailableAsync();
   if (canShare) {
     await Sharing.shareAsync(fileUri, { mimeType, dialogTitle });
@@ -368,9 +394,13 @@ const Reports = ({ navigation }) => {
         }
         const response = await api.get('/admin/reports/summary/pdf', { responseType: 'arraybuffer' });
         const base64 = arrayBufferToBase64(response.data);
-        const fileUri = `${FileSystem.cacheDirectory}system-summary-report.pdf`;
-        await FileSystem.writeAsStringAsync(fileUri, base64, { encoding: FileSystem.EncodingType.Base64 });
-        await shareFile(fileUri, 'application/pdf', 'System Summary Report');
+        await downloadFile({
+          filename: 'system-summary-report.pdf',
+          mimeType: 'application/pdf',
+          dialogTitle: 'System Summary Report',
+          content: base64,
+          isBase64: true,
+        });
         return;
       }
 
@@ -380,14 +410,22 @@ const Reports = ({ navigation }) => {
         const rows = reportType === 'summary'
           ? buildSummaryCsvRows(summaryData)
           : buildDetailedCsvRows(detailedData);
-        const fileUri = `${FileSystem.cacheDirectory}${filename}.csv`;
-        await FileSystem.writeAsStringAsync(fileUri, rowsToCsv(rows), { encoding: FileSystem.EncodingType.UTF8 });
-        await shareFile(fileUri, 'text/csv', filename);
+        await downloadFile({
+          filename: `${filename}.csv`,
+          mimeType: 'text/csv',
+          dialogTitle: filename,
+          content: rowsToCsv(rows),
+          isBase64: false,
+        });
       } else if (format === 'json') {
         const payload = reportType === 'summary' ? summaryData : detailedData;
-        const fileUri = `${FileSystem.cacheDirectory}${filename}.json`;
-        await FileSystem.writeAsStringAsync(fileUri, JSON.stringify(payload, null, 2), { encoding: FileSystem.EncodingType.UTF8 });
-        await shareFile(fileUri, 'application/json', filename);
+        await downloadFile({
+          filename: `${filename}.json`,
+          mimeType: 'application/json',
+          dialogTitle: filename,
+          content: JSON.stringify(payload, null, 2),
+          isBase64: false,
+        });
       }
     } catch (err) {
       console.log('Export error:', err.message);
